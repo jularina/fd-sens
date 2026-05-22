@@ -607,7 +607,7 @@ class OptimizationCornerPointsCompositePrior:
     def black_box_optimize_prior_box_global(
         self,
         *,
-        method: str = "differential_evolution",
+        method: str = "dual_annealing",
         seed: int = 0,
         maxiter: int = 200,
         popsize: int = 15,
@@ -842,7 +842,6 @@ class OptimizationCornerPointsCompositePrior:
         lambda_star, val_star = max(results, key=lambda x: x[1])
         return results, float(lambda_star), float(val_star)
 
-
     def _evaluate_fgm_copula_fd_black_box(
             self,
             x: np.ndarray,
@@ -978,7 +977,6 @@ class OptimizationCornerPointsCompositePrior:
         )
         lambda_star, val_star = max(results, key=lambda x: x[1])
         return results, float(lambda_star), float(val_star)
-
 
     def _evaluate_frank_copula_fd_black_box(
             self,

@@ -8,7 +8,7 @@ from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.colors as mcolors
 from matplotlib.colors import to_rgb, Normalize, ListedColormap, BoundaryNorm
 import matplotlib.cm as cmx
-from matplotlib.patches import Ellipse, Patch
+from matplotlib.patches import Ellipse
 from matplotlib.cm import ScalarMappable
 from scipy.special import logsumexp
 import os
@@ -3177,8 +3177,8 @@ def plot_prior_neighbourhood_comparison(
     palette = list(getattr(plot_cfg.plot.color_palette, "colors", []))
     if not palette:
         palette = ["#005500", "#007200", "#9EB8A0", "#ADEBC8"]
-    col_band = palette[2] if len(palette) > 2 else palette[-1]
-    col_member = palette[1] if len(palette) > 1 else palette[0]
+    col_band = palette[2]
+    col_member = palette[1]
 
     # shared grid
     x = np.linspace(domain[0], domain[1], resolution)   # (R,)
@@ -3251,7 +3251,7 @@ def plot_prior_neighbourhood_comparison(
     contaminations = []
     # shifts across domain
     for mu_c in np.linspace(domain[0] + 0.15 * domain_half,
-                             domain[1] - 0.15 * domain_half, 10):
+                            domain[1] - 0.15 * domain_half, 10):
         sig_c = domain_half * 0.12
         contaminations.append(
             np.exp(-0.5 * ((x - mu_c) / sig_c) ** 2) / (sig_c * np.sqrt(2 * np.pi))
@@ -3315,7 +3315,6 @@ def plot_prior_neighbourhood_comparison(
     # ------------------------------------------------------------------
     # Figure d: parametric Gaussian neighbourhood
     # ------------------------------------------------------------------
-    # Default ranges: ±half the domain span around the reference parameters
     if mu_range is None:
         mu_range = (domain_mid - 0.4 * domain_half, domain_mid + 0.4 * domain_half)
     if sigma_range is None:
@@ -3329,6 +3328,6 @@ def plot_prior_neighbourhood_comparison(
         for sigma_p in sigma_vals:
             p = (np.exp(-0.5 * ((x - mu_p) / sigma_p) ** 2)
                  / (sigma_p * np.sqrt(2 * np.pi)))
-            ax_d.plot(x, p, color=col_member, alpha=0.3, linewidth=0.7)
+            ax_d.plot(x, p, color=col_member, alpha=0.2, linewidth=0.7)
     ax_d.plot(x, pi_ref, color="black", linestyle="--", linewidth=1.5)
     _finish(fig_d, ax_d, "neighbourhood_parametric.pdf")

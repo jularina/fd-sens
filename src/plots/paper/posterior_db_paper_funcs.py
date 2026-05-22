@@ -848,9 +848,9 @@ def plot_complexity_bar(
         filename = f"{prefix}_complexity_bar.pdf"
 
     labels = [
+        "BBO",
         r"$\Gamma_\text{box}$",
         r"$\prod_{j=1}^{d_\Theta}\Gamma_{\text{box}_j}$",
-        "BBO",
     ]
 
     def _to_array(v):
@@ -858,7 +858,7 @@ def plot_complexity_bar(
             return np.array([float(v)])
         return np.maximum(np.asarray(v, dtype=float), 1e-12)
 
-    data = [_to_array(qf_full_time_sec), _to_array(qf_decomp_time_sec), _to_array(black_box_time_sec)]
+    data = [_to_array(black_box_time_sec), _to_array(qf_full_time_sec), _to_array(qf_decomp_time_sec)]
 
     ylab = r"Time (sec.)"
 
@@ -882,7 +882,8 @@ def plot_complexity_bar(
     if use_log10:
         ax.set_yscale("log")
 
-    print(f"Our approach avg. time={np.mean(data[0])}, bbox={np.min(data[2])}")
+    print(
+        f"Bbox={np.mean(data[0])},  our approach avg. time={np.min(data[1])}, decomposed approach avg. time={np.min(data[2])}")
 
     for i, (d, color) in enumerate(zip(data, palette)):
         ax.boxplot(
@@ -902,12 +903,12 @@ def plot_complexity_bar(
     ax.tick_params(axis="x", length=0, labelcolor="none")
 
     for i, (d, label) in enumerate(zip(data, labels)):
-        if i < 2:
-            ax.annotate(label, xy=(i + 1, np.max(d)), xytext=(0, 10),
-                        textcoords="offset points", ha="center", va="bottom", fontsize="small")
-        else:
+        if i == 0:
             ax.annotate(label, xy=(i + 1, np.min(d)), xytext=(0, -10),
                         textcoords="offset points", ha="center", va="top", fontsize="small")
+        else:
+            ax.annotate(label, xy=(i + 1, np.max(d)), xytext=(0, 10),
+                        textcoords="offset points", ha="center", va="bottom", fontsize="small")
 
     ax.set_ylabel(ylab)
 
@@ -1213,9 +1214,9 @@ def plot_posterior_predictive_bands_compare(
     ax.spines["right"].set_visible(False)
     ax.grid(axis="y", linestyle=":", alpha=0.35)
 
-    handles, labels = ax.get_legend_handles_labels()
-    ax.legend(handles, labels, frameon=False, ncol=1,
-              loc="upper right", bbox_to_anchor=(1, 1.2))
+    # handles, labels = ax.get_legend_handles_labels()
+    # ax.legend(handles, labels, frameon=False, ncol=1,
+    #           loc="upper right", bbox_to_anchor=(1, 1.2))
 
     fig.tight_layout()
 
@@ -1287,7 +1288,7 @@ def plot_posterior_predictive_with_data(
     ax.spines["right"].set_visible(False)
     if ylim is not None:
         ax.set_ylim(ylim)
-    ax.legend(frameon=False, loc="upper right")
+    # ax.legend(frameon=False, loc="upper right")
 
     try:
         _save_fig(fig, output_dir, filename, plot_cfg)

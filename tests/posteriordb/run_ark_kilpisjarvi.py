@@ -427,35 +427,35 @@ def plot_posterior_predictive(cfg: DictConfig) -> None:
     )
     global_ylim = (min(all_values), max(all_values))
 
-    # plot_posterior_predictive_with_data(
-    #     plot_cfg=plot_cfg,
-    #     output_dir=output_dir,
-    #     x_years=x_years,
-    #     y_uncentered=y,
-    #     x_pred_years=x_pred_years,
-    #     pred_mean=ref_mean + y_mean_offset,
-    #     pred_lo=ref_lo + y_mean_offset,
-    #     pred_hi=ref_hi + y_mean_offset,
-    #     pred_label=r"$\tilde{x}_{\mathrm{ref}} \pm 95\%$ CI",
-    #     filename="kilpisjarvi-posterior-predictive-ref.pdf",
-    #     pred_color="#7c397d",
-    #     ylim=global_ylim,
-    # )
-    # plot_posterior_predictive_with_data(
-    #     plot_cfg=plot_cfg,
-    #     output_dir=output_dir,
-    #     x_years=x_years,
-    #     y_uncentered=y,
-    #     x_pred_years=x_pred_years,
-    #     pred_mean=corner_mean + y_mean_offset,
-    #     pred_lo=corner_lo + y_mean_offset,
-    #     pred_hi=corner_hi + y_mean_offset,
-    #     pred_label=r"$\tilde{x} \pm 95\%$ CI",
-    #     filename="kilpisjarvi-posterior-predictive-corner.pdf",
-    #     pred_color="#5b9bd5",
-    #     ylim=global_ylim,
-    #     show_ylabel=False,
-    # )
+    plot_posterior_predictive_with_data(
+        plot_cfg=plot_cfg,
+        output_dir=output_dir,
+        x_years=x_years,
+        y_uncentered=y,
+        x_pred_years=x_pred_years,
+        pred_mean=ref_mean + y_mean_offset,
+        pred_lo=ref_lo + y_mean_offset,
+        pred_hi=ref_hi + y_mean_offset,
+        pred_label=r"$\tilde{x}_{\mathrm{ref}} \pm 95\%$ CI",
+        filename="kilpisjarvi-posterior-predictive-ref.pdf",
+        pred_color="#7c397d",
+        ylim=global_ylim,
+    )
+    plot_posterior_predictive_with_data(
+        plot_cfg=plot_cfg,
+        output_dir=output_dir,
+        x_years=x_years,
+        y_uncentered=y,
+        x_pred_years=x_pred_years,
+        pred_mean=corner_mean + y_mean_offset,
+        pred_lo=corner_lo + y_mean_offset,
+        pred_hi=corner_hi + y_mean_offset,
+        pred_label=r"$\tilde{x} \pm 95\%$ CI",
+        filename="kilpisjarvi-posterior-predictive-corner.pdf",
+        pred_color="#5b9bd5",
+        ylim=global_ylim,
+        show_ylabel=False,
+    )
     # animate_posterior_predictive_with_data(
     #     plot_cfg=plot_cfg,
     #     output_dir=output_dir,

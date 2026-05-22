@@ -205,7 +205,7 @@ def create_combined_plots(cfg: DictConfig):
             logy=True,
             loss=loss,
             ylim=global_ylim,
-            lr_bars=[0.35, 0.38]
+            lr_bars=None
         )
 
 

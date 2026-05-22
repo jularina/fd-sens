@@ -143,20 +143,20 @@ def main(cfg: DictConfig) -> None:
     print(f"Corner eta^star is {eta_star}.")
     print(f"Time for optimisation of all parameters at once: {elapsed:.3f} sec.")
 
-    # print("Starting black-box optimisation.")
-    # start = time.perf_counter()
-    # bb = optimizer.black_box_optimize_prior_box_global(
-    #     seed=0,
-    #     maxiter=150,
-    #     popsize=20,
-    #     workers=1,
-    #     updating="deferred",
-    # )
-    # elapsed = time.perf_counter() - start
-    # print("Black-box sup:", bb.val_sup)
-    # print("Black-box inf:", bb.val_inf)
-    # print("Black-box S_hat:", bb.S_hat)
-    # print(f"Time for black-box optimisation of all parameters at once: {elapsed:.3f} sec.")
+    print("Starting black-box optimisation.")
+    start = time.perf_counter()
+    bb = optimizer.black_box_optimize_prior_box_global(
+        seed=0,
+        maxiter=150,
+        popsize=20,
+        workers=1,
+        updating="deferred",
+    )
+    elapsed = time.perf_counter() - start
+    print("Black-box sup:", bb.val_sup)
+    print("Black-box inf:", bb.val_inf)
+    print("Black-box S_hat:", bb.S_hat)
+    print(f"Time for black-box optimisation of all parameters at once: {elapsed:.3f} sec.")
 
     print("Starting per component optimisation.")
     names = ["theta_1", "theta_2", "theta_3", "theta_4"]
@@ -199,13 +199,13 @@ def main(cfg: DictConfig) -> None:
     print("Starting Gaussian copula grid evaluation.")
     start = time.perf_counter()
     copula_grid_g0, lambda_star_g0, val_star_g0 = optimizer.evaluate_gaussian_copula_grid_and_argmax(
-        lambda_range=(-0.2, 0.2),
+        lambda_range=(-0.2, 0.0),
         n_grid=200,
         idx_g0=0,
         idx_nu=2,
     )
     copula_grid_T, lambda_star_T, val_star_T = optimizer.evaluate_gaussian_copula_grid_and_argmax(
-        lambda_range=(-0.2, 0.2),
+        lambda_range=(0.0, 0.2),
         n_grid=200,
         idx_g0=1,
         idx_nu=2,
