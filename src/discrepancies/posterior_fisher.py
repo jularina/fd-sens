@@ -52,11 +52,11 @@ class PosteriorFDBase:
         Learning-rate-only perturbation with eta fixed to eta_ref (and prior fixed to ref).
         Then:
             s_ref(θ_i) - s_beta(θ_i) = (beta - beta_ref) * g_i
-        so FD = (1/m) sum_i ||(beta - beta_ref) g_i||^2
+        so FD = (beta - beta_ref) (1/m) sum_i || g_i||^2
         """
         self.beta = self.model.loss_lr
-        diff = (self.beta - self.beta_ref) * self.g
-        return float(np.mean(np.sum(diff * diff, axis=1)))
+        diff = float(np.mean(np.sum(self.g * self.g, axis=1)))
+        return (self.beta - self.beta_ref)**2 * diff
 
     def compute_fisher_quadratic_form_lr_only(
         self,
@@ -85,10 +85,12 @@ class PosteriorFDBase:
             idx_g0: int = 0,
             idx_nu: int = 2,
             eps: float = 1e-10,
+            lower: np.ndarray = None,
+            upper: np.ndarray = None,
+            apply_z_transform: bool = True,
     ) -> float:
         """
-        Empirical Fisher divergence for Gaussian copula perturbation
-        when posterior samples are already rescaled to (0,1).
+        Empirical Fisher divergence for Gaussian copula perturbation.
 
         Computes
             E_{theta ~ Pi_ref} || ∇_theta log c_lam(u_G0, u_nu) ||^2.
@@ -98,11 +100,20 @@ class PosteriorFDBase:
         lam : float
             Gaussian copula correlation parameter. Must satisfy |lam| < 1.
         idx_g0 : int
-            Column index of the rescaled G0 coordinate in self.samples.
+            Column index of the G0 coordinate in self.samples.
         idx_nu : int
-            Column index of the rescaled nu coordinate in self.samples.
+            Column index of the nu coordinate in self.samples.
         eps : float
-            Boundary clipping level for numerical stability.
+            Boundary clipping level for numerical stability after F_i transform.
+        lower, upper : np.ndarray, optional
+            Per-dimension prior bounds. When provided, samples are mapped to (0,1)
+            via F_i(theta) = (theta - lower[i]) / (upper[i] - lower[i]) before
+            applying Phi^{-1}. If None, samples are assumed to already be in (0,1).
+            Only used when apply_z_transform=True.
+        apply_z_transform : bool
+            If True (default), rescale samples to (0,1) using lower/upper and apply
+            Phi^{-1} to obtain z-scores. If False, samples are used directly as
+            z-scores without any transform.
         """
         lam = float(lam)
         if abs(lam) >= 1.0:
@@ -111,11 +122,19 @@ class PosteriorFDBase:
         u_g0 = np.asarray(self.samples[:, idx_g0], dtype=float)
         u_nu = np.asarray(self.samples[:, idx_nu], dtype=float)
 
-        u_g0 = np.clip(u_g0, eps, 1.0 - eps)
-        u_nu = np.clip(u_nu, eps, 1.0 - eps)
+        if apply_z_transform:
+            if lower is not None and upper is not None:
+                u_g0 = (u_g0 - lower[idx_g0]) / (upper[idx_g0] - lower[idx_g0])
+                u_nu = (u_nu - lower[idx_nu]) / (upper[idx_nu] - lower[idx_nu])
 
-        z_g0 = norm.ppf(u_g0)
-        z_nu = norm.ppf(u_nu)
+            u_g0 = np.clip(u_g0, eps, 1.0 - eps)
+            u_nu = np.clip(u_nu, eps, 1.0 - eps)
+
+            z_g0 = norm.ppf(u_g0)
+            z_nu = norm.ppf(u_nu)
+        else:
+            z_g0 = u_g0
+            z_nu = u_nu
 
         phi_z_g0 = norm.pdf(z_g0)
         phi_z_nu = norm.pdf(z_nu)

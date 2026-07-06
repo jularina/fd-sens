@@ -429,17 +429,17 @@ def comparison_plot_existing_methods(cfg):
             xlim=xlim,
         )
 
-        # plot_runtime_complexity_gaussians(
-        #     output_dir=output_dir,
-        #     plot_cfg=plot_cfg,
-        #     divergence=divergence,
-        #     ms=ms,
-        #     dims=dims,
-        #     logy=True,
-        #     results=results,
-        #     ylim=time_ylim,
-        #     xlim=xlim,
-        # )
+        plot_runtime_complexity_gaussians(
+            output_dir=output_dir,
+            plot_cfg=plot_cfg,
+            divergence=divergence,
+            ms=ms,
+            dims=dims,
+            logy=True,
+            results=results,
+            ylim=time_ylim,
+            xlim=xlim,
+        )
 
 
 @hydra.main(version_base="1.1", config_path="../../configs/paper/ksd_calculation/toy/", config_name="univariate_gaussian")
@@ -879,40 +879,11 @@ def run_priors_optimisation_runtimes(cfg, dim: str = "multivariate"):
     )
 
 
-@hydra.main(version_base="1.1", config_path="../../configs/paper/ksd_calculation/toy/", config_name="multivariate_gaussian")
-def run_priors_optimisation_runtimes(cfg):
-    plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
-    output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
-    plot_cfg = load_plot_config(plot_config_path)
-    data_path = os.path.join(get_original_cwd(), "data/multivariate_gaussian/runtimes/")
-
-    with open(data_path + "nonparametric_qcqp_optimisation_times.json", "r") as f:
-        nonparametric_optimisation_times = json.load(f)
-    with open(data_path + "parametric_qcqp_optimisation_times.json", "r") as f:
-        parametric_optimisation_times = json.load(f)
-    plot_runtime_parametric_nonparametric_with_ci(
-        parametric_optimisation_times,
-        nonparametric_optimisation_times,
-        plot_cfg,
-        output_dir,
-        filename="runtime_parametric_nonparametric_qcqp_multivariate.pdf"
-    )
-
-    # with open(data_path + "nonparametric_qcqp_optimisation_times.json", "r") as f:
-    #     nonparametric_optimisation_times = json.load(f)
-    # plot_runtime_nonparametric_with_ci(
-    #     nonparametric_optimisation_times,
-    #     plot_cfg,
-    #     output_dir,
-    #     filename="runtime_parametric_nonparametric_qcqp_univariate.pdf"
-    # )
-
-
 if __name__ == "__main__":
-    # run_gaussian_priors()
+    run_gaussian_priors()
     # run_gaussian_priors_for_conjugate_fd()
     # run_gaussian_lr()
-    # run_multivariate_gaussian_priors()
+    run_multivariate_gaussian_priors()
     comparison_plot_existing_methods()
     # run_gaussian_priors_qcqp()
     # run_inverse_wishart_priors()
@@ -922,4 +893,3 @@ if __name__ == "__main__":
     # run_gaussian_priors_nonparametric_diff_samples_num()
     # run_multivariate_gaussian_priors_diff_samples_num()
     # run_multivariate_gaussian_priors_diff_basis_funcs_num()
-    # run_priors_optimisation_runtimes()

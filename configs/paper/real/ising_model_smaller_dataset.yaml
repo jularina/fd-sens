@@ -12,27 +12,27 @@ data:
   loss_lr: 1.0
   loss_lr_init: 1.0
   observations_path: /Users/arinaodv/Desktop/folder/study_phd/code/Discrete-Fisher-Bayes/Ising/samplesForKSDSensitivityAnalysis/PseudoBayes_size=6_theta=5.0_dnum=1000_pnum=2000_data.npy
-  posterior_samples_path: ''
-  pseudoliklelhood_grads_path: ''
+  posterior_samples_path: /Users/arinaodv/Desktop/folder/study_phd/code/Discrete-Fisher-Bayes/Ising/samplesForKSDSensitivityAnalysis/PseudoBayes_size=6_theta=5.0_dnum=1000_pnum=2000_pseudoliklelhood_posteriors_samples_matsubara.npy
+  pseudoliklelhood_grads_path: /Users/arinaodv/Desktop/folder/study_phd/code/Discrete-Fisher-Bayes/Ising/samplesForKSDSensitivityAnalysis/PseudoBayes_size=6_theta=5.0_dnum=1000_pnum=2000_pseudoliklelhood_grads_matsubara.npy
 
   observations_num: null
   posterior_samples_num: null
   prior_samples_num: null
-  loss_type: pseudolikelihood
-  beta_refs:
-    matsubara: 0.6
-    syring: 0.279
-    lyddon: 0.635
+#  loss_type: pseudolikelihood
+#  beta_refs:
+#    matsubara: 0.8096
+#    syring: 0.672341
+#    lyddon: 0.66
 #  loss_type: dfd
 #  beta_refs:
-#    matsubara: 0.12
-#    syring: 0.018
-#    lyddon: 0.017854
-#  loss_type: ksd
-#  beta_refs:
-#    matsubara: 0.39
-#    syring: 0.33
-#    lyddon: 2.34
+#    matsubara: 0.0197
+#    syring: 0.017801
+#    lyddon: 0.022
+  loss_type: ksd
+  beta_refs:
+    matsubara:  30.46
+    syring: 1e-06
+    lyddon: 2.34
 
 model:
   _target_: src.bayesian_model.ising.ising.IsingBayesianModel

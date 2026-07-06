@@ -408,8 +408,19 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
 
         if estimation_samples_source == "prior":
             estimation_samples = prior_samples
+        elif estimation_samples_source == "min_scale":
+            estimation_samples = self._pick_min_scale_samples(prior_samples, posterior_samples)
+        elif estimation_samples_source == "both":
+            estimation_samples = self._concat_samples(prior_samples, posterior_samples)
         else:
             estimation_samples = posterior_samples
+
+        if estimation_centers_source == "min_scale":
+            estimation_centers_source_resolved = "prior" if estimation_samples is prior_samples else "posterior"
+        elif estimation_centers_source == "both":
+            estimation_centers_source_resolved = "both"
+        else:
+            estimation_centers_source_resolved = estimation_centers_source
 
         # Choose centers (B, d)
         self.centers = self._select_centers(
@@ -417,7 +428,7 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
             prior_samples=prior_samples,
             num_centers=num_basis_functions,
             method=method,
-            estimation_centers_source=estimation_centers_source,
+            estimation_centers_source=estimation_centers_source_resolved,
         )
         _, self.dim = self.centers.shape
         self.num_basis = int(self.centers.shape[0])
@@ -478,6 +489,49 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
         else:
             raise ValueError("metric must be 'diag' or 'full'.")
 
+        # Fill distance estimate over all available samples
+        all_samples = self._concat_samples(prior_samples, posterior_samples)
+        dists = cdist(all_samples, self.centers)          # (n, B)
+        fill_distance = float(dists.min(axis=1).max())
+        print(f"Fill distance estimate (h): {fill_distance:.4f}")
+
+        # Print estimated lengthscale
+        if self.metric == "diag":
+            print(f"Estimated lengthscales (per dim): {np.array2string(self.lengthscale, precision=4)}")
+        else:
+            print(f"Estimated precision matrix P:\n{np.array2string(self.precision, precision=4)}")
+
+    # ---------------- scale selection ----------------
+    @staticmethod
+    def _concat_samples(
+        prior_samples: Optional[np.ndarray],
+        posterior_samples: Optional[np.ndarray],
+    ) -> np.ndarray:
+        if prior_samples is None:
+            return np.asarray(posterior_samples, dtype=float)
+        if posterior_samples is None:
+            return np.asarray(prior_samples, dtype=float)
+        return np.concatenate([
+            np.asarray(prior_samples, dtype=float),
+            np.asarray(posterior_samples, dtype=float),
+        ], axis=0)
+
+    @staticmethod
+    def _pick_min_scale_samples(
+        prior_samples: Optional[np.ndarray],
+        posterior_samples: Optional[np.ndarray],
+    ) -> np.ndarray:
+        """Return whichever sample set has the smaller mean variance (trace of cov / d)."""
+        if prior_samples is None:
+            return np.asarray(posterior_samples, dtype=float)
+        if posterior_samples is None:
+            return np.asarray(prior_samples, dtype=float)
+        prior_arr = np.asarray(prior_samples, dtype=float)
+        post_arr = np.asarray(posterior_samples, dtype=float)
+        prior_scale = float(np.mean(np.var(prior_arr, axis=0)))
+        post_scale = float(np.mean(np.var(post_arr, axis=0)))
+        return post_arr if post_scale <= prior_scale else prior_arr
+
     # ---------------- center selection ----------------
     def _select_centers(
         self,
@@ -489,6 +543,8 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
     ) -> np.ndarray:
         if estimation_centers_source == "prior":
             X = np.asarray(prior_samples, dtype=float)
+        elif estimation_centers_source == "both":
+            X = self._concat_samples(prior_samples, posterior_samples)
         else:
             X = np.asarray(posterior_samples, dtype=float)
 

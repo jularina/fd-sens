@@ -110,16 +110,15 @@ class TurinBayesianModel(ABC):
     def _prepare_data(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         ckpt = torch.load(self.archive_path, map_location="cpu")
 
-        # Transform both prior and posterior samples to z-space
-        lower = np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float64)
-        upper = np.array([10.0, 10.0, 500.0, 10.0], dtype=np.float64)
+        lower = np.array([c.low for c in self.prior_init.components], dtype=np.float64)
+        upper = np.array([c.high for c in self.prior_init.components], dtype=np.float64)
         prior_samples = ckpt["theta_nle"].cpu().numpy()
-        posterior_samples = ckpt["posterior_samples_nle"].cpu().numpy()
-        prior_samples = self._theta_to_uniform_0_1(prior_samples, lower, upper)
-        posterior_samples = self._theta_to_uniform_0_1(posterior_samples, lower, upper)
+        posterior_samples = ckpt["posterior_samples_z"].cpu().numpy()  # ckpt["posterior_samples_nle"].cpu().numpy()
+        # prior_samples = np.clip(prior_samples, lower, upper)
+        # posterior_samples = np.clip(posterior_samples, lower, upper)
 
         observations = ckpt["obs_x"].cpu().numpy()
-        likelihood_grads = ckpt["likelihod_grads"].cpu().numpy()
+        likelihood_grads = ckpt["likelihood_grads"].cpu().numpy()
 
         return observations, posterior_samples, likelihood_grads, prior_samples
 

@@ -7,13 +7,13 @@ plot:
   figure:
     size:
       width: 4.0  # 4 in inches, 2.5 for 4-col
-      height: 2.2 # 3.2 in inches, 1.67 for 4-col
+      height: 2.1 # 3.2 in inches, 1.67 for 4-col
     dpi: 300
     tight_layout: true
 
   color_palette:
     colors:
-      - "#450314" # dark cherry
+#      - "#450314" # dark cherry
 #      - "#5A051A"  # cherry
 #      - "#7c397d" # purple
 #      - "#D20A2E"  # red
@@ -26,24 +26,24 @@ plot:
 #      - "#EE1E52"  # pink
 #      - "#F2BDCD"  # light-light-pink
 #      - "#00BFC4"   # blue-green
-      - "#5b9bd5"  # lighter blue
+#      - "#5b9bd5"  # lighter blue
 #      - "#5A051A"  # cherry
 #      - "#009E73"   # forest green
 #      - "#E69F00"   # orange
 #      - "#F0E442"   # golden yellow
 #      - "#3F3FFF"   # indigo
   # Green
-      - "#005500"
-      - "#007200"
+      - "#005500" # dark green
+#      - "#007200" # forest green
 #     - "#008000"
 #     - "#00A800"
 #     - "#48BF40"
 #     - "#58AF50"
 #     - "#6C936C"
-      - "#9EB8A0"
+      - "#9EB8A0" # light green-grey
 #     - "#849E00"
 #     - "#CCFFCC"
-      - "#ADEBC8"
+      - "#ADEBC8" # mint
 #     - "#ADEBDC"
 
   seaborn:

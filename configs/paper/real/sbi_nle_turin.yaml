@@ -2,38 +2,38 @@ data:
   base_prior:
     _target_: src.distributions.composite.CompositeProduct
     distributions:
-#      theta_1:
-#        _target_: src.distributions.uniform.Uniform
-#        low: 1e-9
-#        high: 1e-8
-#      theta_2:
-#        _target_: src.distributions.uniform.Uniform
-#        low: 1e-9
-#        high: 1e-8
-#      theta_3:
-#        _target_: src.distributions.uniform.Uniform
-#        low: 1e7
-#        high: 5e9
-#      theta_4:
-#        _target_: src.distributions.uniform.Uniform
-#        low: 1e-10
-#        high: 1e-9
       theta_1:
         _target_: src.distributions.uniform.Uniform
-        low: 0.0
-        high: 1.0
+        low: 1e-9
+        high: 1e-8
       theta_2:
         _target_: src.distributions.uniform.Uniform
-        low: 0.0
-        high: 1.0
+        low: 1e-9
+        high: 1e-8
       theta_3:
         _target_: src.distributions.uniform.Uniform
-        low: 0.0
-        high: 1.0
+        low: 1e7
+        high: 5e9
       theta_4:
         _target_: src.distributions.uniform.Uniform
-        low: 0.0
-        high: 1.0
+        low: 1e-10
+        high: 1e-9
+#      theta_1:
+#        _target_: src.distributions.uniform.Uniform
+#        low: 0.0
+#        high: 1.0
+#      theta_2:
+#        _target_: src.distributions.uniform.Uniform
+#        low: 0.0
+#        high: 1.0
+#      theta_3:
+#        _target_: src.distributions.uniform.Uniform
+#        low: 0.0
+#        high: 1.0
+#      theta_4:
+#        _target_: src.distributions.uniform.Uniform
+#        low: 0.0
+#        high: 1.0
 #      theta_1:
 #        _target_: src.distributions.gaussian.Gaussian
 #        mu: 0
@@ -178,7 +178,7 @@ data:
   observations_num: null
   posterior_samples_num: null
   prior_samples_num: null
-  archive_path: "/Users/arinaodv/Desktop/folder/study_phd/code/cost-aware-sbi/sims/turin/mixture/nle/0/ckpt_with_normalized_likelihood_grads_multiple_mcmc_chains.tar"
+  archive_path: "/Users/arinaodv/Desktop/folder/study_phd/code/cost-aware-sbi/sims/turin/mixture/nle/0/ckpt_with_z_scored_priors_likelihood_grads.tar" #ckpt_with_normalized_likelihood_grads_multiple_mcmc_chains.tar
 
 model:
   _target_: src.bayesian_model.sbi.turin.TurinBayesianModel

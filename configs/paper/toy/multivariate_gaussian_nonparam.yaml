@@ -1,0 +1,67 @@
+data:
+  base_prior:
+    _target_: src.distributions.gaussian.MultivariateGaussian
+    mu: [2.0, 3.0]
+    cov: [[8.0, 2.0], [2.0, 4.0]]
+  candidate_prior:
+    _target_: src.distributions.gaussian.MultivariateGaussian
+    mu: [2.0, 3.0]
+    cov: [[8.0, 2.0], [2.0, 4.0]]
+  true_dgp:
+    _target_: src.distributions.gaussian.MultivariateGaussian
+    mu: [3.0, 3.0]
+    cov: [[4.0, 0.0], [0.0, 4.0]]
+  loss:
+    _target_: src.losses.gaussian_log_likelihood.MultivariateGaussianLogLikelihood
+    mu: [3.0, 3.0]
+    cov: [[4.0, 0.0], [0.0, 4.0]]
+  loss_lr: 1
+  loss_lr_init: 1
+  observations_path: null
+  posterior_samples_path: null
+  prior_samples_path: null
+  observations_num: 10
+  posterior_samples_num: 5000
+  prior_samples_num: 5000
+
+model:
+  _target_: src.bayesian_model.gaussian.MultivariateGaussianModel
+
+optimize:
+  nonparametric:
+    basis_funcs_type: MaternBasisFunctionMultidim
+    basis_funcs_kwargs: {"num_basis_functions": 30, "method": "halton", "nu": 3, "estimation_samples_source": "posterior", "estimation_centers_source": "posterior", "metric": "full"}
+
+  parametric:
+   prior:
+     MultivariateGaussian:
+       parameters_box_range:
+         ranges:
+           mu:
+             0: [ -4, 5 ]
+             1: [ -4, 5 ]
+           cov:
+             "0_0": [ 2.0, 3.0 ]
+             "1_1": [ 2.0, 3.0 ]
+             "0_1": [ 0.0, 1.0 ]
+             "1_0": [ 0.0, 1.0 ]
+         nums:
+           mu:
+             0: 5
+             1: 5
+           cov:
+             "0_0": 2
+             "1_1": 2
+             "0_1": 2
+             "1_0": 2
+   loss:
+     MultivariateGaussianLogLikelihood:
+       parameters_box_range:
+         ranges:
+           lr: [ 0.05, 2.5 ]
+         nums:
+           lr: 15
+
+flags:
+  plots:
+    output_dir: outputs/paper/plots/fisher/multivariate/nonparam

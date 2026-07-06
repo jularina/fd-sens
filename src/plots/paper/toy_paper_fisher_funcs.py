@@ -951,6 +951,216 @@ def plot_sdp_densities_and_logprior(
     plt.close(fig)
 
 
+def plot_sdp_densities(
+    basis_function,
+    sdp_lambda_list: list[np.ndarray],
+    radius_labels: list[float],
+    estimates: list[float],
+    prior_distribution,
+    plot_cfg,
+    output_dir: str,
+    domain: tuple = (-5, 5),
+    resolution: int = 200,
+) -> None:
+    """
+    Single-panel plot: nonparametric SDP densities for each radius, plus the true prior density.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    plt.rcParams.update({
+        "font.size": plot_cfg.plot.font.size,
+        "font.family": plot_cfg.plot.font.family,
+        "text.usetex": plot_cfg.plot.font.use_tex,
+        "text.latex.preamble": r"\usepackage{amsmath}",
+    })
+
+    x = np.linspace(domain[0], domain[1], resolution)[:, None]
+    dx = float(x[1, 0] - x[0, 0])
+    Phi_x = basis_function.evaluate(x)
+    prior_density_true = prior_distribution.pdf(x).flatten()
+
+    palette = list(getattr(plot_cfg.plot.color_palette, "colors", []))
+    if not palette:
+        palette = ["C0", "C1", "C2", "C3", "C4", "C5"]
+
+    names = plot_cfg.plot.param_latex_names
+    fd_label = names.get("estimatedSensitivityMeasure")
+    xlabel = names.get("theta")
+    ylabel_density = names.get("nonparametric_prior", "Density")
+    true_prior_label = names.get("baseprior")
+    geq_sym = r"$\geq$"
+
+    fig, ax = plt.subplots(
+        1, 1,
+        figsize=(plot_cfg.plot.figure.size.width,
+                 plot_cfg.plot.figure.size.height),
+        dpi=plot_cfg.plot.figure.dpi,
+    )
+
+    for i, (psi, r_label, ksd) in enumerate(zip(sdp_lambda_list, radius_labels, estimates)):
+        f = (Phi_x @ psi).flatten()
+        logZ = logsumexp(f) + np.log(dx)
+        p_hat = np.exp(f - logZ)
+        color = palette[i % len(palette)]
+        label = rf"r {geq_sym} {r_label} ({ksd:.1f})"
+        ax.plot(x.flatten(), p_hat, label=label, linewidth=1.5, color=color)
+
+    ax.plot(
+        x.flatten(),
+        prior_density_true,
+        label=true_prior_label,
+        linestyle="--",
+        linewidth=1.5,
+        color="black",
+    )
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel_density)
+    ax.grid(True, alpha=0.3)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    handles, labels = ax.get_legend_handles_labels()
+    leg = fig.legend(
+        handles, labels,
+        title=fd_label,
+        loc="center left",
+        bbox_to_anchor=(0.95, 0.5),
+        frameon=False,
+        labelspacing=0.4,
+        handlelength=1.8,
+        handletextpad=0.5,
+        borderpad=0.4,
+    )
+    leg.get_title().set_ha("right")
+    leg._legend_box.align = "right"
+    plt.setp(leg.get_texts(), fontsize=plt.rcParams["font.size"] * 0.9)
+    plt.setp(leg.get_title(), fontsize=plt.rcParams["font.size"] * 0.9)
+
+    if getattr(plot_cfg.plot.figure, "tight_layout", False):
+        plt.tight_layout(rect=[0, 0, 0.95, 1])
+
+    filename = "toy_univariate_gaussian_model_nonparametric_density.pdf"
+    save_path = os.path.join(output_dir, filename)
+    fig.savefig(save_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_sdp_posterior_comparison(
+    basis_function,
+    sdp_lambda_list: list,
+    radius_labels: list,
+    estimates: list,
+    prior_distribution,
+    model,
+    plot_cfg,
+    output_dir: str,
+    domain: tuple = (-5, 5),
+    resolution: int = 200,
+) -> None:
+    """
+    For each SDP candidate prior, compute the posterior on a θ grid and plot
+    alongside the reference (conjugate Gaussian) posterior.
+
+    The candidate prior log-density is f(θ) = Φ(θ)ᵀλ (unnormalized).
+    The posterior is p(θ|data) ∝ exp(f(θ)) · L(data|θ), normalised numerically.
+    The reference posterior is the exact conjugate Gaussian.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    plt.rcParams.update({
+        "font.size": plot_cfg.plot.font.size,
+        "font.family": plot_cfg.plot.font.family,
+        "text.usetex": plot_cfg.plot.font.use_tex,
+        "text.latex.preamble": r"\usepackage{amsmath}",
+    })
+
+    # Grid
+    x = np.linspace(domain[0], domain[1], resolution)[:, None]
+    dx = float(x[1, 0] - x[0, 0])
+    x_flat = x.flatten()
+    Phi_x = basis_function.evaluate(x)
+
+    # log g(θ): reference prior log-density, shared across all candidate priors
+    log_g = prior_distribution.log_pdf(x).flatten()
+
+    # Likelihood parameters from model
+    x_bar = float(np.squeeze(model.x_bar))
+    n = int(model.observations_num)
+    sigma_lik_sq = float(model.loss.var)
+    loss_lr = float(model.loss_lr_init)
+
+    # Log-likelihood on grid (Gaussian, constant terms dropped)
+    log_lik = -0.5 * loss_lr * n * (x_flat - x_bar) ** 2 / sigma_lik_sq
+
+    # Reference posterior: conjugate Gaussian N(mu_n, sigma_n^2)
+    mu_0 = float(np.squeeze(prior_distribution.mu))
+    sigma_0_sq = float(np.squeeze(prior_distribution.var))
+    sigma_n_sq = 1.0 / (loss_lr * n / sigma_lik_sq + 1.0 / sigma_0_sq)
+    mu_n = sigma_n_sq * (loss_lr * n * x_bar / sigma_lik_sq + mu_0 / sigma_0_sq)
+    ref_posterior = (
+        np.exp(-0.5 * (x_flat - mu_n) ** 2 / sigma_n_sq)
+        / np.sqrt(2 * np.pi * sigma_n_sq)
+    )
+
+    # Colors & labels
+    palette = list(getattr(plot_cfg.plot.color_palette, "colors", []))
+    if not palette:
+        palette = ["C0", "C1", "C2", "C3", "C4", "C5"]
+
+    names = plot_cfg.plot.param_latex_names
+    fd_label = names.get("estimatedSensitivityMeasure")
+    xlabel = names.get("theta")
+    ylabel = names.get("nonparametric_prior", "Posterior density")
+    ref_label = names.get("baseprior", r"$\Pi_\mathrm{ref}$ posterior")
+    geq_sym = r"$\geq$"
+
+    fig, ax = plt.subplots(
+        figsize=(plot_cfg.plot.figure.size.width,
+                 plot_cfg.plot.figure.size.height / 2),
+        dpi=plot_cfg.plot.figure.dpi,
+    )
+
+    # Posterior for each SDP candidate prior:
+    # log p(θ|data) ∝ Φ(θ)ᵀλ + log g(θ) + log L(data|θ)
+    for i, (psi, r_label, ksd) in enumerate(zip(sdp_lambda_list, radius_labels, estimates)):
+        f = (Phi_x @ psi).flatten()
+        log_post = f + log_g + log_lik
+        log_Z = logsumexp(log_post) + np.log(dx)
+        posterior = np.exp(log_post - log_Z)
+        color = palette[i % len(palette)]
+        label = rf"r {geq_sym} {r_label} ({ksd:.1f})"
+        ax.plot(x_flat, posterior, label=label, linewidth=1.5, color=color)
+
+    # Reference posterior
+    ax.plot(x_flat, ref_posterior, label=ref_label, linestyle="--", linewidth=1.5, color="black")
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_ylim(bottom=0)
+    ax.grid(True, alpha=0.3)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    ax.legend(
+        title=fd_label,
+        loc="center left",
+        bbox_to_anchor=(0.95, 0.5),
+        frameon=False,
+        labelspacing=0.4,
+        handlelength=1.8,
+        handletextpad=0.5,
+        borderpad=0.4,
+    )
+
+    if getattr(plot_cfg.plot.figure, "tight_layout", False):
+        fig.tight_layout(rect=[0, 0, 0.95, 1])
+
+    filename = "toy_univariate_gaussian_model_posteriors.pdf"
+    save_path = os.path.join(output_dir, filename)
+    fig.savefig(save_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {save_path}")
+
+
 def plot_sdp_2d_densities(
     basis_function,
     psi_sdp_list: list[np.ndarray],
@@ -961,17 +1171,19 @@ def plot_sdp_2d_densities(
     output_dir: str,
     domain: tuple = ((-5, 5), (-5, 5)),
     resolution: int | tuple = 200,
-    contour_levels: int = 8,
+    contour_levels: int = 5,
+    posterior_distribution=None,
+    show_centers: bool = False,
 ) -> None:
     """
     2D plot:
-      True prior contours (dark gray) + SDP density contours (palette).
+      True prior contours (dashed blue) + SDP density contours (palette) + optional posterior (dashed black).
     """
     os.makedirs(output_dir, exist_ok=True)
 
     def _f_grid(Phi_XY: np.ndarray, psi: np.ndarray, nx: int, ny: int) -> np.ndarray:
         fN2 = np.tensordot(Phi_XY, psi, axes=([-1], [0]))
-        fN = fN2.sum(axis=1)
+        fN = fN2[:, 0]
         return fN.reshape(ny, nx)
 
     # --- rcParams (LaTeX + font) ---
@@ -991,9 +1203,8 @@ def plot_sdp_2d_densities(
     # --- Labels ---
     names = getattr(plot_cfg.plot, "param_latex_names", {})
     fd_label = names.get("estimatedSensitivityMeasure")
-    xlabel = names.get("mu_01", r"$\mu_{01}$")
-    ylabel = names.get("mu_02", r"$\mu_{02}$")
-    approx_sym = r"$\approx$"
+    xlabel = r"$\mu_{1}$"
+    ylabel = r"$\mu_{2}$"
     geq_sym = r"$\geq$"
 
     # --- Grid ---
@@ -1014,7 +1225,12 @@ def plot_sdp_2d_densities(
     # True prior density (reshaped to grid)
     prior_density_true = prior_distribution.pdf(XY).reshape(ny, nx)
 
+    # Shared contour levels derived from the true prior density
+    p_max = prior_density_true.max()
+    shared_levels = np.linspace(0.05 * p_max, 0.86 * p_max, contour_levels)
+
     # --- Figure ---
+    legend_handles = []
     fig, ax = plt.subplots(
         1, 1,
         figsize=(plot_cfg.plot.figure.size.width*1.2,
@@ -1022,12 +1238,32 @@ def plot_sdp_2d_densities(
         dpi=plot_cfg.plot.figure.dpi,
     )
 
-    # True prior contours (dark gray)
+    if show_centers:
+        centers = basis_function.centers
+        ax.scatter(
+            centers[:, 0], centers[:, 1],
+            color="black", s=15, zorder=5, marker="x", linewidths=0.8,
+        )
+
+    if posterior_distribution is not None:
+        posterior_density = posterior_distribution.pdf(XY).reshape(ny, nx)
+        post_levels = np.linspace(0.05 * posterior_density.max(), 0.86 * posterior_density.max(), contour_levels)
+        ax.contour(
+            X, Y, posterior_density,
+            levels=post_levels,
+            colors="black",
+            linewidths=0.5,
+            linestyles="dashed",
+        )
+        legend_handles.append(Line2D([0], [0], color="black", lw=1.5,
+                              linestyle="dashed", label=r"$\tilde{\Pi}_{\mathrm{ref}}$"))
+
+    # True prior contours (dashed blue)
     ax.contour(
         X, Y, prior_density_true,
-        levels=contour_levels,
-        colors="black",
-        linewidths=1.0,
+        levels=shared_levels,
+        colors="steelblue",
+        linewidths=0.5,
         linestyles="dashed",
     )
 
@@ -1036,7 +1272,6 @@ def plot_sdp_2d_densities(
     ax.grid(True, alpha=0.15)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    legend_handles = []
 
     # SDP priors (contours in palette colors)
     for i, (psi, r_label, ksd) in enumerate(zip(psi_sdp_list, radius_labels, ksd_estimates)):
@@ -1048,13 +1283,18 @@ def plot_sdp_2d_densities(
         label = rf"r {geq_sym} {r_label} ({ksd:.1f})"
         ax.contour(
             X, Y, p_hat,
-            levels=contour_levels,
+            levels=shared_levels,
             colors=color,
-            linewidths=1.5,
+            linewidths=0.7,
         )
         legend_handles.append(Line2D([0], [0], color=color, lw=1.8, label=label))
 
-    legend_handles.append(Line2D([0], [0], color="dimgray", lw=1.5, label=r"$\Pi_{\mathrm{ref}}$"))
+    legend_handles.append(Line2D([0], [0], color="steelblue", lw=1.5,
+                          linestyle="dashed", label=r"$\Pi_{\mathrm{ref}}$"))
+    if show_centers:
+        legend_handles.append(Line2D([0], [0], color="black", marker="x", linestyle="None",
+                                     markersize=5, label="centers"))
+
     fig.legend(
         handles=legend_handles,
         title=fd_label,
@@ -1067,7 +1307,7 @@ def plot_sdp_2d_densities(
         plt.tight_layout(rect=[0, 0, 0.95, 1])
 
     # Save
-    filename = "toy_multivariate_gaussian_model_nonparametric_qcqp.pdf"
+    filename = "toy_multivariate_gaussian_model_nonparametric.pdf"
     save_path = os.path.join(output_dir, filename)
     fig.savefig(save_path, format="pdf", bbox_inches="tight")
     plt.close(fig)
@@ -2194,6 +2434,116 @@ def plot_runtime_complexity_gaussians(
     return results
 
 
+def plot_param_nonparam_runtimes_gaussians(
+    output_dir: str,
+    plot_cfg,
+    param_raw_times: Dict[str, Dict[str, Dict[str, float]]],
+    nonparam_raw_times: Dict[str, Dict[str, Dict[str, float]]],
+    dims: List[int],
+    param_ms: List[int],
+    nonparam_ms: List[int],
+    logy: bool = False,
+    ylim: Tuple[float, float] = None,
+    xlim: Tuple[float, float] = None,
+    ci_level: float = 0.95,
+) -> None:
+    """
+    Plot two runtime figures (parametric FD and nonparametric eigenvalue) and save to
+    output_dir/param_nonparam/.
+
+    Both param_raw_times and nonparam_raw_times follow the same schema:
+        {dim_str: {n_samples_str: {rep_str: elapsed_sec}}}
+    Mean and CI are computed from replicate times internally.
+    """
+    out = os.path.join(output_dir, "param_nonparam")
+    os.makedirs(out, exist_ok=True)
+
+    plt.rcParams.update({
+        "font.size": plot_cfg.plot.font.size,
+        "font.family": plot_cfg.plot.font.family,
+        "text.usetex": plot_cfg.plot.font.use_tex,
+        "text.latex.preamble": r"\usepackage{amsmath}",
+    })
+
+    alpha = 1.0 - ci_level
+
+    def _compute_mean_ci(raw_times, dims, ms):
+        time_mean = {d: [] for d in dims}
+        time_ci = {d: [] for d in dims}
+        for d in dims:
+            for m in ms:
+                rep_dict = raw_times.get(str(d), {}).get(str(m), {})
+                arr = np.array(list(rep_dict.values()), dtype=float)
+                n = len(arr)
+                mean_val = float(np.mean(arr)) if n > 0 else 0.0
+                if n > 1:
+                    se = sem(arr)
+                    t_crit = t.ppf(1.0 - alpha / 2.0, df=n - 1)
+                    ci_half = float(se * t_crit)
+                else:
+                    ci_half = 0.0
+                time_mean[d].append(mean_val)
+                time_ci[d].append(ci_half)
+        return time_mean, time_ci
+
+    param_tm, param_tc = _compute_mean_ci(param_raw_times, dims, param_ms)
+    nonparam_tm, nonparam_tc = _compute_mean_ci(nonparam_raw_times, dims, nonparam_ms)
+
+    # Compute shared ylim across both datasets if not provided
+    if ylim is None:
+        ymin, ymax = np.inf, -np.inf
+        for d in dims:
+            for mean_arr, ci_arr in [
+                (np.array(param_tm[d], dtype=float), np.array(param_tc[d], dtype=float)),
+                (np.array(nonparam_tm[d], dtype=float), np.array(nonparam_tc[d], dtype=float)),
+            ]:
+                lower = mean_arr - ci_arr
+                upper = mean_arr + ci_arr
+                if logy:
+                    lower_pos = lower[lower > 0]
+                    if lower_pos.size > 0:
+                        ymin = min(ymin, float(np.min(lower_pos)))
+                else:
+                    ymin = min(ymin, float(np.min(lower)))
+                ymax = max(ymax, float(np.max(upper)))
+        if np.isfinite(ymin) and np.isfinite(ymax):
+            if logy:
+                ylim = (ymin * 0.95, ymax * 1.05)
+            else:
+                yrange = ymax - ymin or max(abs(ymax), 1.0)
+                ylim = (ymin - 0.05 * yrange, ymax + 0.05 * yrange)
+
+    color = plot_cfg.plot.color_palette.colors[0]
+
+    def _save_runtime_fig(ms, time_mean_per_dim, time_ci_per_dim, filename):
+        fig, ax = _make_figure(plot_cfg)
+        for d in dims:
+            y = np.array(time_mean_per_dim[d], dtype=float)
+            h = np.array(time_ci_per_dim[d], dtype=float)
+            a_line = _alpha_for_dim(dims, d, alpha_min=0.3, alpha_max=1.0)
+            line_c = _rgba_with_alpha(color, a_line)
+            ls = _linestyle_for_dim(dims, d)
+            ax.plot(ms, y, label=rf"$d_\Theta={d}$", color=line_c, linewidth=2.0, linestyle=ls)
+        _apply_common_plot_style(
+            ax,
+            show_xlabel=True,
+            show_ylabel=True,
+            ylabel="Cost (sec.)",
+            xlabel=r"$m$",
+            logy=logy,
+            ylim=ylim,
+            xlim=xlim,
+        )
+        ax.legend()
+        outpath = os.path.join(out, filename)
+        fig.savefig(outpath, format="pdf")
+        plt.close(fig)
+        print(f"[Saved] {outpath}")
+
+    _save_runtime_fig(param_ms, param_tm, param_tc, "comparison_runtime_param.pdf")
+    _save_runtime_fig(nonparam_ms, nonparam_tm, nonparam_tc, "comparison_runtime_nonparam.pdf")
+
+
 def _apply_common_plot_style(
     ax,
     *,
@@ -3066,6 +3416,115 @@ def plot_gaussian_copula_grid_pair(
         plt.close(fig)
 
 
+def plot_gaussian_copula_fd_decomposition(
+    copula_grid,
+    plot_cfg,
+    output_dir: str,
+    prefix: str,
+    filename: str | None = None,
+    xlabel: str = r"$\lambda_c$",
+    label: str = r"$(G_0, \nu)$",
+    logy: bool = False,
+    ylim_fd=None,
+    ylim_g=None,
+):
+    """
+    Two-panel decomposition of the Gaussian copula FD sensitivity.
+
+    Left panel : FD(λ) vs the structural approximation h(λ)·g(0),
+                 where h(λ) = λ²/(1−λ²)² and g(0) is the score
+                 factor evaluated at the data term's λ→0 limit.
+    Right panel: Normalised score factor g(λ)/g(0), showing how much
+                 the data term itself varies with λ relative to baseline.
+
+    A flat right panel (g/g0 ≈ 1) means all growth comes from h(λ);
+    a rising right panel means the posterior tails amplify sensitivity
+    on top of the structural factor.
+    """
+    try:
+        _apply_plot_rc(plot_cfg)
+    except Exception:
+        pass
+
+    os.makedirs(output_dir, exist_ok=True)
+    if filename is None:
+        filename = f"{prefix}_copula_fd_decomposition.pdf"
+
+    lambdas = np.asarray([x[0] for x in copula_grid], dtype=float)
+    values = np.asarray([x[1] for x in copula_grid], dtype=float)
+    order = np.argsort(lambdas)
+    lambdas, values = lambdas[order], values[order]
+
+    # Structural factor h(λ) = λ² / (1 − λ²)²
+    lam2 = lambdas ** 2
+    h = lam2 / (1.0 - lam2) ** 2
+
+    # Score factor g(λ) = FD(λ) / h(λ), undefined at λ = 0
+    valid = np.abs(lambdas) > 1e-6
+    g = np.full_like(values, np.nan)
+    g[valid] = values[valid] / h[valid]
+
+    # g(0) approximation: g evaluated at the smallest valid |λ|
+    valid_idx = np.where(valid)[0]
+    if len(valid_idx) == 0:
+        return
+    g0_idx = valid_idx[np.argmin(np.abs(lambdas[valid_idx]))]
+    g0 = float(g[g0_idx])
+
+    fd_structural = h * g0  # what FD would be if g were constant at g(0)
+    g_norm = g / g0          # relative change of the score factor
+
+    try:
+        colors = list(plot_cfg.plot.color_palette.colors)
+    except Exception:
+        colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    while len(colors) < 3:
+        colors = colors * 2
+
+    fig_w = plot_cfg.plot.figure.size.width
+    fig_h = plot_cfg.plot.figure.size.height
+
+    fig, (ax_l, ax_r) = plt.subplots(
+        1, 2,
+        figsize=(fig_w * 2.0, fig_h),
+        dpi=plot_cfg.plot.figure.dpi,
+    )
+    fig.subplots_adjust(left=0.12, right=0.98, bottom=0.22, top=0.95, wspace=0.38)
+
+    # ── Left panel: FD(λ) and h(λ)·g(0) ──────────────────────────────────
+    ax_l.plot(lambdas, values, linewidth=1.5, color=colors[0],
+              label=r"$\mathrm{FD}(\lambda)$", zorder=3)
+    ax_l.plot(lambdas, fd_structural, linewidth=1.5, color=colors[1],
+              linestyle="--", label=r"$h(\lambda)\,g(0)$", zorder=2)
+    ax_l.set_xlabel(xlabel)
+    ax_l.set_ylabel(r"$\hat{\rho}_m^{\mathrm{FD}}$")
+    ax_l.spines["top"].set_visible(False)
+    ax_l.spines["right"].set_visible(False)
+    ax_l.grid(axis="y", linestyle=":", alpha=0.35)
+    ax_l.legend(title=label, frameon=False, loc="best")
+    if logy:
+        ax_l.set_yscale("log")
+    if ylim_fd is not None:
+        ax_l.set_ylim(ylim_fd)
+
+    # ── Right panel: g(λ)/g(0) ────────────────────────────────────────────
+    ax_r.plot(lambdas[valid], g_norm[valid], linewidth=1.5, color=colors[2],
+              zorder=3)
+    ax_r.axhline(1.0, linewidth=0.8, color="gray", linestyle="--", alpha=0.7,
+                 zorder=1)
+    ax_r.set_xlabel(xlabel)
+    ax_r.set_ylabel(r"$g(\lambda)\,/\,g(0)$")
+    ax_r.spines["top"].set_visible(False)
+    ax_r.spines["right"].set_visible(False)
+    ax_r.grid(axis="y", linestyle=":", alpha=0.35)
+    if ylim_g is not None:
+        ax_r.set_ylim(ylim_g)
+
+    path = os.path.join(output_dir, filename)
+    fig.savefig(path, format=filename.split(".")[-1], bbox_inches="tight")
+    plt.close(fig)
+
+
 def plot_copula_all_pairs(
     grids_and_labels,
     plot_cfg,
@@ -3174,9 +3633,7 @@ def plot_prior_neighbourhood_comparison(
     xlabel = names.get("theta", r"$\theta$")
     ref_label = names.get("baseprior", r"$\Pi_\mathrm{ref}$")
 
-    palette = list(getattr(plot_cfg.plot.color_palette, "colors", []))
-    if not palette:
-        palette = ["#005500", "#007200", "#9EB8A0", "#ADEBC8"]
+    palette = ["#005500", "#007200", "#9EB8A0", "#ADEBC8"]
     col_band = palette[2]
     col_member = palette[1]
 
@@ -3236,7 +3693,7 @@ def plot_prior_neighbourhood_comparison(
     lo_a, hi_a = np_arr.min(axis=0), np_arr.max(axis=0)
 
     fig_a, ax_a = _make_fig()
-    ax_a.fill_between(x, lo_a, hi_a, color=col_band, alpha=0.5)
+    ax_a.fill_between(x, lo_a, hi_a, color=col_band, alpha=0.3)
     for p in np_arr[:: max(1, len(np_densities) // 8)]:
         ax_a.plot(x, p, color=col_member, alpha=0.3, linewidth=0.7)
     ax_a.plot(x, pi_ref, color="black", linestyle="--", linewidth=1.5)
@@ -3265,16 +3722,15 @@ def plot_prior_neighbourhood_comparison(
 
     huber_list = []
     for q in contaminations:
-        mix = (1.0 - epsilon) * pi_ref + epsilon * q
-        Z = float(np.trapz(mix, x))
+        Z = float(np.trapz(q, x))
         if Z > 0:
-            huber_list.append(mix / Z)
+            huber_list.append(q / Z)
 
     huber_arr = np.array(huber_list)
     lo_b, hi_b = huber_arr.min(axis=0), huber_arr.max(axis=0)
 
     fig_b, ax_b = _make_fig()
-    ax_b.fill_between(x, lo_b, hi_b, color=col_band, alpha=0.5)
+    ax_b.fill_between(x, lo_b, hi_b, color=col_band, alpha=0.3)
     for p in huber_arr[:: max(1, len(huber_list) // 8)]:
         ax_b.plot(x, p, color=col_member, alpha=0.3, linewidth=0.7)
     ax_b.plot(x, pi_ref, color="black", linestyle="--", linewidth=1.5)
@@ -3306,7 +3762,7 @@ def plot_prior_neighbourhood_comparison(
     lo_c, hi_c = band_arr.min(axis=0), band_arr.max(axis=0)
 
     fig_c, ax_c = _make_fig()
-    ax_c.fill_between(x, lo_c, hi_c, color=col_band, alpha=0.5)
+    ax_c.fill_between(x, lo_c, hi_c, color=col_band, alpha=0.3)
     for p in band_arr[::2]:
         ax_c.plot(x, p, color=col_member, alpha=0.3, linewidth=0.7)
     ax_c.plot(x, pi_ref, color="black", linestyle="--", linewidth=1.5)
@@ -3331,3 +3787,143 @@ def plot_prior_neighbourhood_comparison(
             ax_d.plot(x, p, color=col_member, alpha=0.2, linewidth=0.7)
     ax_d.plot(x, pi_ref, color="black", linestyle="--", linewidth=1.5)
     _finish(fig_d, ax_d, "neighbourhood_parametric.pdf")
+
+
+def plot_param_nonparam_comparison_optimised(
+    worst_corner: dict,
+    lambda_star: np.ndarray,
+    basis_function,
+    model,
+    plot_cfg,
+    output_dir: str = "outputs/param_nonparam",
+    domain: tuple = (-15, 15),
+    resolution: int = 400,
+) -> None:
+    """
+    Compare worst-case parametric and nonparametric candidate priors found by optimisation.
+
+    Left panel : reference prior + two worst-case candidate priors.
+    Right panel : corresponding posteriors with posterior skewness gamma_1 in legend.
+
+    Args:
+        worst_corner: dict with keys 'mu', 'sigma' from parametric optimisation.
+        lambda_star: coefficient vector from nonparametric SDP optimisation.
+        basis_function: fitted basis function object (e.g. MaternBasisFunction).
+        model: fitted Bayesian model providing likelihood and prior parameters.
+        plot_cfg: plot configuration loaded from overleaf_plots_settings.yaml.
+        output_dir: directory to save the PDF.
+        domain: (lo, hi) range for the theta grid.
+        resolution: number of grid points.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    plt.rcParams.update({
+        "font.size": plot_cfg.plot.font.size,
+        "font.family": plot_cfg.plot.font.family,
+        "text.usetex": plot_cfg.plot.font.use_tex,
+        "text.latex.preamble": r"\usepackage{amsmath}",
+    })
+
+    theta = np.linspace(domain[0], domain[1], resolution)
+    x = theta[:, None]
+    dx = float(theta[1] - theta[0])
+
+    # Reference prior
+    prior_distribution = model.prior_init
+    log_g = prior_distribution.log_pdf(x).flatten()
+    g = np.exp(log_g)
+
+    # Likelihood parameters
+    x_bar = float(np.squeeze(model.x_bar))
+    n = int(model.observations_num)
+    sigma_lik_sq = float(model.loss.var)
+    loss_lr = float(model.loss_lr_init)
+    log_lik = -0.5 * loss_lr * n * (theta - x_bar) ** 2 / sigma_lik_sq
+
+    def _posterior_from_log_unnorm(log_prior_un):
+        log_post = log_prior_un + log_lik
+        log_Z = logsumexp(log_post) + np.log(dx)
+        return np.exp(log_post - log_Z)
+
+    def _skewness(pdf):
+        mu = np.sum(theta * pdf) * dx
+        sigma = np.sqrt(np.sum((theta - mu) ** 2 * pdf) * dx)
+        return np.sum(((theta - mu) / sigma) ** 3 * pdf) * dx
+
+    # Reference posterior (conjugate)
+    mu_0 = float(np.squeeze(prior_distribution.mu))
+    sigma_0_sq = float(np.squeeze(prior_distribution.var))
+    sigma_n_sq = 1.0 / (loss_lr * n / sigma_lik_sq + 1.0 / sigma_0_sq)
+    mu_n = sigma_n_sq * (loss_lr * n * x_bar / sigma_lik_sq + mu_0 / sigma_0_sq)
+    post_ref = np.exp(-0.5 * (theta - mu_n) ** 2 / sigma_n_sq) / np.sqrt(2 * np.pi * sigma_n_sq)
+
+    # Parametric worst-case candidate
+    mu_a, sigma_a = float(worst_corner["mu"]), float(worst_corner["sigma"])
+    log_pi_a = -0.5 * ((theta - mu_a) / sigma_a) ** 2 - np.log(sigma_a * np.sqrt(2 * np.pi))
+    pi_a = np.exp(log_pi_a)
+    post_a = _posterior_from_log_unnorm(log_pi_a)
+    skew_a = _skewness(post_a)
+
+    # Nonparametric worst-case candidate
+    Phi_x = basis_function.evaluate(x)
+    f = (Phi_x @ lambda_star).flatten()
+    log_pi_b_un = f + log_g
+    log_pi_b = log_pi_b_un - (logsumexp(log_pi_b_un) + np.log(dx))
+    pi_b = np.exp(log_pi_b)
+    print(f"Nonparametric prior integral (should be 1.0): {np.sum(pi_b) * dx:.8f}")
+    post_b = _posterior_from_log_unnorm(log_pi_b_un)
+    skew_b = _skewness(post_b)
+
+    # Colors & labels
+    palette = ["#007200", "#ADEBC8"]
+    col_ref = "black"
+    col_a = palette[0]
+    col_b = palette[1]
+
+    names = plot_cfg.plot.param_latex_names
+    xlabel = names.get("theta", r"$\theta$")
+    ylabel_d = names.get("nonparametric_prior", "Density")
+
+    fig_w = plot_cfg.plot.figure.size.width
+    fig_h = plot_cfg.plot.figure.size.height
+    fs = plot_cfg.plot.font.size
+
+    fig, (ax_prior, ax_post) = plt.subplots(
+        1, 2,
+        figsize=(fig_w * 2, fig_h),
+        dpi=plot_cfg.plot.figure.dpi,
+    )
+
+    # Left: priors
+    ax_prior.plot(theta, g, color=col_ref, linestyle="--", linewidth=1.5, label=r"$\mathrm{Ref.}$")
+    ax_prior.plot(theta, pi_a, color=col_a, linewidth=1.5, label=r"$\mathrm{Param.}$")
+    ax_prior.plot(theta, pi_b, color=col_b, linewidth=1.5, label=r"$\mathrm{Ours}$")
+    ax_prior.set_xlabel(xlabel)
+    ax_prior.set_ylabel(r"$\mathrm{Prior}$")
+    ax_prior.set_ylim(bottom=0)
+    ax_prior.grid(True, alpha=0.3)
+    ax_prior.spines["top"].set_visible(False)
+    ax_prior.spines["right"].set_visible(False)
+    ax_prior.legend(frameon=False, fontsize=fs * 0.9, labelspacing=0.4, handlelength=1.8, handletextpad=0.5)
+
+    # Right: posteriors + skewness in legend
+    label_a = rf"$\mathrm{{Skewness}}={0.0:.2f}$"
+    label_b = rf"$\mathrm{{Skewness}}={skew_b:.2f}$"
+
+    ax_post.plot(theta, post_ref, color=col_ref, linestyle="--", linewidth=1.5)
+    ax_post.plot(theta, post_a, color=col_a, linewidth=1.5, label=label_a)
+    ax_post.plot(theta, post_b, color=col_b, linewidth=1.5, label=label_b)
+    ax_post.set_xlabel(xlabel)
+    ax_post.set_ylabel(r"$\mathrm{Posterior}$")
+    ax_post.set_ylim(bottom=0)
+    ax_post.grid(True, alpha=0.3)
+    ax_post.spines["top"].set_visible(False)
+    ax_post.spines["right"].set_visible(False)
+    ax_post.legend(frameon=False, fontsize=fs * 0.75, labelspacing=0.5, handlelength=1.8, handletextpad=0.5)
+
+    if getattr(plot_cfg.plot.figure, "tight_layout", False):
+        fig.tight_layout()
+
+    save_path = os.path.join(output_dir, "param_nonparam_comparison.pdf")
+    fig.savefig(save_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {save_path}")

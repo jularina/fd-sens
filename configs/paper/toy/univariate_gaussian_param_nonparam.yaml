@@ -1,0 +1,57 @@
+data:
+  base_prior:
+    _target_: src.distributions.gaussian.Gaussian
+    mu: 2
+    sigma: 4
+  candidate_prior:
+    _target_: src.distributions.gaussian.Gaussian
+    mu: 2
+    sigma: 4
+  true_dgp:
+    _target_: src.distributions.gaussian.Gaussian
+    mu: 3
+    sigma: 2
+  loss:
+    _target_: src.losses.gaussian_log_likelihood.GaussianLogLikelihood
+    mu: 3
+    sigma: 2
+  loss_lr: 1.0
+  loss_lr_init: 1.0
+  observations_num: 5
+  observations_path: null
+  posterior_samples_path: null
+  prior_samples_path: null
+  posterior_samples_num: 1000
+  prior_samples_num: 1000
+
+model:
+  _target_: src.bayesian_model.gaussian.SimpleGaussianModel
+
+fd:
+  optimize:
+    prior:
+      Gaussian:
+        parameters_box_range:
+          ranges:
+            mu: [-10, 10]
+            sigma: [2, 5]
+          nums:
+            mu: 21
+            sigma: 4
+    loss:
+      GaussianLogLikelihood:
+        parameters_box_range:
+          ranges:
+            lr: [0.5, 2.5]
+          nums:
+            lr: 9
+
+optimize:
+  nonparametric:
+    basis_funcs_type: MaternBasisFunction
+    basis_funcs_kwargs: {"num_basis_functions": 10, "method": "halton", "nu": 2.0, "estimation_samples_source": "prior"}
+    radius: 10.0
+
+flags:
+  plots:
+    output_dir: outputs/paper/plots/fisher/univariate/param_nonparam

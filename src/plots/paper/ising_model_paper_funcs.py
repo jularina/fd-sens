@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MultipleLocator
+from matplotlib.ticker import MaxNLocator, ScalarFormatter
 from typing import Dict, Tuple, List
 from scipy.special import logsumexp
 
@@ -473,18 +473,17 @@ def plot_lr_vs_method_multi(
             label=method_name,
         )
 
-        max_idx = np.argmax(ys_plot)
         y_ref = np.interp(beta_ref, xs_plot, ys_plot)
         y_refs.append(y_ref)
 
-        ax.plot(
-            beta_ref,
-            y_ref,
-            marker="x",
-            color="black",
-            markersize=6,
-            zorder=5,
-        )
+        # ax.plot(
+        #     beta_ref,
+        #     y_ref,
+        #     marker="x",
+        #     color="black",
+        #     markersize=6,
+        #     zorder=5,
+        # )
 
     if loss == "ksd" and lr_bars is not None:
         ax.axvline(x=lr_bars[0], color="red", linewidth=1.0, linestyle="--")
@@ -493,7 +492,9 @@ def plot_lr_vs_method_multi(
 
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.set_xlabel(xlabel)
+
+    if loss == "dfd":
+        ax.set_xlabel(xlabel)
 
     if logy:
         ax.set_yscale("log")
@@ -506,7 +507,13 @@ def plot_lr_vs_method_multi(
     # else:
     #     ax.set_xlim(0.0, 1.0)
 
-    ax.xaxis.set_major_locator(MultipleLocator(0.1))
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=4, prune="both"))
+
+    if loss == "dfd":
+        from matplotlib.ticker import ScalarFormatter
+        fmt = ScalarFormatter(useMathText=True)
+        fmt.set_powerlimits((-4, -4))
+        ax.yaxis.set_major_formatter(fmt)
 
     ax.set_ylabel(plot_cfg.plot.param_latex_names[ylbl])
 
@@ -640,6 +647,259 @@ def plot_sdp_densities_only(
     save_path = os.path.join(output_dir, filename)
     fig.savefig(save_path, format="pdf", bbox_inches="tight")
     plt.close(fig)
+
+
+def plot_posterior_histograms(
+    samples_by_loss: Dict[str, Dict[str, np.ndarray]],
+    loss_labels: Dict[str, str],
+    method_labels: Dict[str, str],
+    plot_cfg,
+    output_dir: str,
+    dnum: int = 1000,
+    ref_samples_by_loss: Dict[str, Dict[str, np.ndarray]] = None,
+):
+    """Create one figure per loss with three overlapping KDE density lines (one per LR method)."""
+    from scipy.stats import gaussian_kde
+    _apply_plot_rc(plot_cfg)
+    colors = _palette(plot_cfg, 3)
+    line_styles = ["-", "--", "-."]
+    os.makedirs(output_dir, exist_ok=True)
+
+    for loss, loss_label in loss_labels.items():
+        fig, ax = plt.subplots(
+            figsize=(plot_cfg.plot.figure.size.width, plot_cfg.plot.figure.size.height),
+            dpi=plot_cfg.plot.figure.dpi,
+        )
+
+        ref_labeled = False
+        for i, (method, method_label) in enumerate(method_labels.items()):
+            if loss == "ksd" and method == "lyddon":
+                continue
+            color = colors[i]
+            ls = line_styles[i]
+            samples = samples_by_loss.get(loss, {}).get(method)
+            if samples is None:
+                continue
+            flat = samples.flatten()
+            xs = np.linspace(3.0, 7.0, 300)
+            ax.plot(xs, gaussian_kde(flat)(xs), color=color, linestyle=ls, linewidth=1.8, label=method_label)
+
+            if ref_samples_by_loss is not None:
+                ref = ref_samples_by_loss.get(loss, {}).get(method)
+                if ref is not None:
+                    ref_label = "Reference" if not ref_labeled else None
+                    ax.plot(xs, gaussian_kde(ref.flatten())(xs),
+                            color="black", linewidth=1.2, linestyle="--", label=ref_label)
+                    ref_labeled = True
+
+        ax.set_xlim(3.0, 7.0)
+        ax.set_xlabel(r"$\theta$")
+        ax.set_title(loss_label)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        leg = ax.legend(frameon=False, loc="center right")
+        plt.setp(leg.get_texts(), fontsize=plt.rcParams["font.size"] * 0.8)
+
+        filename = f"ising-posterior-histograms-{loss}--posteriors.pdf"
+        _save_fig(fig, output_dir, filename, plot_cfg)
+
+
+def plot_posterior_per_combination(
+    samples_by_loss: Dict[str, Dict[str, np.ndarray]],
+    ref_samples_by_loss: Dict[str, Dict[str, np.ndarray]],
+    loss_labels: Dict[str, str],
+    method_labels: Dict[str, str],
+    plot_cfg,
+    output_dir: str,
+    dnum: int = 1000,
+):
+    """One figure per (loss, method) combination showing reference and worst-case KDE."""
+    from scipy.stats import gaussian_kde
+    _apply_plot_rc(plot_cfg)
+    colors = _palette(plot_cfg, 3)
+    line_styles = ["-", "--", "-."]
+    os.makedirs(output_dir, exist_ok=True)
+    xs = np.linspace(3.0, 7.0, 300)
+    methods_list = list(method_labels.keys())
+
+    for loss, loss_label in loss_labels.items():
+        for method, method_label in method_labels.items():
+            if loss == "ksd":
+                xs = np.linspace(10.0, 120.0, 300)
+            if loss == "ksd" and method == "lyddon":
+                continue
+
+            i = methods_list.index(method)
+            color = colors[i]
+            ls = line_styles[i]
+
+            fig, ax = plt.subplots(
+                figsize=(plot_cfg.plot.figure.size.width, plot_cfg.plot.figure.size.height),
+                dpi=plot_cfg.plot.figure.dpi,
+            )
+
+            ref = ref_samples_by_loss.get(loss, {}).get(method)
+            if ref is not None:
+                ax.plot(xs, gaussian_kde(ref.flatten())(xs),
+                        color="black", linestyle="--", linewidth=1.4, label="Reference")
+
+            samples = samples_by_loss.get(loss, {}).get(method)
+            if samples is not None:
+                flat = samples.flatten()
+                ax.hist(flat, bins=20, color=color, alpha=0.3,
+                        edgecolor="white", linewidth=0.5, density=True, label="Worst-case")
+                kde_wc = gaussian_kde(flat)
+                ax.plot(xs, kde_wc(xs), color=color, linestyle=ls, linewidth=1.4)
+
+            if loss == "ksd":
+                ax.set_xlim(10, 120)
+            else:
+                ax.set_xlim(3.7, 7.0)
+            ax.set_xlabel(r"$\theta$")
+            ax.set_ylabel("Density")
+            ax.set_title(f"{loss_label}, {method_label}")
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+            leg = ax.legend(frameon=False, loc="center right")
+            plt.setp(leg.get_texts(), fontsize=plt.rcParams["font.size"] * 0.8)
+
+            filename = f"ising-posterior-{loss}-{method}-{dnum}-worstcase-reference-posterior.pdf"
+            _save_fig(fig, output_dir, filename, plot_cfg)
+
+
+def plot_loss_gradient_times_density(
+    X: np.ndarray,
+    ising_grads,
+    loss: str,
+    samples_by_method: Dict[str, np.ndarray],
+    method_labels: Dict[str, str],
+    theta_min: float,
+    theta_max: float,
+    n_theta: int,
+    plot_cfg,
+    output_dir: str,
+    filename: str,
+):
+    """
+    For each method, plot grad_loss(theta) * KDE_method(theta) on a single axis.
+    Produces one figure per loss with 3 lines (one per method).
+    """
+    import torch
+    from scipy.stats import gaussian_kde
+
+    _apply_plot_rc(plot_cfg)
+
+    theta_grid = np.linspace(theta_min, theta_max, n_theta)
+    param_tensor = torch.tensor(theta_grid, dtype=torch.float32).view(-1, 1)
+    X_tensor = torch.tensor(X, dtype=torch.float32)
+
+    with torch.no_grad():
+        if loss == "pseudolikelihood":
+            grad_vals = -ising_grads.grad_pseudologlikelihood(param_tensor, X_tensor).squeeze().numpy()
+        else:
+            grad_vals = ising_grads.grad_dfd_loss(param_tensor, X_tensor).squeeze().numpy()
+
+    finite_mask = np.isfinite(grad_vals)
+
+    fig, ax = _make_figure(plot_cfg)
+
+    colors = _palette(plot_cfg, 3)
+    line_styles = ["-", "--", "-."]
+
+    for i, (method, label) in enumerate(method_labels.items()):
+        samples = samples_by_method.get(method)
+        if samples is None or samples.size < 2:
+            continue
+        kde = gaussian_kde(samples.flatten())
+        density = kde(theta_grid)
+        product = grad_vals ** 2 * density
+        ax.plot(theta_grid[finite_mask], product[finite_mask],
+                color=colors[i], linestyle=line_styles[i], linewidth=1.5, label=label)
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    if loss == "dfd":
+        ax.set_xlabel(r"$\theta$")
+    if loss == "pseudolikelihood":
+        ax.set_ylabel(r"$(\nabla_\theta l^{\mathrm{PL}}(\theta))^2\,\tilde{\pi}_\mathrm{ref}(\theta)$")
+    else:
+        ax.set_ylabel(r"$(\nabla_\theta l^{\mathrm{DFD}}(\theta))^2\,\tilde{\pi}_\mathrm{ref}(\theta)$")
+    # ax.legend(frameon=False, loc="lower right")
+
+    _save_fig(fig, output_dir, filename, plot_cfg)
+
+
+def plot_loss_gradient_vs_theta(
+    X: np.ndarray,
+    ising_grads,
+    loss: str,
+    samples_by_method: Dict[str, np.ndarray],
+    method_labels: Dict[str, str],
+    theta_min: float,
+    theta_max: float,
+    n_theta: int,
+    plot_cfg,
+    output_dir: str,
+    filename: str,
+):
+    """
+    Plot PL or DFD loss gradient vs theta on the left axis,
+    with posterior KDEs for each method on a secondary right axis.
+    """
+    import torch
+    from scipy.stats import gaussian_kde
+
+    _apply_plot_rc(plot_cfg)
+
+    theta_grid = np.linspace(theta_min, theta_max, n_theta)
+    param_tensor = torch.tensor(theta_grid, dtype=torch.float32).view(-1, 1)
+    X_tensor = torch.tensor(X, dtype=torch.float32)
+
+    with torch.no_grad():
+        if loss == "pseudolikelihood":
+            grad_vals = -ising_grads.grad_pseudologlikelihood(param_tensor, X_tensor).squeeze().numpy()
+        else:
+            grad_vals = ising_grads.grad_dfd_loss(param_tensor, X_tensor).squeeze().numpy()
+
+    fig, ax1 = _make_figure(plot_cfg)
+
+    colors = _palette(plot_cfg, 3)
+    line_styles = ["-", "--", "-."]
+
+    ax1.plot(theta_grid, grad_vals ** 2, color="black", linewidth=1.5)
+    ax1.axhline(0, color="black", linewidth=0.6, linestyle=":")
+    ax1.spines["top"].set_visible(False)
+    if loss == "dfd":
+        ax1.set_xlabel(r"$\theta$")
+    if loss == "pseudolikelihood":
+        ax1.set_ylabel(r"$(\nabla_\theta l^{\mathrm{PL}}(\theta))^2$")
+        _fmt = ScalarFormatter(useMathText=True)
+        _fmt.set_powerlimits((5, 5))
+        ax1.yaxis.set_major_formatter(_fmt)
+    else:
+        ax1.set_ylabel(r"$(\nabla_\theta l^{\mathrm{DFD}}(\theta))^2$")
+        _fmt = ScalarFormatter(useMathText=True)
+        _fmt.set_powerlimits((2, 2))
+        ax1.yaxis.set_major_formatter(_fmt)
+
+    ax2 = ax1.twinx()
+    ax2.spines["top"].set_visible(False)
+    ax2.spines["right"].set_visible(True)
+    ax2.yaxis.set_major_locator(MaxNLocator(nbins=4, integer=True))
+    ax2.set_ylabel(r"$\tilde{\pi}_\mathrm{ref}(\theta)$")
+
+    xs_kde = np.linspace(theta_min, theta_max, 500)
+    methods_list = list(method_labels.keys())
+    for i, (method, label) in enumerate(method_labels.items()):
+        samples = samples_by_method.get(method)
+        kde = gaussian_kde(samples.flatten())
+        ax2.plot(xs_kde, kde(xs_kde), color=colors[i], linestyle=line_styles[i],
+                 linewidth=1.4, label=label)
+
+    lines, labels = ax2.get_legend_handles_labels()
+    # ax2.legend(lines, labels, frameon=False, loc="upper right")
+
+    _save_fig(fig, output_dir, filename, plot_cfg)
 
 
 def plot_basis_colored_by_eigenvector(

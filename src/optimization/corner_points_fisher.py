@@ -255,16 +255,22 @@ class OptimizationCornerPointsMultivariateGaussian(OptimizationCornerPointsBase)
         return list(itertools.product(*mu_axes))
 
     def _generate_cov_grid(self) -> list[np.ndarray]:
-        uniq_keys = ["0_0", "0_1", "1_1"]
         cov_ranges = self.param_ranges['cov']
         cov_nums = self.param_nums['cov']
-
-        axes = [np.linspace(*cov_ranges[k], cov_nums[k]) for k in uniq_keys]
+        keys = sorted(
+            (k for k in cov_ranges.keys() if int(k.split('_')[0]) <= int(k.split('_')[1])),
+            key=lambda k: (int(k.split('_')[0]), int(k.split('_')[1])),
+        )
+        indices = [(int(k.split('_')[0]), int(k.split('_')[1])) for k in keys]
+        dim = max(max(i, j) for i, j in indices) + 1
+        axes = [np.linspace(*cov_ranges[k], cov_nums[k]) for k in keys]
         cov_matrices = []
         for vals in itertools.product(*axes):
-            a00, a01, a11 = vals
-            cov = np.array([[a00, a01],
-                            [a01, a11]], dtype=float)  # symmetric
+            cov = np.zeros((dim, dim))
+            for (i, j), v in zip(indices, vals):
+                cov[i, j] = v
+                if i != j:
+                    cov[j, i] = v
             cov_matrices.append(cov)
         return cov_matrices
 
@@ -295,14 +301,14 @@ class OptimizationCornerPointsMultivariateGaussian(OptimizationCornerPointsBase)
         all_eta = np.stack([v["natural_parameters"] for v in self.parameter_grid.values()])
         eta_min = all_eta.min(axis=0)
         eta_max = all_eta.max(axis=0)
-        corners = list(itertools.product(*zip(eta_min, eta_max)))
-        corner_set = {tuple(np.round(corner, 8)) for corner in corners}
         selected_distributions = [
             v["distribution"]
             for v in self.parameter_grid.values()
-            if tuple(np.round(v["natural_parameters"], 8)) in corner_set
+            if np.all(
+                np.isclose(v["natural_parameters"], eta_min, atol=1e-8) |
+                np.isclose(v["natural_parameters"], eta_max, atol=1e-8)
+            )
         ]
-
         return selected_distributions
 
 
@@ -662,6 +668,7 @@ class OptimizationCornerPointsCompositePrior:
         x: np.ndarray,
         idx_g0: int = 0,
         idx_nu: int = 2,
+        apply_z_transform: bool = True,
     ) -> float:
         """
         True black-box evaluation of the FD objective for Gaussian copula sensitivity.
@@ -674,6 +681,8 @@ class OptimizationCornerPointsCompositePrior:
             Index of the first component.
         idx_nu : int
             Index of the second component.
+        apply_z_transform : bool
+            Passed through to fd_gaussian_copula_given_lambda.
 
         Returns
         -------
@@ -681,11 +690,20 @@ class OptimizationCornerPointsCompositePrior:
             Empirical FD estimate.
         """
         lam = float(np.asarray(x, dtype=float).reshape(-1)[0])
+        lower = upper = None
+        if apply_z_transform:
+            prior = getattr(self.posterior_estimator.model, "prior_init", None)
+            if prior is not None and hasattr(prior, "components"):
+                lower = np.array([c.low for c in prior.components], dtype=float)
+                upper = np.array([c.high for c in prior.components], dtype=float)
         return float(
             self.posterior_estimator.fd_gaussian_copula_given_lambda(
                 lam,
                 idx_g0=idx_g0,
                 idx_nu=idx_nu,
+                lower=lower,
+                upper=upper,
+                apply_z_transform=apply_z_transform,
             )
         )
 
@@ -768,6 +786,7 @@ class OptimizationCornerPointsCompositePrior:
         n_grid: int = 101,
         idx_g0: int = 0,
         idx_nu: int = 2,
+        apply_z_transform: bool = True,
     ) -> List[Tuple[float, float]]:
         """
         Evaluate the Gaussian copula FD objective on a 1D grid.
@@ -782,6 +801,9 @@ class OptimizationCornerPointsCompositePrior:
             Index of the first component.
         idx_nu : int
             Index of the second component.
+        apply_z_transform : bool
+            If True (default), rescale samples to (0,1) and apply Phi^{-1}.
+            If False, samples are used directly as z-scores.
 
         Returns
         -------
@@ -797,6 +819,7 @@ class OptimizationCornerPointsCompositePrior:
                 np.array([lam], dtype=float),
                 idx_g0=idx_g0,
                 idx_nu=idx_nu,
+                apply_z_transform=apply_z_transform,
             )
             results.append((float(lam), float(val)))
 
@@ -809,6 +832,7 @@ class OptimizationCornerPointsCompositePrior:
         n_grid: int = 101,
         idx_g0: int = 0,
         idx_nu: int = 2,
+        apply_z_transform: bool = True,
     ) -> Tuple[List[Tuple[float, float]], float, float]:
         """
         Evaluate the Gaussian copula FD objective on a grid and return
@@ -824,6 +848,9 @@ class OptimizationCornerPointsCompositePrior:
             Index of the first component.
         idx_nu : int
             Index of the second component.
+        apply_z_transform : bool
+            If True (default), rescale samples to (0,1) and apply Phi^{-1}.
+            If False, samples are used directly as z-scores.
 
         Returns
         -------
@@ -838,6 +865,7 @@ class OptimizationCornerPointsCompositePrior:
             n_grid=n_grid,
             idx_g0=idx_g0,
             idx_nu=idx_nu,
+            apply_z_transform=apply_z_transform,
         )
         lambda_star, val_star = max(results, key=lambda x: x[1])
         return results, float(lambda_star), float(val_star)

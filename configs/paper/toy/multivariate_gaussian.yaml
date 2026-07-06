@@ -29,7 +29,7 @@ data:
 model:
   _target_: src.bayesian_model.gaussian.MultivariateGaussianModel
 
-ksd:
+fd:
   kernel:
     _target_: src.kernels.inverse_multiquadric.InverseMultivariateMultiquadricKernel
     lengthscale: [[1.0, 0.0], [0.0, 1.0]]

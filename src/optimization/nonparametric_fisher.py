@@ -655,3 +655,59 @@ class OptimisationNonparametricBase:
             "primal_value": primal_value,
             "omega_star": omega_star,
         }
+
+    def optimize_through_generalized_eigenvalue(self, nugget: float = 1e-10):
+        """
+        Solve the QCQP via the generalised eigenvalue problem.
+
+        Valid when the base measure g = π_ref, which makes b = b_c = 0 and
+        c = c_c = 0.  The problem then simplifies to:
+
+            sup_{λᵀ A_c λ ≤ r} λᵀ A λ  =  r · ω_max
+
+        where ω_max is the largest generalised eigenvalue of  A λ' = ω A_c λ'.
+        The optimal solution is  λ_star = sqrt(r) · λ'_star,  with λ'_star the
+        A_c-normalised eigenvector for ω_max.  Complexity O(K³).
+
+        Args:
+            nugget: regularisation added to A_c when it is not PD.
+        """
+        from scipy.linalg import eigh as scipy_eigh
+        import warnings
+
+        b_tol = 1e-6 * max(float(np.trace(np.abs(self.A))), 1.0)
+        if float(np.linalg.norm(self.b)) > b_tol:
+            warnings.warn(
+                f"||b|| = {np.linalg.norm(self.b):.2e} is non-negligible (tol {b_tol:.2e}). "
+                "Generalised eigenvalue method assumes b = b_c = 0 (g = π_ref)."
+            )
+
+        A = self._sym(self.A)
+        A_c = self._sym(self.A_c)
+
+        min_eig = float(np.linalg.eigvalsh(A_c).min())
+        if min_eig < nugget:
+            shift = nugget - min_eig
+            A_c = A_c + shift * np.eye(self.d)
+            print(f"A_c shifted by {shift:.2e} to ensure PD for generalised eigenvalue solver.")
+
+        # scipy_eigh solves A v = ω A_c v and returns A_c-orthonormal eigenvectors
+        # in ascending eigenvalue order; the optimum is the last column.
+        omega_vals, V = scipy_eigh(A, A_c)
+
+        omega_star = float(omega_vals[-1])
+        lam_prime = V[:, -1]  # A_c-normalised: lam_prime.T @ A_c @ lam_prime = 1
+
+        lam_star = np.sqrt(max(self.r, 0.0)) * lam_prime
+        lam_star = self._canonical_sign(lam_star)
+
+        primal_value = self._evaluate_qf(lam_star)
+        constraint_value = self._evaluate_constraint_qf(lam_star)
+
+        return {
+            "lambda_star": lam_star,
+            "omega_star": omega_star,
+            "primal_value": primal_value,
+            "constraint_value": constraint_value,
+            "theoretical_value": float(self.r) * omega_star,
+        }
