@@ -1,13 +1,13 @@
 plot:
   font:
-    size: 14 # 12 match Overleaf 10pt font
+    size: 12 # 12 match Overleaf 10pt font
     family: serif  # for LaTeX compatibility
     use_tex: true  # render text with LaTeX
 
   figure:
     size:
-      width: 4.0  # 4 in inches, 2.5 for 4-col
-      height: 2.1 # 3.2 in inches, 1.67 for 4-col
+      width: 3.0  # 4 in inches, 2.5 for 4-col
+      height: 2.0 # 3.2 in inches, 1.67 for 4-col
     dpi: 300
     tight_layout: true
 
@@ -35,8 +35,8 @@ plot:
   # Green
       - "#005500" # dark green
 #      - "#007200" # forest green
-#     - "#008000"
-#     - "#00A800"
+#      - "#008000"
+      - "#00A800" #bright green
 #     - "#48BF40"
 #     - "#58AF50"
 #     - "#6C936C"
@@ -72,17 +72,15 @@ plot:
     baseprior: "$\\Pi_{\\mathrm{ref}}$"
     candidateprior: "$\\Pi$"
     logbaseprior: "$\\log\\Pi_{\\mathrm{ref}}$"
-    estimatedKSD: "$\\widehat{\\mathrm{KSD}}^2$"
     estimatedposterior: "$\\tilde{\\Pi}^m_{\\mathrm{ref}}$"
     candidateposterior: "$\\tilde{\\Pi}$"
+    candidatepriornonparam: "$\\Pi_K^{\\lambda_m^\\mathrm{sup}}$"
     estimatedKSDposteriors: "$\\widehat{\\mathrm{KSD}}^2(\\tilde{\\Pi}^m_{\\mathrm{ref}},\\ \\tilde{\\Pi})$"
     estimatedKSDposteriorsShort: "$\\mathrm{KSD}_{\\mathrm{post}}$"
     estimatedKSDrelativeShort: "$\\mathrm{KSD}_{\\mathrm{rel}}$"
     estimatedKSDposteriorsQuadraticForm: "$L_m(\\eta)$"
-#    argoptimisationProblemParam: "$\\mathrm{arg}\\sup_{ \\gamma \\in C_\\gamma} L_m(\\gamma)$"
     argoptimisationProblemNonParam: "$\\mathrm{arg}\\sup_{\\widehat{\\mathrm{KSD}}^2(\\Pi^l_{\\mathrm{ref}},\\ \\Pi_K) \\leq r} \\: L_m(\\psi)$"
     optimisationProblem: "$\\sup\\limits_{\\widehat{\\mathrm{KSD}}^2(\\Pi^l_{\\mathrm{ref}},\\ \\Pi_K) \\leq r} \\: L_m(\\psi)$"
-    optimisationProblemWoConstraint: "$L_m(\\eta^\\star)$"
     logoptimisationProblemWoConstraint: "$\\log L_m(\\eta^\\star)$"
     argoptimisationProblemParam: "$\\eta^\\star$"
     logOptimisationProblem: "$\\sup_{ \\widehat{\\mathrm{KSD}}^2(\\Pi^l_{\\mathrm{ref}},\\ \\Pi_K) \\leq r} \\: \\log L_m(\\eta)$"

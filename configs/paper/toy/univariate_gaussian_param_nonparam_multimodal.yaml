@@ -1,0 +1,85 @@
+data:
+  base_prior:
+    _target_: src.distributions.gaussian.Gaussian
+    mu: 0
+    sigma: 2
+  candidate_prior:
+    _target_: src.distributions.gaussian.Gaussian
+    mu: 0
+    sigma: 2
+  true_dgp:
+    _target_: src.distributions.gaussian.Gaussian
+    mu: 3
+    sigma: 6
+  loss:
+    _target_: src.losses.gaussian_log_likelihood.GaussianLogLikelihood
+    mu: 3
+    sigma: 6
+  loss_lr: 1.0
+  loss_lr_init: 1.0
+  observations_num: 10
+  # Fixed draw (x_bar=6.30, so posterior mean ~3.31 under the reference
+  # prior) chosen because it reliably yields a bimodal worst-case KEF
+  # candidate below; an unseeded draw sometimes lands the posterior close
+  # enough to the reference mode that only one mode survives.
+  observations_path: data/univariate_gaussian/observations_multimodal.npy
+  posterior_samples_path: null
+  # Mixture of a wide uniform background over [-10, 10] with extra mass
+  # near the reference-prior mode (0) and near the data-supported region
+  # (~4.5): this both seeds KEF basis centres over the wide interval and,
+  # used unweighted in the prior-only FD Monte Carlo estimate, realises a
+  # tail-tolerant/no-additional-weighting FD constraint.
+  prior_samples_path: data/univariate_gaussian/prior_samples_multimodal.npy
+  posterior_samples_num: 1000
+  prior_samples_num: 3000
+
+model:
+  _target_: src.bayesian_model.gaussian.SimpleGaussianModel
+
+fd:
+  optimize:
+    prior:
+      Gaussian:
+        parameters_box_range:
+          ranges:
+            mu: [-6, 6]
+            sigma: [1, 5]
+          nums:
+            mu: 25
+            sigma: 9
+    loss:
+      GaussianLogLikelihood:
+        parameters_box_range:
+          ranges:
+            lr: [0.5, 2.5]
+          nums:
+            lr: 9
+
+# Weak-data (n=10, likelihood sd=6) univariate Gaussian location experiment
+# illustrating sensitivity to multimodality. The Gaussian parametric
+# neighbourhood (mu in [-6,6], sigma in [1,5] above) can only shift/widen
+# the single mode. The KEF candidate below, with basis centres spread over
+# [-10, 10] and concentrated near both the reference mode (0) and the
+# data-supported region (~4.5), is free to develop a genuine second mode.
+#
+# The SDP's optimal lambda direction is fixed (the top generalized
+# eigenvector of the (objective, constraint) quadratic-form pencil) and
+# only its magnitude scales with radius, so bumping radius alone widens
+# the gap between the two peaks (exponentially, since density = g*exp(f))
+# without moving them. An explicit lengthscale slightly above the
+# data-driven estimate (~1.63) makes each bump wide enough to carve out a
+# deeper valley between them before a spurious third mode appears (which
+# happens above ~radius=30/lengthscale=2.2 for this setup). radius=28 with
+# lengthscale=2.0 was chosen as the most pronounced 2-mode result before
+# that breakdown: peaks near theta=0.2 (height ~0.27) and theta=1.5
+# (height ~0.77) with a trough of ~0.16, and nonparametric FD (~120)
+# comfortably exceeding the best Gaussian corner's FD (~72).
+optimize:
+  nonparametric:
+    basis_funcs_type: MaternBasisFunction
+    basis_funcs_kwargs: {"num_basis_functions": 18, "method": "halton", "nu": 1.5, "lengthscale": 8.0}
+    radius: 28.0
+
+flags:
+  plots:
+    output_dir: outputs/paper/plots/fisher/univariate/param_nonparam_multimodal

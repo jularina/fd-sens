@@ -961,9 +961,14 @@ def plot_sdp_densities(
     output_dir: str,
     domain: tuple = (-5, 5),
     resolution: int = 200,
+    posterior_distribution=None,
+    show_posterior: bool = False,
+    show_legend: bool = False,
 ) -> None:
     """
-    Single-panel plot: nonparametric SDP densities for each radius, plus the true prior density.
+    Single-panel plot: nonparametric SDP densities for each radius, plus the true prior
+    (dashed steelblue) and, optionally (if show_posterior=True), the true posterior
+    (dashed black) density.
     """
     os.makedirs(output_dir, exist_ok=True)
     plt.rcParams.update({
@@ -978,6 +983,9 @@ def plot_sdp_densities(
     Phi_x = basis_function.evaluate(x)
     prior_density_true = prior_distribution.pdf(x).flatten()
 
+    # log g(θ): reference/base-measure log-density, shared across all candidate priors
+    log_g = prior_distribution.log_pdf(x).flatten()
+
     palette = list(getattr(plot_cfg.plot.color_palette, "colors", []))
     if not palette:
         palette = ["C0", "C1", "C2", "C3", "C4", "C5"]
@@ -987,6 +995,7 @@ def plot_sdp_densities(
     xlabel = names.get("theta")
     ylabel_density = names.get("nonparametric_prior", "Density")
     true_prior_label = names.get("baseprior")
+    true_posterior_label = names.get("baseposterior", r"$\tilde{\Pi}_{\mathrm{ref}}$")
     geq_sym = r"$\geq$"
 
     fig, ax = plt.subplots(
@@ -998,8 +1007,9 @@ def plot_sdp_densities(
 
     for i, (psi, r_label, ksd) in enumerate(zip(sdp_lambda_list, radius_labels, estimates)):
         f = (Phi_x @ psi).flatten()
-        logZ = logsumexp(f) + np.log(dx)
-        p_hat = np.exp(f - logZ)
+        log_post = f + log_g
+        logZ = logsumexp(log_post) + np.log(dx)
+        p_hat = np.exp(log_post - logZ)
         color = palette[i % len(palette)]
         label = rf"r {geq_sym} {r_label} ({ksd:.1f})"
         ax.plot(x.flatten(), p_hat, label=label, linewidth=1.5, color=color)
@@ -1010,8 +1020,19 @@ def plot_sdp_densities(
         label=true_prior_label,
         linestyle="--",
         linewidth=1.5,
-        color="black",
+        color="steelblue",
     )
+
+    if show_posterior and posterior_distribution is not None:
+        posterior_density_true = posterior_distribution.pdf(x).flatten()
+        ax.plot(
+            x.flatten(),
+            posterior_density_true,
+            label=true_posterior_label,
+            linestyle="--",
+            linewidth=1.5,
+            color="black",
+        )
 
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel_density)
@@ -1019,27 +1040,26 @@ def plot_sdp_densities(
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
-    handles, labels = ax.get_legend_handles_labels()
-    leg = fig.legend(
-        handles, labels,
-        title=fd_label,
-        loc="center left",
-        bbox_to_anchor=(0.95, 0.5),
-        frameon=False,
-        labelspacing=0.4,
-        handlelength=1.8,
-        handletextpad=0.5,
-        borderpad=0.4,
-    )
-    leg.get_title().set_ha("right")
-    leg._legend_box.align = "right"
-    plt.setp(leg.get_texts(), fontsize=plt.rcParams["font.size"] * 0.9)
-    plt.setp(leg.get_title(), fontsize=plt.rcParams["font.size"] * 0.9)
+    if show_legend:
+        handles, labels = ax.get_legend_handles_labels()
+        leg = fig.legend(
+            handles, labels,
+            title=fd_label,
+            loc="center left",
+            bbox_to_anchor=(0.95, 0.5),
+            frameon=False,
+            labelspacing=0.4,
+            handlelength=1.8,
+            handletextpad=0.5,
+            borderpad=0.4,
+        )
+        plt.setp(leg.get_texts(), fontsize=plt.rcParams["font.size"] * 0.9)
+        plt.setp(leg.get_title(), fontsize=plt.rcParams["font.size"] * 0.9)
 
     if getattr(plot_cfg.plot.figure, "tight_layout", False):
         plt.tight_layout(rect=[0, 0, 0.95, 1])
 
-    filename = "toy_univariate_gaussian_model_nonparametric_density.pdf"
+    filename = "gaussian_1d_location_model_diff_radii.pdf"
     save_path = os.path.join(output_dir, filename)
     fig.savefig(save_path, format="pdf", bbox_inches="tight")
     plt.close(fig)
@@ -1173,11 +1193,14 @@ def plot_sdp_2d_densities(
     resolution: int | tuple = 200,
     contour_levels: int = 5,
     posterior_distribution=None,
+    show_posterior: bool = False,
     show_centers: bool = False,
+    show_legend: bool = False,
 ) -> None:
     """
     2D plot:
-      True prior contours (dashed blue) + SDP density contours (palette) + optional posterior (dashed black).
+      True prior contours (dashed blue) + SDP density contours (palette) + optional
+      posterior contours (dashed black), shown only if show_posterior=True.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -1203,8 +1226,8 @@ def plot_sdp_2d_densities(
     # --- Labels ---
     names = getattr(plot_cfg.plot, "param_latex_names", {})
     fd_label = names.get("estimatedSensitivityMeasure")
-    xlabel = r"$\mu_{1}$"
-    ylabel = r"$\mu_{2}$"
+    xlabel = r"$\theta_{1}$"
+    ylabel = r"$\theta_{2}$"
     geq_sym = r"$\geq$"
 
     # --- Grid ---
@@ -1225,16 +1248,19 @@ def plot_sdp_2d_densities(
     # True prior density (reshaped to grid)
     prior_density_true = prior_distribution.pdf(XY).reshape(ny, nx)
 
-    # Shared contour levels derived from the true prior density
+    # log g(θ): reference/base-measure log-density, shared across all candidate priors
+    log_g = prior_distribution.log_pdf(XY).reshape(-1)
+
+    # Contour levels derived from the true prior's own density
     p_max = prior_density_true.max()
-    shared_levels = np.linspace(0.05 * p_max, 0.86 * p_max, contour_levels)
+    prior_levels = np.linspace(0.05 * p_max, 0.86 * p_max, contour_levels)
 
     # --- Figure ---
     legend_handles = []
     fig, ax = plt.subplots(
         1, 1,
-        figsize=(plot_cfg.plot.figure.size.width*1.2,
-                 plot_cfg.plot.figure.size.height*1.2),
+        figsize=(plot_cfg.plot.figure.size.width,
+                 plot_cfg.plot.figure.size.height),
         dpi=plot_cfg.plot.figure.dpi,
     )
 
@@ -1245,7 +1271,7 @@ def plot_sdp_2d_densities(
             color="black", s=15, zorder=5, marker="x", linewidths=0.8,
         )
 
-    if posterior_distribution is not None:
+    if show_posterior and posterior_distribution is not None:
         posterior_density = posterior_distribution.pdf(XY).reshape(ny, nx)
         post_levels = np.linspace(0.05 * posterior_density.max(), 0.86 * posterior_density.max(), contour_levels)
         ax.contour(
@@ -1254,17 +1280,17 @@ def plot_sdp_2d_densities(
             colors="black",
             linewidths=0.5,
             linestyles="dashed",
+            alpha=0.8,
         )
-        legend_handles.append(Line2D([0], [0], color="black", lw=1.5,
-                              linestyle="dashed", label=r"$\tilde{\Pi}_{\mathrm{ref}}$"))
 
     # True prior contours (dashed blue)
     ax.contour(
         X, Y, prior_density_true,
-        levels=shared_levels,
+        levels=prior_levels,
         colors="steelblue",
         linewidths=0.5,
         linestyles="dashed",
+        alpha=0.8,
     )
 
     ax.set_xlabel(xlabel)
@@ -1274,18 +1300,22 @@ def plot_sdp_2d_densities(
     ax.spines["right"].set_visible(False)
 
     # SDP priors (contours in palette colors)
+    log_g_grid = log_g.reshape(ny, nx)
     for i, (psi, r_label, ksd) in enumerate(zip(psi_sdp_list, radius_labels, ksd_estimates)):
         f = _f_grid(Phi_XY, psi, nx, ny)
-        logZ = logsumexp(f) + np.log(dx * dy)
-        p_hat = np.exp(f - logZ)
+        log_post = f + log_g_grid
+        logZ = logsumexp(log_post) + np.log(dx * dy)
+        p_hat = np.exp(log_post - logZ)
+        p_hat_max = p_hat.max()
+        sdp_levels = np.linspace(0.05 * p_hat_max, 0.86 * p_hat_max, contour_levels)
 
         color = sdp_palette[i % len(sdp_palette)]
         label = rf"r {geq_sym} {r_label} ({ksd:.1f})"
         ax.contour(
             X, Y, p_hat,
-            levels=shared_levels,
+            levels=sdp_levels,
             colors=color,
-            linewidths=0.7,
+            linewidths=1.0,
         )
         legend_handles.append(Line2D([0], [0], color=color, lw=1.8, label=label))
 
@@ -1294,191 +1324,27 @@ def plot_sdp_2d_densities(
     if show_centers:
         legend_handles.append(Line2D([0], [0], color="black", marker="x", linestyle="None",
                                      markersize=5, label="centers"))
+    if show_posterior and posterior_distribution is not None:
+        legend_handles.append(Line2D([0], [0], color="black", lw=1.5,
+                                     linestyle="dashed", label=r"$\tilde{\Pi}_{\mathrm{ref}}$"))
 
-    fig.legend(
-        handles=legend_handles,
-        title=fd_label,
-        loc="center left",
-        bbox_to_anchor=(0.96, 0.5),
-        frameon=False,
-    )
-
-    if getattr(plot_cfg.plot.figure, "tight_layout", False):
-        plt.tight_layout(rect=[0, 0, 0.95, 1])
-
-    # Save
-    filename = "toy_multivariate_gaussian_model_nonparametric.pdf"
-    save_path = os.path.join(output_dir, filename)
-    fig.savefig(save_path, format="pdf", bbox_inches="tight")
-    plt.close(fig)
-
-
-def plot_sdp_2d_densities_flexible(
-    basis_functions,  # single basis or list aligned with psi_sdp_list
-    psi_sdp_list,                # list of psi (each shape (B_i,))
-    labels,                                  # radii OR basis sizes (one per psi)
-    prior_distribution,
-    plot_cfg,
-    output_dir,
-    domain: ((-5, 5), (-5, 5)),               # ((x_min, x_max), (y_min, y_max))
-    resolution: 200,              # int or (nx, ny)
-    contour_levels: int = 8,                          # number of contour levels
-    ksd_estimates: list = None,            # optional list; same length as psi_sdp_list
-    label_template: str = None,                       # e.g. r"r {geq} {label} ({approx} {ksd:.2f})" or r"B = {label}"
-    legend_title: str = None,                         # title above legend
-    true_contour_color: str = "grey",              # color for Π_ref contours
-) -> None:
-    """
-    2D plot:
-      True prior contours (dark gray) + SDP density contours (palette).
-    Works with:
-      - a single basis_function (reused for all psi), or
-      - a list of basis_functions aligned with psi_sdp_list (e.g., different #basis per curve).
-    """
-    os.makedirs(output_dir, exist_ok=True)
-
-    # ---- helpers ----
-    def _as_list(x, length: int):
-        """Broadcast a single item to a list of given length, or validate list length."""
-        if isinstance(x, (list, tuple)):
-            if len(x) != length:
-                raise ValueError(f"Expected {length} basis_functions, got {len(x)}.")
-            return list(x)
-        return [x] * length
-
-    def _f_grid(Phi_XY: np.ndarray, psi: np.ndarray, nx: int, ny: int) -> np.ndarray:
-        """
-        Contract Phi_XY over basis (last axis) with psi, then sum over dimensions.
-        - Phi_XY: (N, d, B_i) where B_i=#basis for curve i, d=#dims (2)
-        - psi   : (B_i,)
-        Returns f on grid as (ny, nx).
-        """
-        # (N, d, B) · (B,) -> (N, d) -> sum over d -> (N,) -> (ny, nx)
-        fN2 = np.tensordot(Phi_XY, psi, axes=([-1], [0]))  # (N, d)
-        fN = fN2.sum(axis=1)                                # (N,)
-        return fN.reshape(ny, nx)
-
-    # --- rcParams (LaTeX + font) ---
-    plt.rcParams.update({
-        "font.size": plot_cfg.plot.font.size,
-        "font.family": plot_cfg.plot.font.family,
-        "text.usetex": plot_cfg.plot.font.use_tex,
-        "text.latex.preamble": r"\usepackage{amsmath}",
-    })
-
-    # --- Colors (from config) ---
-    palette = list(getattr(plot_cfg.plot.color_palette, "colors", []))
-    if not palette:
-        raise ValueError("plot_cfg.plot.color_palette.colors is empty.")
-    sdp_palette = palette
-
-    # --- Labels & names ---
-    names = getattr(plot_cfg.plot, "param_latex_names", {})
-    if legend_title is None:
-        legend_title = names.get("estimatedKSDposteriorsShort")
-    xlabel = names.get("mu_01", r"$\mu_{01}$")
-    ylabel = names.get("mu_02", r"$\mu_{02}$")
-    geq_sym = r"$\geq$"
-    approx_sym = r"$\approx$"
-
-    # Default legend entry format
-    if label_template is None:
-        label_template = (r"{label} ({ksd:.1f})" if ksd_estimates is not None else r"{label}")
-
-    # --- Grid ---
-    if isinstance(resolution, int):
-        nx = ny = resolution
-    else:
-        nx, ny = resolution
-    (x_min, x_max), (y_min, y_max) = domain
-    x = np.linspace(x_min, x_max, nx)
-    y = np.linspace(y_min, y_max, ny)
-    dx = float(x[1] - x[0])
-    dy = float(y[1] - y[0])
-    X, Y = np.meshgrid(x, y)
-
-    XY = np.column_stack([X.ravel(), Y.ravel()])  # (N, 2)
-    N = XY.shape[0]
-
-    # --- Basis list aligned with curves ---
-    basis_list = _as_list(basis_functions, len(psi_sdp_list))
-
-    # --- True prior (draw once) ---
-    prior_density_true = prior_distribution.pdf(XY).reshape(ny, nx)
-
-    # --- Figure ---
-    fig, ax = plt.subplots(
-        1, 1,
-        figsize=(plot_cfg.plot.figure.size.width*1.2,
-                 plot_cfg.plot.figure.size.height*1.2),
-        dpi=plot_cfg.plot.figure.dpi,
-    )
-
-    # True prior contours (dark gray)
-    ax.contour(
-        X, Y, prior_density_true,
-        levels=contour_levels,
-        colors=true_contour_color,
-        linewidths=1,
-    )
-
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    ax.grid(True, alpha=0.15)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
-    # Legend handles: Π_ref first
-    legend_handles = []
-
-    # --- SDP curves ---
-    for i, (psi, label_val, bf) in enumerate(zip(psi_sdp_list, labels, basis_list)):
-        # Evaluate the *matching* basis for this curve
-        Phi_XY_i = bf.evaluate(XY)  # expected shape (N, 2, B_i)
-        if Phi_XY_i.ndim != 3 or Phi_XY_i.shape[0] != N or Phi_XY_i.shape[1] != 2:
-            raise ValueError(f"basis_functions[{i}].evaluate(XY) must return (N, 2, B), got {Phi_XY_i.shape}")
-
-        if psi.ndim != 1 or psi.shape[0] != Phi_XY_i.shape[-1]:
-            raise ValueError(
-                f"psi_sdp_list[{i}] shape {psi.shape} must match #basis {Phi_XY_i.shape[-1]} for that curve."
-            )
-
-        f = _f_grid(Phi_XY_i, psi, nx, ny)
-        logZ = logsumexp(f) + np.log(dx * dy)   # grid normalization
-        p_hat = np.exp(f - logZ)
-
-        color = sdp_palette[i % len(sdp_palette)]
-        if ksd_estimates is not None:
-            entry = label_template.format(label=label_val, ksd=ksd_estimates[i], geq=geq_sym, approx=approx_sym)
-        else:
-            entry = label_template.format(label=label_val, geq=geq_sym, approx=approx_sym)
-
-        ax.contour(
-            X, Y, p_hat,
-            levels=contour_levels,
-            colors=color,
-            linewidths=1.5,
+    if show_legend:
+        fig.legend(
+            handles=legend_handles,
+            title=fd_label,
+            loc="center left",
+            bbox_to_anchor=(0.96, 0.5),
+            frameon=False,
         )
-        legend_handles.append(Line2D([0], [0], color=color, lw=1.8, label=entry))
-
-    legend_handles.append(Line2D([0], [0], color=true_contour_color, lw=1, label=r"$\Pi_{\mathrm{ref}}$"))
-    fig.legend(
-        handles=legend_handles,
-        title=legend_title,
-        loc="center left",
-        bbox_to_anchor=(0.96, 0.5),
-        frameon=False,
-    )
 
     if getattr(plot_cfg.plot.figure, "tight_layout", False):
         plt.tight_layout(rect=[0, 0, 0.95, 1])
 
     # Save
-    filename = "toy_multivariate_gaussian_model_nonparametric_optimisation_densities_per_basis_functions_num.pdf"
+    filename = "gaussian_2d_location_model_diff_radii.pdf"
     save_path = os.path.join(output_dir, filename)
     fig.savefig(save_path, format="pdf", bbox_inches="tight")
     plt.close(fig)
-    print(f"[INFO] Saved 2D contours-only plot: {save_path}")
 
 
 def plot_multivariate_joint_prior_densities_by_fd(results, output_dir, plot_cfg, true_theta=None, true_cov=None):
@@ -3136,12 +3002,12 @@ def plot_runtime_nonparametric_with_ci(
     fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=fig_dpi)
     ax.plot(basis_funcs_nums, means_param,
             marker=marker, markersize=ms, linewidth=lw,
-            color=palette[2])
+            color="#6C936C")
     ax.fill_between(
         basis_funcs_nums,
         np.array(means_param) - np.array(cis_param),
         np.array(means_param) + np.array(cis_param),
-        color=palette[2], alpha=0.5
+        color="#6C936C",
     )
 
     # Axes styling
@@ -3151,9 +3017,144 @@ def plot_runtime_nonparametric_with_ci(
     ax.set_xticklabels([str(v) if i % 2 == 0 else ""
                         for i, v in enumerate(basis_funcs_nums)])
     ax.set_ylabel(y_label)
+    ax.ticklabel_format(axis="y", style="sci", scilimits=(-4, 4), useMathText=True)
     ax.grid(True, alpha=0.3)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+
+    if tight:
+        fig.tight_layout()
+
+    save_path = os.path.join(output_dir, filename)
+    fig.savefig(save_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_runtime_nonparametric_diff_samples_num_with_ci(
+    times_nonparametric: dict[int, dict[int, dict[int, float]]],
+    plot_cfg: Any,
+    output_dir: str,
+    ci_level: float = 0.95,
+    filename: str = "runtime_nonparametric_diff_samples_nums.pdf",
+) -> None:
+    """
+    Single-axis plot of nonparametric optimisation runtime against the number of
+    posterior/prior samples m, with one line per number of basis functions k.
+
+    Parameters
+    ----------
+    times_nonparametric : dict
+        {samples_num: {basis_funcs_num: {run_iter: time, ...}, ...}, ...}
+
+    ci_level : float
+        Confidence interval level (default=0.95).
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Helper
+    def _deep_get(cfg, path, default=None):
+        cur = cfg
+        for key in path.split('.'):
+            if cur is None:
+                return default
+            if isinstance(cur, dict):
+                cur = cur.get(key, None)
+            else:
+                cur = getattr(cur, key, None)
+        return default if cur is None else cur
+
+    plt.rcParams.update({
+        "font.size": _deep_get(plot_cfg, "plot.font.size", 12),
+        "font.family": _deep_get(plot_cfg, "plot.font.family", "serif"),
+        "text.usetex": bool(_deep_get(plot_cfg, "plot.font.use_tex", False)),
+        "text.latex.preamble": r"\usepackage{amsmath}",
+    })
+
+    fig_w = float(_deep_get(plot_cfg, "plot.figure.size.width", 6.0))
+    fig_h = float(_deep_get(plot_cfg, "plot.figure.size.height", 4.0))
+    fig_dpi = int(_deep_get(plot_cfg, "plot.figure.dpi", 150))
+    lw = float(_deep_get(plot_cfg, "plot.line.width", 1.0))
+    marker = _deep_get(plot_cfg, "plot.marker.style", "o")
+    ms = float(_deep_get(plot_cfg, "plot.marker.size", 4.0))
+    grid_alpha = float(_deep_get(plot_cfg, "plot.grid.alpha", 0.7))
+    tight = bool(_deep_get(plot_cfg, "plot.figure.tight_layout", True))
+
+    names = _deep_get(plot_cfg, "plot.param_latex_names", {}) or {}
+    x_label = names.get("numPosteriorSamples", r"$m$")
+    y_label = names.get("runtimeSeconds", "Time (sec.)")
+
+    # Colors
+    palette = list(getattr(_deep_get(plot_cfg, "plot.color_palette", {}), "colors", []))
+    if not palette:
+        palette = [f"C{i}" for i in range(10)]
+
+    # --- Confidence interval helper
+    def mean_ci(data, level=ci_level):
+        arr = np.array(data)
+        mean = arr.mean()
+        if len(arr) > 1:
+            se = sem(arr)
+            h = se * t.ppf((1 + level) / 2., len(arr) - 1)
+        else:
+            h = 0.0
+        return mean, h
+
+    def _to_int(x):
+        return int(x)
+
+    # --- Process: one series of (m, mean, ci) per basis size k
+    samples_nums = sorted(times_nonparametric.keys(), key=_to_int)
+    by_basis = defaultdict(lambda: ([], [], []))
+    for m in samples_nums:
+        for k, runs in times_nonparametric[m].items():
+            vals = list(runs.values())
+            mean, h = mean_ci(vals)
+            xs, means, cis = by_basis[k]
+            xs.append(int(m))
+            means.append(mean)
+            cis.append(h)
+
+    # --- Plot
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=fig_dpi)
+    handles_ordered, labels_ordered = [], []
+
+    for i, k in enumerate(sorted(by_basis.keys(), key=_to_int)):
+        xs, means, cis = by_basis[k]
+        color = palette[i % len(palette)]
+        h_line = ax.plot(
+            xs, means,
+            marker=marker, markersize=ms, linewidth=lw,
+            color=color, label=rf"K={k}",
+        )[0]
+        ax.fill_between(
+            xs,
+            np.array(means) - np.array(cis),
+            np.array(means) + np.array(cis),
+            color=color, alpha=0.4,
+        )
+        handles_ordered.append(h_line)
+        labels_ordered.append(rf"K={k}")
+
+    # Axes styling
+    ax.set_xlabel(x_label)
+    ax.set_xticks([int(m) for m in samples_nums])
+    ax.set_xticklabels([int(m) for m in samples_nums])
+    ax.set_ylabel(y_label)
+    ax.ticklabel_format(axis="y", style="sci", scilimits=(-4, 4), useMathText=True)
+    ax.grid(True, alpha=grid_alpha)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    legend_fs = float(_deep_get(plot_cfg, "plot.legend.fontsize",
+                                plt.rcParams["font.size"] * 0.8))
+    ax.legend(
+        handles_ordered, labels_ordered,
+        loc="best",
+        fontsize=legend_fs,
+        frameon=True,
+        fancybox=True,
+        framealpha=0.95,
+    )
 
     if tight:
         fig.tight_layout()
@@ -3789,7 +3790,7 @@ def plot_prior_neighbourhood_comparison(
     _finish(fig_d, ax_d, "neighbourhood_parametric.pdf")
 
 
-def plot_param_nonparam_comparison_optimised(
+def plot_param_nonparam_skewness_comparison(
     worst_corner: dict,
     lambda_star: np.ndarray,
     basis_function,
@@ -3923,7 +3924,209 @@ def plot_param_nonparam_comparison_optimised(
     if getattr(plot_cfg.plot.figure, "tight_layout", False):
         fig.tight_layout()
 
-    save_path = os.path.join(output_dir, "param_nonparam_comparison.pdf")
+    save_path = os.path.join(output_dir, "gaussian_1d_location_model_param_nonparam_skewness_comparison.pdf")
+    fig.savefig(save_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {save_path}")
+
+
+def plot_param_nonparam_kurtosis_comparison(
+    worst_corner: dict,
+    lambda_star: np.ndarray,
+    basis_function,
+    model,
+    plot_cfg,
+    output_dir: str = "outputs/param_nonparam",
+    domain: tuple = (-20, 20),
+    resolution: int = 400,
+    y_log: bool = False,
+    legend: bool = False,
+) -> None:
+    """
+    Compare worst-case parametric and nonparametric candidate priors. With
+    y_log=True, the density axis is log-scaled so tail-weight differences
+    (invisible on a linear density scale) stand out.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    plt.rcParams.update({
+        "font.size": plot_cfg.plot.font.size,
+        "font.family": plot_cfg.plot.font.family,
+        "text.usetex": plot_cfg.plot.font.use_tex,
+        "text.latex.preamble": r"\usepackage{amsmath}",
+    })
+
+    theta = np.linspace(domain[0], domain[1], resolution)
+    x = theta[:, None]
+    dx = float(theta[1] - theta[0])
+    floor = 1e-45
+
+    # Reference prior
+    prior_distribution = model.prior_init
+    log_g = prior_distribution.log_pdf(x).flatten()
+    g = np.exp(log_g)
+
+    # Parametric worst-case candidate
+    mu_a, sigma_a = float(worst_corner["mu"]), float(worst_corner["sigma"])
+    log_pi_a = -0.5 * ((theta - mu_a) / sigma_a) ** 2 - np.log(sigma_a * np.sqrt(2 * np.pi))
+    pi_a = np.exp(log_pi_a)
+
+    # Nonparametric worst-case candidate
+    Phi_x = basis_function.evaluate(x)
+    f = (Phi_x @ lambda_star).flatten()
+    log_pi_b_un = f + log_g
+    log_pi_b = log_pi_b_un - (logsumexp(log_pi_b_un) + np.log(dx))
+    pi_b = np.exp(log_pi_b)
+
+    def _excess_kurtosis(pdf: np.ndarray) -> float:
+        mu = np.sum(theta * pdf) * dx
+        sigma = np.sqrt(np.sum((theta - mu) ** 2 * pdf) * dx)
+        return float(np.sum(((theta - mu) / sigma) ** 4 * pdf) * dx - 3.0)
+
+    # pi_a is an exact Gaussian by construction, whose excess kurtosis is
+    # exactly 0 analytically; computing it via truncated-domain quadrature
+    # is numerically unstable (4th moment is tail-sensitive, and the fixed
+    # domain isn't guaranteed to cover +-few sigma_a around mu_a), so it's
+    # hardcoded rather than estimated.
+    kurt_a = 0.0
+    kurt_b = _excess_kurtosis(pi_b)
+
+    # Colors & labels
+    palette = ["#007200", "#ADEBC8"]
+    col_ref = "steelblue"
+    col_a = palette[0]
+    col_b = palette[1]
+
+    names = plot_cfg.plot.param_latex_names
+    xlabel = names.get("theta", r"$\theta$")
+    ref_label = names.get("baseprior", r"$\mathrm{Ref.}$")
+    nonparam_label = names.get("candidatepriornonparam", r"$\mathrm{Ours}$")
+
+    fig_w = plot_cfg.plot.figure.size.width
+    fig_h = plot_cfg.plot.figure.size.height
+    fs = plot_cfg.plot.font.size
+
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=plot_cfg.plot.figure.dpi)
+
+    label_a = rf"$\mathrm{{Param.}}$ (kurt.={kurt_a:.2f})"
+    label_b = rf"{nonparam_label} (kurt.={kurt_b:.2f})"
+
+    ax.plot(theta, np.maximum(g, floor), color=col_ref, linestyle="--", linewidth=1.5, label=ref_label)
+    ax.plot(theta, np.maximum(pi_a, floor), color=col_a, linewidth=1.5, label=label_a)
+    ax.plot(theta, np.maximum(pi_b, floor), color=col_b, linewidth=1.5, label=label_b)
+    if y_log:
+        ax.set_yscale("log")
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(r"$\pi$")
+    ax.grid(True, alpha=0.3, which="both")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    if legend:
+        ax.legend(frameon=False, fontsize=fs * 0.9, labelspacing=0.4, handlelength=1.8, handletextpad=0.5)
+
+    if getattr(plot_cfg.plot.figure, "tight_layout", False):
+        fig.tight_layout()
+
+    save_path = os.path.join(output_dir, "gaussian_1d_location_model_param_nonparam_kurtosis_comparison.pdf")
+    fig.savefig(save_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {save_path}")
+
+
+def plot_param_nonparam_multimodality_comparison(
+    worst_corner: dict,
+    lambda_star: np.ndarray,
+    basis_function,
+    model,
+    plot_cfg,
+    output_dir: str = "outputs/param_nonparam",
+    domain: tuple = (-10, 6),
+    resolution: int = 400,
+    legend: bool = False,
+) -> None:
+    """
+    Compare worst-case parametric and nonparametric candidate priors, reporting
+    the number of density modes (local maxima) in the legend. The Gaussian
+    parametric family is unimodal by construction; the nonparametric
+    basis-function tilt is not restricted to unimodal shapes.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    plt.rcParams.update({
+        "font.size": plot_cfg.plot.font.size,
+        "font.family": plot_cfg.plot.font.family,
+        "text.usetex": plot_cfg.plot.font.use_tex,
+        "text.latex.preamble": r"\usepackage{amsmath}",
+    })
+
+    theta = np.linspace(domain[0], domain[1], resolution)
+    x = theta[:, None]
+    dx = float(theta[1] - theta[0])
+
+    # Reference prior
+    prior_distribution = model.prior_init
+    log_g = prior_distribution.log_pdf(x).flatten()
+    g = np.exp(log_g)
+
+    # Parametric worst-case candidate
+    mu_a, sigma_a = float(worst_corner["mu"]), float(worst_corner["sigma"])
+    log_pi_a = -0.5 * ((theta - mu_a) / sigma_a) ** 2 - np.log(sigma_a * np.sqrt(2 * np.pi))
+    pi_a = np.exp(log_pi_a)
+
+    # Nonparametric worst-case candidate
+    Phi_x = basis_function.evaluate(x)
+    f = (Phi_x @ lambda_star).flatten()
+    log_pi_b_un = f + log_g
+    log_pi_b = log_pi_b_un - (logsumexp(log_pi_b_un) + np.log(dx))
+    pi_b = np.exp(log_pi_b)
+
+    def _count_modes(pdf: np.ndarray, rel_prominence: float = 0.05) -> int:
+        """Count local maxima whose height is at least rel_prominence * max(pdf)."""
+        is_local_max = (pdf[1:-1] > pdf[:-2]) & (pdf[1:-1] > pdf[2:])
+        peak_idx = np.nonzero(is_local_max)[0] + 1
+        if peak_idx.size == 0:
+            return 1
+        threshold = rel_prominence * pdf.max()
+        return int(np.sum(pdf[peak_idx] >= threshold))
+
+    modes_a = _count_modes(pi_a)
+    modes_b = _count_modes(pi_b)
+
+    # Colors & labels
+    palette = ["#007200", "#ADEBC8"]
+    col_ref = "steelblue"
+    col_a = palette[0]
+    col_b = palette[1]
+
+    names = plot_cfg.plot.param_latex_names
+    xlabel = names.get("theta", r"$\theta$")
+    ref_label = names.get("baseprior", r"$\mathrm{Ref.}$")
+    nonparam_label = names.get("candidatepriornonparam", r"$\mathrm{Ours}$")
+
+    fig_w = plot_cfg.plot.figure.size.width
+    fig_h = plot_cfg.plot.figure.size.height
+    fs = plot_cfg.plot.font.size
+
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=plot_cfg.plot.figure.dpi)
+
+    label_a = rf"$\mathrm{{Param.}}$ (modes: {modes_a})"
+    label_b = rf"{nonparam_label} (modes: {modes_b})"
+
+    ax.plot(theta, g, color=col_ref, linestyle="--", linewidth=1.5, label=ref_label)
+    ax.plot(theta, pi_a, color=col_a, linewidth=1.5, label=label_a)
+    ax.plot(theta, pi_b, color=col_b, linewidth=1.5, label=label_b)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(r"$\pi$")
+    ax.set_ylim(bottom=0)
+    ax.grid(True, alpha=0.3)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    if legend:
+        ax.legend(frameon=False, fontsize=fs * 0.9, labelspacing=0.4, handlelength=1.8, handletextpad=0.5)
+
+    if getattr(plot_cfg.plot.figure, "tight_layout", False):
+        fig.tight_layout()
+
+    save_path = os.path.join(output_dir, "gaussian_1d_location_model_param_nonparam_multimodality_comparison.pdf")
     fig.savefig(save_path, format="pdf", bbox_inches="tight")
     plt.close(fig)
     print(f"Saved {save_path}")

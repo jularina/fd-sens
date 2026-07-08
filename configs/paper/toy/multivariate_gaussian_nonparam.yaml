@@ -30,7 +30,7 @@ model:
 optimize:
   nonparametric:
     basis_funcs_type: MaternBasisFunctionMultidim
-    basis_funcs_kwargs: {"num_basis_functions": 30, "method": "halton", "nu": 3, "estimation_samples_source": "posterior", "estimation_centers_source": "posterior", "metric": "full"}
+    basis_funcs_kwargs: {"num_basis_functions": 20, "method": "halton", "nu": 7, "estimation_samples_source": "prior", "estimation_centers_source": "prior", "metric": "full"}
 
   parametric:
    prior:

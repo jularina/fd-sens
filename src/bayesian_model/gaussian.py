@@ -4,7 +4,6 @@ from typing import Dict, Any
 import numpy as np
 
 from bayesian_model.base import BayesianModelExtended
-from src.bayesian_model.base import BayesianModel
 from src.distributions.composite import CompositeProduct
 from src.utils.distributions import DISTRIBUTION_MAP
 from src.utils.files_operations import instantiate_from_target_str
@@ -19,15 +18,24 @@ class SimpleGaussianModel(BayesianModelExtended):
     def __init__(self, data_config):
         super().__init__(data_config)
 
+    def compute_posterior_params(self) -> tuple:
+        """
+        Compute the conjugate posterior Normal(mu_n, sigma_n^2) w.r.t. the reference
+        prior (prior_init), and cache mu_n/sigma_n2 on the model.
+        """
+        sigma_n2 = 1 / (self.observations_num / self.loss.var + 1 / self.prior_init.var)
+        mu_n = sigma_n2 * (self.observations_num * self.x_bar / self.loss.var +
+                           self.prior_init.mu / self.prior_init.var)
+
+        self.mu_n = mu_n
+        self.sigma_n2 = sigma_n2
+        return mu_n, sigma_n2
+
     def sample_posterior(self, n_samples: int = 1000) -> np.ndarray:
         """
         Sample from conjugate posterior: Normal(mu_n, sigma_n^2).
         """
-        sigma_n2 = 1 / (self.observations_num / self.loss.var + 1 / self.prior.var)
-        mu_n = sigma_n2 * (self.observations_num * self.x_bar / self.loss.var + self.prior.mu / self.prior.var)
-
-        self.mu_n = mu_n
-        self.sigma_n2 = sigma_n2
+        mu_n, sigma_n2 = self.compute_posterior_params()
         sigma_n = np.sqrt(sigma_n2)
 
         return np.random.normal(mu_n, sigma_n, size=(n_samples, 1))
@@ -42,11 +50,12 @@ class MultivariateGaussianModel(BayesianModelExtended):
         super().__init__(data_config)
         self.dim = self.observations.shape[1]
 
-    def sample_posterior(self, n_samples: int = 1000) -> np.ndarray:
+    def compute_posterior_params(self) -> tuple:
         """
-        Closed-form posterior for mean with known covariance.
+        Compute the closed-form posterior for the mean with known covariance,
+        w.r.t. the reference prior (prior_init), and cache mu_n/Sigma_n on the model.
         """
-        mu0, Sigma0 = self.prior.mu, self.prior.cov
+        mu0, Sigma0 = self.prior_init.mu, self.prior_init.cov
         Sigma_obs = self.loss.cov
 
         Sigma_obs_inv = np.linalg.inv(Sigma_obs)
@@ -59,7 +68,13 @@ class MultivariateGaussianModel(BayesianModelExtended):
 
         self.mu_n = mu_n
         self.Sigma_n = Sigma_n
+        return mu_n, Sigma_n
 
+    def sample_posterior(self, n_samples: int = 1000) -> np.ndarray:
+        """
+        Closed-form posterior for mean with known covariance.
+        """
+        mu_n, Sigma_n = self.compute_posterior_params()
         return np.random.multivariate_normal(mu_n, Sigma_n, size=n_samples)
 
     def set_composite_prior_parameters(self, components: Dict[str, Any], combine_rule: str = "product", reset_from_init: bool = True,) -> None:

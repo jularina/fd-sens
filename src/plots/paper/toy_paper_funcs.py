@@ -12,13 +12,11 @@ from matplotlib.patches import Ellipse, Rectangle
 from matplotlib.cm import ScalarMappable
 from scipy.special import logsumexp
 import os
-from typing import Any
 from matplotlib.legend_handler import HandlerBase
 from matplotlib.lines import Line2D
 from scipy.stats import sem, t
 
 from src.distributions.gaussian import Gaussian
-
 
 
 def plot_ksd_eta_surface(
@@ -881,7 +879,6 @@ def plot_multivariate_priors_densities_by_ksd(all_params, all_ksds, output_dir, 
 
     os.makedirs(output_dir, exist_ok=True)
 
-
     sorted_keys = sorted(all_ksds, key=lambda k: all_ksds[k])
     palette_colors = plot_cfg.plot.color_palette.colors[:3]
     rgb_colors = [to_rgb(c) for c in palette_colors[::-1]]
@@ -1693,6 +1690,9 @@ def plot_sdp_2d_densities(
     # True prior density (reshaped to grid)
     prior_density_true = prior_distribution.pdf(XY).reshape(ny, nx)
 
+    # log g(θ): reference/base-measure log-density, shared across all candidate priors
+    log_g_grid = prior_distribution.log_pdf(XY).reshape(ny, nx)
+
     # --- Figure ---
     fig, ax = plt.subplots(
         1, 1,
@@ -1719,8 +1719,9 @@ def plot_sdp_2d_densities(
     # SDP priors (contours in palette colors)
     for i, (psi, r_label, ksd) in enumerate(zip(psi_sdp_list, radius_labels, ksd_estimates)):
         f = _f_grid(Phi_XY, psi, nx, ny)
-        logZ = logsumexp(f) + np.log(dx * dy)
-        p_hat = np.exp(f - logZ)
+        log_post = f + log_g_grid
+        logZ = logsumexp(log_post) + np.log(dx * dy)
+        p_hat = np.exp(log_post - logZ)
 
         color = sdp_palette[i % len(sdp_palette)]
         label = rf"r {geq_sym} {r_label} ({ksd:.1f})"
@@ -1749,6 +1750,7 @@ def plot_sdp_2d_densities(
     save_path = os.path.join(output_dir, filename)
     fig.savefig(save_path, format="pdf", bbox_inches="tight")
     plt.close(fig)
+
 
 def plot_sdp_2d_densities_flexible(
     basis_functions,  # single basis or list aligned with psi_sdp_list
@@ -1843,6 +1845,9 @@ def plot_sdp_2d_densities_flexible(
     # --- True prior (draw once) ---
     prior_density_true = prior_distribution.pdf(XY).reshape(ny, nx)
 
+    # log g(θ): reference/base-measure log-density, shared across all candidate priors
+    log_g_grid = prior_distribution.log_pdf(XY).reshape(ny, nx)
+
     # --- Figure ---
     fig, ax = plt.subplots(
         1, 1,
@@ -1881,8 +1886,9 @@ def plot_sdp_2d_densities_flexible(
             )
 
         f = _f_grid(Phi_XY_i, psi, nx, ny)
-        logZ = logsumexp(f) + np.log(dx * dy)   # grid normalization
-        p_hat = np.exp(f - logZ)
+        log_post = f + log_g_grid
+        logZ = logsumexp(log_post) + np.log(dx * dy)   # grid normalization
+        p_hat = np.exp(log_post - logZ)
 
         color = sdp_palette[i % len(sdp_palette)]
         if ksd_estimates is not None:
@@ -1917,13 +1923,16 @@ def plot_sdp_2d_densities_flexible(
     plt.close(fig)
     print(f"[INFO] Saved 2D contours-only plot: {save_path}")
 
+
 class _TextOnlyHandler(HandlerBase):
     """Legend handler that reserves space but draws no glyph (text-only row)."""
+
     def create_artists(
         self, legend, orig_handle, xdescent, ydescent, width, height, fontsize, trans
     ):
         return [Rectangle((0, 0), 0, 0, transform=trans,
                           facecolor="none", edgecolor="none")]
+
 
 def plot_runtime_parametric_nonparametric(
     times_list_parametric: list[tuple[int, float]],

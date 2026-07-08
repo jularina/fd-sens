@@ -1,5 +1,6 @@
 from src.optimization.nonparametric_fisher import OptimisationNonparametricBase
-from src.distributions.gaussian import MultivariateGaussian
+from src.distributions.gaussian import Gaussian, MultivariateGaussian
+import numpy as np
 from src.optimization.qcqp import ParametricQCQPBase
 from src.optimization.corner_points_fisher import *
 from src.utils.files_operations import *
@@ -10,11 +11,16 @@ from src.discrepancies.posterior_fisher import PosteriorFDParametric, PosteriorF
 import warnings
 import hydra
 from hydra.utils import instantiate, get_original_cwd
-from omegaconf import open_dict
 import time
-import json
 
 warnings.filterwarnings("ignore", category=UserWarning)
+
+
+def _json_keys_to_int(obj):
+    """Recursively cast dict keys serialised as strings by json back to int."""
+    if isinstance(obj, dict):
+        return {int(k): _json_keys_to_int(v) for k, v in obj.items()}
+    return obj
 
 
 @hydra.main(version_base="1.1", config_path="../../configs/paper/toy/",
@@ -183,42 +189,46 @@ def run_gaussian_priors_nonparametric_diff_radii(cfg, save_samples: bool = False
     output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
     plot_cfg = load_plot_config(plot_config_path)
 
-    plot_sdp_densities_and_logprior(
-        basis_function=optimizer.basis_function,
-        sdp_lambda_list=sdp_lambda_list,
-        radius_labels=radius_labels,
-        estimates=sdp_fd_estimates_list,
-        prior_distribution=model.prior_init,
-        plot_cfg=plot_cfg,
-        output_dir=output_dir,
-        domain=(-10, 12),
-        resolution=500
-    )
+    # plot_sdp_densities_and_logprior(
+    #     basis_function=optimizer.basis_function,
+    #     sdp_lambda_list=sdp_lambda_list,
+    #     radius_labels=radius_labels,
+    #     estimates=sdp_fd_estimates_list,
+    #     prior_distribution=model.prior_init,
+    #     plot_cfg=plot_cfg,
+    #     output_dir=output_dir,
+    #     domain=(-10, 12),
+    #     resolution=500
+    # )
 
+    mu_n, sigma_n2 = model.compute_posterior_params()
+    posterior_dist = Gaussian(mu=mu_n, sigma=np.sqrt(sigma_n2))
     plot_sdp_densities(
         basis_function=optimizer.basis_function,
         sdp_lambda_list=sdp_lambda_list,
         radius_labels=radius_labels,
         estimates=sdp_fd_estimates_list,
         prior_distribution=model.prior_init,
+        posterior_distribution=posterior_dist,
         plot_cfg=plot_cfg,
         output_dir=output_dir,
         domain=(-10, 12),
-        resolution=500
+        resolution=500,
+        show_legend=False,
     )
 
-    plot_sdp_posterior_comparison(
-        basis_function=optimizer.basis_function,
-        sdp_lambda_list=sdp_lambda_list,
-        radius_labels=radius_labels,
-        estimates=sdp_fd_estimates_list,
-        prior_distribution=model.prior_init,
-        model=model,
-        plot_cfg=plot_cfg,
-        output_dir=output_dir,
-        domain=(1, 4),
-        resolution=500,
-    )
+    # plot_sdp_posterior_comparison(
+    #     basis_function=optimizer.basis_function,
+    #     sdp_lambda_list=sdp_lambda_list,
+    #     radius_labels=radius_labels,
+    #     estimates=sdp_fd_estimates_list,
+    #     prior_distribution=model.prior_init,
+    #     model=model,
+    #     plot_cfg=plot_cfg,
+    #     output_dir=output_dir,
+    #     domain=(1, 4),
+    #     resolution=500,
+    # )
 
 
 @hydra.main(version_base="1.1", config_path="../../configs/paper/toy/",
@@ -258,12 +268,13 @@ def run_multivariate_gaussian_priors_nonparametric(cfg, save_samples: bool = Fal
         output_dir=output_dir,
         domain=((-20, 20), (-20, 20)),
         resolution=300,
+        show_legend=True,
     )
 
 
 @hydra.main(version_base="1.1", config_path="../../configs/paper/toy/",
             config_name="multivariate_gaussian_nonparam")
-def run_multivariate_gaussian_priors_nonparametric_diff_radii(cfg, save_samples: bool = True) -> None:
+def run_multivariate_gaussian_priors_nonparametric_diff_radii(cfg, save_samples: bool = False) -> None:
     """
     Main function to compute FD and perform prior parameter grid search using Hydra for configuration.
 
@@ -284,7 +295,7 @@ def run_multivariate_gaussian_priors_nonparametric_diff_radii(cfg, save_samples:
     estimator_posterior = PosteriorFDNonParametric(model=model)
     sdp_lambda_list, fd_estimates_list, radius_labels = [], [], []
 
-    for radius in [0.5, 15.0]:  # [0.5, 1.0, 5.0, 15.0]
+    for radius in [0.5, 1.0, 5.0, 10.0]:  # [0.5, 1.0, 5.0, 15.0]
         optimizer = OptimisationNonparametricBase(
             estimator_posterior,
             estimator_prior,
@@ -313,322 +324,16 @@ def run_multivariate_gaussian_priors_nonparametric_diff_radii(cfg, save_samples:
         posterior_distribution=posterior_dist,
         plot_cfg=plot_cfg,
         output_dir=output_dir,
-        domain=((-10, 10), (-10, 10)),
+        domain=((-6, 10), (-5, 10)),
         resolution=500,
-        contour_levels=10
+        contour_levels=5,
+        show_legend=False,
     )
-
-
-@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/",
-            config_name="multivariate_gaussian_nonparam")
-def run_multivariate_gaussian_nonparam_runtimes(cfg) -> None:
-    """
-    Runtime benchmark: nonparametric eigenvalue optimisation across
-    dims=(5, 25, 100) and n_samples=1000..10000 (step 1000), 100 reps each.
-    Results saved to data/nonparam/multivariate_gaussian/runtimes/eigenvalue_runtimes.json.
-
-    If eigenvalue_runtimes.json already exists, skips the benchmark and instead
-    plots parametric vs nonparametric runtime figures, saving to the param_nonparam
-    subfolder of cfg.flags.plots.output_dir.
-    """
-    dims = [2, 5, 7]
-    radius = float(cfg.optimize.nonparametric.get("radius"))
-    data_path = os.path.join(get_original_cwd(), "data/nonparam/multivariate_gaussian/runtimes/")
-    os.makedirs(data_path, exist_ok=True)
-
-    eigenvalue_path = os.path.join(data_path, "eigenvalue_runtimes.json")
-    param_path = os.path.join(data_path, "parametric_optimisation_for_comparison.json")
-
-    # --- Parametric benchmark ---
-    if not os.path.exists(param_path):
-        print("Parametric benchmark not found — running parametric optimisation.")
-        sample_nums = list(range(1000, 5001, 1000))
-        n_reps = 10
-        param_times = defaultdict(lambda: defaultdict(dict))
-
-        for dim in dims:
-            print(f"\n=== Parametric dim={dim} ===")
-            with open_dict(cfg):
-                cfg.data.base_prior.mu = np.zeros(dim).tolist()
-                cfg.data.base_prior.cov = (np.eye(dim) * 4.0).tolist()
-                cfg.data.candidate_prior.mu = np.zeros(dim).tolist()
-                cfg.data.candidate_prior.cov = (np.eye(dim) * 4.0).tolist()
-                cfg.data.true_dgp.mu = (np.ones(dim) * 2.0).tolist()
-                cfg.data.true_dgp.cov = (np.eye(dim) * 4.0).tolist()
-                cfg.data.loss.mu = (np.ones(dim) * 2.0).tolist()
-                cfg.data.loss.cov = (np.eye(dim) * 4.0).tolist()
-                opt_pbr = cfg.optimize.parametric.prior.MultivariateGaussian.parameters_box_range
-                opt_pbr.ranges.mu = {str(i): [-4.0, 5.0] for i in range(dim)}
-                opt_pbr.nums.mu = {str(i): 2 for i in range(dim)}
-                opt_pbr.ranges.cov = {f"{i}_{i}": [2.0, 3.0] for i in range(dim)}
-                opt_pbr.nums.cov = {f"{i}_{i}": 2 for i in range(dim)}
-
-            for n_samples in sample_nums:
-                with open_dict(cfg):
-                    cfg.data.posterior_samples_num = n_samples
-                    cfg.data.prior_samples_num = n_samples
-
-                rep_times = []
-                for rep in range(n_reps):
-                    model = instantiate(cfg.model, data_config=cfg.data)
-                    fisher_estimator = PosteriorFDParametric(model=model)
-                    optimizer = OptimizationCornerPointsMultivariateGaussian(
-                        fisher_estimator, cfg.optimize.parametric.prior.MultivariateGaussian,
-                        cfg.optimize.parametric.loss.MultivariateGaussianLogLikelihood)
-                    start = time.perf_counter()
-                    qf_priors_all_corners = optimizer.evaluate_all_prior_corners()
-                    elapsed = time.perf_counter() - start
-
-                    param_times[str(dim)][str(n_samples)][str(rep)] = elapsed
-                    rep_times.append(elapsed)
-
-                    print(
-                        f"*** Parametric dim={dim:3d}, n_samples={n_samples:5d}, rep={rep}:  mean={np.mean(rep_times):.4f}s  std={np.std(rep_times):.4f} ***")
-
-        with open(param_path, "w") as f:
-            json.dump(param_times, f, indent=2)
-        print(f"\nSaved parametric runtimes to {param_path}")
-    else:
-        print(f"Found {param_path}, loading parametric runtimes.")
-
-    # --- Nonparametric benchmark ---
-    if not os.path.exists(eigenvalue_path):
-        times = defaultdict(lambda: defaultdict(dict))
-        sample_nums = list(range(1000, 10001, 1000))
-        n_reps = 10
-        for dim in dims:
-            print(f"\n=== Nonparametric dim={dim} ===")
-            with open_dict(cfg):
-                cfg.data.base_prior.mu = np.zeros(dim).tolist()
-                cfg.data.base_prior.cov = (np.eye(dim) * 4.0).tolist()
-                cfg.data.candidate_prior.mu = np.zeros(dim).tolist()
-                cfg.data.candidate_prior.cov = (np.eye(dim) * 4.0).tolist()
-                cfg.data.true_dgp.mu = (np.ones(dim) * 2.0).tolist()
-                cfg.data.true_dgp.cov = (np.eye(dim) * 4.0).tolist()
-                cfg.data.loss.mu = (np.ones(dim) * 2.0).tolist()
-                cfg.data.loss.cov = (np.eye(dim) * 4.0).tolist()
-
-            for n_samples in sample_nums:
-                with open_dict(cfg):
-                    cfg.data.posterior_samples_num = n_samples
-                    cfg.data.prior_samples_num = n_samples
-
-                rep_times = []
-                for rep in range(n_reps):
-                    model = instantiate(cfg.model, data_config=cfg.data)
-                    estimator_prior = PriorFDNonParametric(model=model)
-                    estimator_posterior = PosteriorFDNonParametric(model=model)
-                    optimizer = OptimisationNonparametricBase(
-                        estimator_posterior,
-                        estimator_prior,
-                        cfg.optimize.nonparametric,
-                        radius=radius,
-                    )
-                    start = time.perf_counter()
-                    optimizer.optimize_through_generalized_eigenvalue()
-                    elapsed = time.perf_counter() - start
-
-                    times[str(dim)][str(n_samples)][str(rep)] = elapsed
-                    rep_times.append(elapsed)
-
-                    print(
-                        f"********* dim={dim:3d}, n_samples={n_samples:5d}, rep={rep}: mean={np.mean(rep_times):.4f}s  std={np.std(rep_times):.4f}*********")
-
-        with open(eigenvalue_path, "w") as f:
-            json.dump(times, f, indent=2)
-        print(f"\nSaved nonparametric runtimes to {eigenvalue_path}")
-    else:
-        print(f"Found {eigenvalue_path}, loading nonparametric runtimes.")
-
-    # --- Plot ---
-    with open(eigenvalue_path) as f:
-        nonparam_raw_times = json.load(f)
-    with open(param_path) as f:
-        param_raw_times = json.load(f)
-
-    plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
-    output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
-    plot_cfg = load_plot_config(plot_config_path)
-
-    nonparam_ms = sorted(int(k) for k in next(iter(nonparam_raw_times.values())).keys())
-    param_ms = sorted(int(k) for k in next(iter(param_raw_times.values())).keys())
-
-    plot_param_nonparam_runtimes_gaussians(
-        output_dir=output_dir,
-        plot_cfg=plot_cfg,
-        param_raw_times=param_raw_times,
-        nonparam_raw_times=nonparam_raw_times,
-        dims=dims,
-        param_ms=param_ms,
-        nonparam_ms=nonparam_ms,
-        logy=True,
-        xlim=(1000, 10500)
-    )
-
-
-@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="univariate_gaussian")
-def run_gaussian_priors_nonparametric_diff_samples_num(cfg) -> None:
-    """
-    Main function to compute KSD and perform prior parameter grid search using Hydra for configuration.
-
-    Args:
-        cfg (DictConfig): Configuration loaded by Hydra.
-    """
-    times_list_parametric, times_list_nonparametric = [], []
-    samples_nums_list = [int(x) for x in np.linspace(1000, 10000, 10)]
-    basis_funcs_num_list = [int(x) for x in np.linspace(5, 15, 3)]
-    times_parametric, times_nonparametric = defaultdict(dict),  defaultdict(lambda: defaultdict(dict))
-    steps = 200
-
-    for step in range(steps):
-        print(f"Parametric running step {step}.")
-        for sample_nums in samples_nums_list:
-            cfg.data.posterior_samples_num = sample_nums
-            model = instantiate(cfg.model, data_config=cfg.data)
-            start = time.perf_counter()
-            fisher_estimator = PosteriorFDParametric(model=model)
-            optimizer = OptimizationCornerPointsUnivariateGaussian(
-                fisher_estimator,
-                cfg.ksd.optimize.prior.Gaussian,
-                cfg.ksd.optimize.loss.GaussianLogLikelihood
-            )
-            prior_corners, worst_corner = optimizer.evaluate_all_prior_corners()
-            elapsed = time.perf_counter() - start
-            largest_fd = prior_corners[0][2]
-            times_list_parametric.append((sample_nums, elapsed))
-            times_parametric[sample_nums][step] = elapsed
-            print(f"***Parametric*** Samples: {sample_nums}, Initial FD: {largest_fd:.4f}, Time: {elapsed:.3f} sec")
-
-    data_path = os.path.join(get_original_cwd(), "data/univariate_gaussian/runtimes/")
-    os.makedirs(data_path, exist_ok=True)
-    with open(data_path + "parametric_qcqp_optimisation_times.json", "w") as f:
-        json.dump(times_parametric, f, indent=4)
-
-    samples_nums_list = [int(x) for x in np.linspace(500, 10000, 10)]
-    for step in range(steps):
-        print(f"Non-parametric QCQP running step {step}.")
-        for sample_nums in samples_nums_list:
-            for basis_funcs_num in basis_funcs_num_list:
-                cfg.data.posterior_samples_num = sample_nums
-                cfg.data.prior_samples_num = sample_nums
-                cfg.ksd.optimize.prior.nonparametric.basis_funcs_kwargs["num_basis_functions"] = basis_funcs_num
-                model = instantiate(cfg.model, data_config=cfg.data)
-                start = time.perf_counter()
-                estimator_prior = PriorFDNonParametric(model=model)
-                estimator_posterior = PosteriorFDNonParametric(model=model)
-                optimizer = OptimisationNonparametricBase(
-                    estimator_posterior,
-                    estimator_prior,
-                    cfg.ksd.optimize.prior.nonparametric,
-                    radius=2.0
-                )
-                result_sdp_dual = optimizer.optimize_dual_sdp_lambda_t()
-                elapsed = time.perf_counter() - start
-                largest_fd = result_sdp_dual["dual_value"]
-                times_list_nonparametric.append((sample_nums*2, basis_funcs_num, elapsed))
-                times_nonparametric[sample_nums*2][basis_funcs_num][step] = elapsed
-                print(
-                    f"***Non-parametric*** Samples: {sample_nums*2}, Basis Functions num: {basis_funcs_num}, Initial FD: {largest_fd:.4f}, Time: {elapsed:.3f} sec")
-
-    with open(data_path + "nonparametric_qcqp_optimisation_times.json", "w") as f:
-        json.dump(times_nonparametric, f, indent=4)
-
-
-@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="multivariate_gaussian")
-def run_multivariate_gaussian_priors_diff_basis_funcs_num(cfg) -> None:
-    """
-    Main function to compute KSD and perform prior parameter grid search using Hydra for configuration.
-
-    Args:
-        cfg (DictConfig): Configuration loaded by Hydra.
-    """
-    times_list_parametric, times_list_nonparametric = [], []
-    basis_funcs_num_list = [int(x) for x in np.linspace(5, 25, 21)]
-    times_nonparametric = defaultdict(dict)
-    steps = 100
-
-    for step in range(steps):
-        print(f"Parametric running step {step}.")
-        for basis_funcs_num in basis_funcs_num_list:
-            cfg.data.posterior_samples_num = 1000
-            cfg.ksd.optimize.prior.nonparametric.basis_funcs_kwargs["num_basis_functions"] = basis_funcs_num
-            model = instantiate(cfg.model, data_config=cfg.data)
-            estimator_prior = PriorFDNonParametric(model=model)
-            estimator_posterior = PosteriorFDNonParametric(model=model)
-            optimizer = OptimisationNonparametricBase(
-                estimator_posterior,
-                estimator_prior,
-                cfg.ksd.optimize.prior.nonparametric,
-                radius=2.0
-            )
-            start = time.perf_counter()
-            result_sdp_dual = optimizer.optimize_dual_sdp_lambda_t()
-            elapsed = time.perf_counter() - start
-            largest_ksd = result_sdp_dual["dual_value"]
-            times_list_nonparametric.append((basis_funcs_num, elapsed))
-            times_nonparametric[basis_funcs_num][step] = elapsed
-            print(
-                f"***Non-parametric*** Basis Functions num: {basis_funcs_num}, Initial FD: {largest_ksd:.4f}, Time: {elapsed:.3f} sec")
-
-    data_path = os.path.join(get_original_cwd(), "data/multivariate_gaussian/runtimes/")
-    with open(data_path + "nonparametric_optimisation_times_diff_basis_funcs_nums.json", "w") as f:
-        json.dump(times_nonparametric, f, indent=4)
-
-
-@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="multivariate_gaussian")
-def run_priors_optimisation_runtimes(cfg, dim: str = "multivariate"):
-    plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
-    output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
-    plot_cfg = load_plot_config(plot_config_path)
-
-    data_path = os.path.join(get_original_cwd(), f"data/{dim}_gaussian/runtimes/")
-    with open(data_path + "parametric_optimisation_times.json", "r") as f:
-        parametric_optimisation_times = json.load(f)
-
-    with open(data_path + "nonparametric_optimisation_times.json", "r") as f:
-        nonparametric_optimisation_times = json.load(f)
-
-    plot_runtime_parametric_nonparametric_with_ci(
-        parametric_optimisation_times,
-        nonparametric_optimisation_times,
-        plot_cfg,
-        output_dir,
-        filename=f"runtime_parametric_nonparametric_{dim}.pdf"
-    )
-
-
-@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="multivariate_gaussian")
-def run_priors_optimisation_runtimes(cfg):
-    plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
-    output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
-    plot_cfg = load_plot_config(plot_config_path)
-    data_path = os.path.join(get_original_cwd(), "data/multivariate_gaussian/runtimes/")
-
-    with open(data_path + "nonparametric_qcqp_optimisation_times.json", "r") as f:
-        nonparametric_optimisation_times = json.load(f)
-    with open(data_path + "parametric_qcqp_optimisation_times.json", "r") as f:
-        parametric_optimisation_times = json.load(f)
-    plot_runtime_parametric_nonparametric_with_ci(
-        parametric_optimisation_times,
-        nonparametric_optimisation_times,
-        plot_cfg,
-        output_dir,
-        filename="runtime_parametric_nonparametric_qcqp_multivariate.pdf"
-    )
-
-    # with open(data_path + "nonparametric_qcqp_optimisation_times.json", "r") as f:
-    #     nonparametric_optimisation_times = json.load(f)
-    # plot_runtime_nonparametric_with_ci(
-    #     nonparametric_optimisation_times,
-    #     plot_cfg,
-    #     output_dir,
-    #     filename="runtime_parametric_nonparametric_qcqp_univariate.pdf"
-    # )
 
 
 @hydra.main(version_base="1.1", config_path="../../configs/paper/toy/",
             config_name="univariate_gaussian_param_nonparam")
-def run_param_nonparam_comparison(cfg) -> None:
+def run_param_nonparam_comparison_skewness(cfg) -> None:
     """
     Run parametric and nonparametric optimisation for the univariate Gaussian model
     and produce a comparison plot of the worst-case candidate priors and posteriors.
@@ -663,7 +368,7 @@ def run_param_nonparam_comparison(cfg) -> None:
     output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
     plot_cfg = load_plot_config(plot_config_path)
 
-    plot_param_nonparam_comparison_optimised(
+    plot_param_nonparam_skewness_comparison(
         worst_corner=worst_corner,
         lambda_star=result_sdp["lambda_star"],
         basis_function=nonparam_optimizer.basis_function,
@@ -673,14 +378,232 @@ def run_param_nonparam_comparison(cfg) -> None:
     )
 
 
+@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/",
+            config_name="univariate_gaussian_param_nonparam_kurtosis")
+def run_param_nonparam_comparison_kurtosis(cfg) -> None:
+    """
+    Weak-data univariate Gaussian location experiment illustrating sensitivity
+    to tail behaviour. The Gaussian parametric neighbourhood can only shift or
+    rescale the prior and so always has zero excess kurtosis; the nonparametric
+    KEF candidate, with basis centres spread over a wide interval covering both
+    the posterior region and the tails, can develop heavier tails and positive
+    excess kurtosis.
+    """
+    model = instantiate(cfg.model, data_config=cfg.data)
+
+    # Parametric optimisation
+    posterior_fd = PosteriorFDParametric(model=model)
+    param_optimizer = OptimizationCornerPointsUnivariateGaussian(
+        posterior_fd,
+        cfg.fd.optimize.prior.Gaussian,
+        cfg.fd.optimize.loss.GaussianLogLikelihood,
+    )
+    prior_corners, worst_corner = param_optimizer.evaluate_all_prior_corners()
+    print(f"Worst parametric prior: mu={worst_corner['mu']:.4f}, sigma={worst_corner['sigma']:.4f}")
+    print(f"Worst parametric FD: {prior_corners[0][2]:.4f}")
+
+    # Nonparametric optimisation
+    estimator_prior = PriorFDNonParametric(model=model)
+    estimator_posterior = PosteriorFDNonParametric(model=model)
+    radius = cfg.optimize.nonparametric.get("radius", 5.0)
+    nonparam_optimizer = OptimisationNonparametricBase(
+        estimator_posterior,
+        estimator_prior,
+        cfg.optimize.nonparametric,
+        radius=radius,
+    )
+    result_sdp = nonparam_optimizer.optimize_through_sdp_relaxation()
+    print(f"Nonparametric FD (primal value): {result_sdp['primal_value']:.4f}")
+
+    plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
+    output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
+    plot_cfg = load_plot_config(plot_config_path)
+
+    plot_param_nonparam_kurtosis_comparison(
+        worst_corner=worst_corner,
+        lambda_star=result_sdp["lambda_star"],
+        basis_function=nonparam_optimizer.basis_function,
+        model=model,
+        plot_cfg=plot_cfg,
+        output_dir=output_dir,
+        domain=(-20, 20),
+        resolution=500,
+        y_log=True,
+        legend=False,
+    )
+
+
+@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/",
+            config_name="univariate_gaussian_param_nonparam_multimodal")
+def run_param_nonparam_multimodality_comparison(cfg) -> None:
+    """
+    Same as run_param_nonparam_comparison, but using a config with a larger
+    nonparametric radius and more/smaller-lengthscale basis functions so the
+    worst-case nonparametric candidate's multimodality is actually visible
+    (with the default config it optimises to a unimodal solution).
+    """
+    model = instantiate(cfg.model, data_config=cfg.data)
+
+    # Parametric optimisation
+    posterior_fd = PosteriorFDParametric(model=model)
+    param_optimizer = OptimizationCornerPointsUnivariateGaussian(
+        posterior_fd,
+        cfg.fd.optimize.prior.Gaussian,
+        cfg.fd.optimize.loss.GaussianLogLikelihood,
+    )
+    prior_corners, worst_corner = param_optimizer.evaluate_all_prior_corners()
+    print(f"Worst parametric prior: mu={worst_corner['mu']:.4f}, sigma={worst_corner['sigma']:.4f}")
+    print(f"Worst parametric FD: {prior_corners[0][2]:.4f}")
+
+    # Nonparametric optimisation
+    estimator_prior = PriorFDNonParametric(model=model)
+    estimator_posterior = PosteriorFDNonParametric(model=model)
+    radius = cfg.optimize.nonparametric.get("radius")
+    nonparam_optimizer = OptimisationNonparametricBase(
+        estimator_posterior,
+        estimator_prior,
+        cfg.optimize.nonparametric,
+        radius=radius,
+    )
+    result_sdp = nonparam_optimizer.optimize_through_sdp_relaxation()
+    print(f"Nonparametric FD (primal value): {result_sdp['primal_value']:.4f}")
+
+    plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
+    output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
+    plot_cfg = load_plot_config(plot_config_path)
+
+    plot_param_nonparam_multimodality_comparison(
+        worst_corner=worst_corner,
+        lambda_star=result_sdp["lambda_star"],
+        basis_function=nonparam_optimizer.basis_function,
+        model=model,
+        plot_cfg=plot_cfg,
+        output_dir=output_dir,
+    )
+
+
+@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="multivariate_gaussian_nonparam")
+def run_multivariate_gaussian_diff_basis_funcs_num_runtimes(cfg, save_samples: bool = False) -> None:
+    """
+    Main function to compute FD and perform prior parameter grid search using Hydra for configuration.
+    """
+    runtimes_dir = os.path.join(get_original_cwd(), "data/multivariate_gaussian/runtimes/nonparam")
+    runtimes_path = os.path.join(runtimes_dir, "nonparametric_optimisation_times_diff_basis_funcs_nums.json")
+
+    if os.path.exists(runtimes_path):
+        print(f"Found existing runtimes at {runtimes_path}, skipping computation.")
+        times_list = _json_keys_to_int(load_results_json(runtimes_path))
+    else:
+        model = instantiate(cfg.model, data_config=cfg.data)
+        output_dir = os.path.join(get_original_cwd(), "data/multivariate_gaussian")
+
+        if save_samples:
+            os.makedirs(output_dir, exist_ok=True)
+            np.save(output_dir + "/posterior_samples.npy", model.posterior_samples_init)
+            np.save(output_dir + "/observations.npy", model.observations)
+            np.save(output_dir + "/prior_samples.npy", model.prior_samples_init)
+
+        estimator_prior = PriorFDNonParametric(model=model)
+        estimator_posterior = PosteriorFDNonParametric(model=model)
+        times_list = defaultdict(dict)
+        basis_funcs_num = [int(x) for x in np.linspace(5, 31, 14)]
+        iters = 500
+
+        for k in basis_funcs_num:
+            for step in range(iters):
+                print(f"Basis funcs = {k}, step={step}.")
+                cfg.optimize.nonparametric.basis_funcs_kwargs["num_basis_functions"] = k
+                optimizer = OptimisationNonparametricBase(
+                    estimator_posterior,
+                    estimator_prior,
+                    cfg.optimize.nonparametric,
+                    radius=5.0
+                )
+                start = time.perf_counter()
+                _ = optimizer.optimize_through_generalized_eigenvalue()
+                elapsed = time.perf_counter() - start
+                times_list[k][step] = elapsed
+
+        save_to_serializable_json(times_list, runtimes_path)
+
+    plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
+    output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
+    plot_cfg = load_plot_config(plot_config_path)
+    plot_runtime_nonparametric_with_ci(
+        times_list,
+        plot_cfg,
+        output_dir,
+        filename="gaussian_2d_location_model_runtime_diff_basis_funcs_nums.pdf",
+    )
+
+
+@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="multivariate_gaussian_nonparam")
+def run_multivariate_gaussian_diff_samples_num_runtimes(cfg, save_samples: bool = False) -> None:
+    """
+    Main function to compute FD and time nonparametric optimisation for a grid of
+    posterior/prior sample sizes m, one line per number of basis functions k.
+    """
+    runtimes_dir = os.path.join(get_original_cwd(), "data/multivariate_gaussian/runtimes/nonparam")
+    runtimes_path = os.path.join(runtimes_dir, "nonparametric_optimisation_times_diff_samples_nums.json")
+
+    if os.path.exists(runtimes_path):
+        print(f"Found existing runtimes at {runtimes_path}, skipping computation.")
+        times_list = _json_keys_to_int(load_results_json(runtimes_path))
+    else:
+        samples_num_list = [int(x) for x in np.linspace(1000, 5000, 5)]
+        basis_funcs_num = [10, 15, 25, 30]
+        iters = 500
+        times_list = defaultdict(lambda: defaultdict(dict))
+
+        cfg.data.posterior_samples_path = None
+        cfg.data.prior_samples_path = None
+        prior_samples_num = cfg.data.prior_samples_num
+
+        for m in samples_num_list:
+            cfg.data.posterior_samples_num = m
+            for k in basis_funcs_num:
+                cfg.optimize.nonparametric.basis_funcs_kwargs["num_basis_functions"] = k
+                for step in range(iters):
+                    print(f"Samples num = {m}, basis funcs = {k}, step={step}.")
+                    model = instantiate(cfg.model, data_config=cfg.data)
+                    model.posterior_samples_init = model.sample_posterior(n_samples=m)
+                    model.prior_samples_init = model.sample_from_base_prior(n_samples=prior_samples_num)
+                    model.m = m
+                    model.m_prior = prior_samples_num
+                    estimator_prior = PriorFDNonParametric(model=model)
+                    estimator_posterior = PosteriorFDNonParametric(model=model)
+                    optimizer = OptimisationNonparametricBase(
+                        estimator_posterior,
+                        estimator_prior,
+                        cfg.optimize.nonparametric,
+                        radius=5.0
+                    )
+                    start = time.perf_counter()
+                    _ = optimizer.optimize_through_generalized_eigenvalue()
+                    elapsed = time.perf_counter() - start
+                    times_list[m][k][step] = elapsed
+
+        save_to_serializable_json(times_list, runtimes_path)
+
+    plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
+    output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
+    plot_cfg = load_plot_config(plot_config_path)
+    plot_runtime_nonparametric_diff_samples_num_with_ci(
+        times_list,
+        plot_cfg,
+        output_dir,
+        filename="gaussian_2d_location_model_runtime_diff_samples_nums.pdf",
+    )
+
+
 if __name__ == "__main__":
-    # run_param_nonparam_comparison()
+    run_param_nonparam_comparison_skewness()
+    run_param_nonparam_comparison_kurtosis()
+    run_param_nonparam_multimodality_comparison()
     # run_gaussian_priors_nonparametric()
     # run_multivariate_gaussian_priors_nonparametric()
-    # run_multivariate_gaussian_nonparam_runtimes()
-
     # run_gaussian_priors_nonparametric_diff_radii()
-    run_multivariate_gaussian_priors_nonparametric_diff_radii()
-    # run_gaussian_priors_nonparametric_diff_samples_num()
-    # run_multivariate_gaussian_priors_diff_basis_funcs_num()
-    # run_priors_optimisation_runtimes()
+    # run_multivariate_gaussian_priors_nonparametric_diff_radii()
+
+    # run_multivariate_gaussian_diff_basis_funcs_num_runtimes()
+    # run_multivariate_gaussian_diff_samples_num_runtimes()
