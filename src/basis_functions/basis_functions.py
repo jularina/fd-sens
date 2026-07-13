@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from scipy.integrate import nquad
 import numpy as np
 import sympy as sp
-from typing import Optional, Literal
+from typing import Optional, Literal, Sequence
 from scipy.spatial.distance import cdist
 from sklearn.cluster import KMeans
 from numpy.linalg import eigh
@@ -1751,4 +1751,85 @@ class PolynomialBasisFunctionMultidim(BaseBasisFunction):
         for i in range(dim):
             for k in range(1, self.degree + 1):
                 exprs.append(x[i] ** k)
+        return sp.Tuple(*exprs)
+
+
+class FixedCentersRBFBasisFunction(BaseBasisFunction):
+    r"""
+    Separable Gaussian-RBF basis with explicit, shared centres:
+
+        phi_k(theta) = exp( -(theta - c_k)^2 / (2 l^2) ),   c_k = loc + mult_k * scale,
+
+    used for the per-node KEF fit against a Gaussian base measure
+    N(loc, scale^2), with fixed multiples (default {-2,-1,0,1,2}, so K=5)
+    rather than centres estimated from data via kmeans/farthest/halton as in
+    RBFBasisFunction.
+
+    Every column of `samples` (m, d) is treated as an *independent* scalar
+    node sharing the same K centres/lengthscale -- unlike
+    RBFBasisFunctionMultidim(metric="full"), there is no cross-column
+    interaction. This is the additive-kernel structure needed to decompose a
+    d-dimensional FD sensitivity computation into d independent 1D
+    sub-problems: d=1 recovers the single-node case, d>1 lets one call
+    evaluate/score a whole group of nodes that share the same reference
+    prior (e.g. all weights of one BNN layer) at once.
+
+    evaluate/gradient shapes match BaseBasisFunction: (m, d, K).
+    """
+
+    # Marks this basis as safe to call with a (m, n_independent_nodes) sample
+    # matrix and get back n_independent_nodes worth of *independent* per-node
+    # gradients in one call (see src.optimization.bnn_node_sensitivity, which
+    # checks this flag to decide whether it can batch many nodes through one
+    # gradient() call or must loop node-by-node). Data-driven bases whose
+    # kernel couples all columns jointly (e.g. MaternBasisFunction,
+    # RBFBasisFunction) do NOT set this.
+    SEPARABLE = True
+
+    def __init__(
+        self,
+        posterior_samples: Optional[np.ndarray] = None,
+        prior_samples: Optional[np.ndarray] = None,
+        num_basis_functions: Optional[int] = None,
+        loc: float = 0.0,
+        scale: float = 1.0,
+        center_multiples: Optional[Sequence[float]] = None,
+        lengthscale: Optional[float] = None,
+    ):
+        if scale <= 0:
+            raise ValueError(f"scale must be > 0; got {scale}.")
+        if center_multiples is None:
+            center_multiples = [-2.0, -1.0, 0.0, 1.0, 2.0]
+        center_multiples = np.asarray(center_multiples, dtype=float)
+        if num_basis_functions is not None and len(center_multiples) != num_basis_functions:
+            raise ValueError(
+                f"len(center_multiples)={len(center_multiples)} != "
+                f"num_basis_functions={num_basis_functions}."
+            )
+
+        self.loc = float(loc)
+        self.scale = float(scale)
+        self.center_multiples = center_multiples
+        self.centers = self.loc + self.scale * center_multiples  # (K,)
+        self.lengthscale = float(lengthscale) if lengthscale is not None else self.scale
+        self.num_basis = int(self.centers.shape[0])
+
+    def evaluate(self, samples: np.ndarray) -> np.ndarray:
+        """Returns phi(theta) with shape (m, d, K)."""
+        X = np.asarray(samples, dtype=float)  # (m, d)
+        diff = X[:, :, None] - self.centers[None, None, :]  # (m, d, K)
+        return np.exp(-(diff ** 2) / (2.0 * self.lengthscale ** 2))
+
+    def gradient(self, samples: np.ndarray) -> np.ndarray:
+        """d/dtheta phi_k(theta), shape (m, d, K), independent per column of samples."""
+        X = np.asarray(samples, dtype=float)  # (m, d)
+        diff = X[:, :, None] - self.centers[None, None, :]  # (m, d, K)
+        phi = np.exp(-(diff ** 2) / (2.0 * self.lengthscale ** 2))
+        return (-diff / (self.lengthscale ** 2)) * phi
+
+    def symbolic_expression(self, dim: int) -> sp.Expr:
+        x = sp.symbols(f"x0:{dim}")
+        c0 = sp.Float(float(self.centers[0]))
+        ell = sp.Float(self.lengthscale)
+        exprs = [sp.exp(-((xi - c0) ** 2) / (2 * ell ** 2)) for xi in x]
         return sp.Tuple(*exprs)

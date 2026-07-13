@@ -23,6 +23,7 @@ dependencies = [
     "cvxpy>=1.7.1",
     "mosek>=11.0.27",
     "torch>=2.8.0",
+    "h5py>=3.16",
     "POT>=0.9.6.post1",
     "imageio[ffmpeg]>=2.37.3",
 ]
