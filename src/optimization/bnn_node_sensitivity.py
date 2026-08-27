@@ -47,21 +47,7 @@ def _generalized_eigvals_max_batch(
     nugget: float = 1e-10,
 ) -> np.ndarray:
     """
-    Largest generalised eigenvalue of A_j v = omega * A_c v for every node j,
-    batched over the leading axis of `A_all`.
-
-    A_all: (n, K, K) per-node objective matrices (one per scalar node).
-    A_c:   (K, K) shared constraint matrix -- identical for every node in a
-           group, since they share the same reference prior N(loc, scale^2)
-           and hence the same KEF centres/base measure.
-
-    Valid exactly when the base measure g = pi_ref, which makes b = b_c = 0
-    and c = c_c = 0 (see OptimisationNonparametricBase.optimize_through_generalized_eigenvalue,
-    whose single-matrix version this batches). Reduces the batch of
-    generalised eigenproblems to one batched symmetric eigenproblem via a
-    shared Cholesky factor of A_c: with A_c = L L^T,
-        A v = omega A_c v  <=>  (L^-1 A L^-T)(L^T v) = omega (L^T v),
-    so omega_max(A, A_c) = largest eigenvalue of L^-1 A L^-T.
+    Largest generalised eigenvalue of A_j v = omega * A_c v for every node j.
     """
     K = A_c.shape[0]
     A_c = 0.5 * (A_c + A_c.T)

@@ -292,39 +292,38 @@ def run_multivariate_gaussian_priors(cfg, save_samples: bool = True) -> None:
         cfg, model, qf_priors_all_combinations=qf_priors_all_combinations)
 
 
-@hydra.main(version_base="1.1", config_path="../../configs/paper/ksd_calculation/toy/", config_name="multivariate_gaussian")
+@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="multivariate_gaussian")
 def comparison_plot_existing_methods(cfg):
     plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
     output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
     plot_cfg = load_plot_config(plot_config_path)
 
-    # mu_ref = np.array([3.06293078, 3.05897246])
-    # mu_cand_1 = np.array([3.06293078, 3.05897246])
-    # mu_cand_2 = np.array([3.06293078, 3.05897246])
-    # Sigma_ref = np.array([[7.95761567e-03, 2.11077339e-05],
-    #                       [2.11077339e-05, 7.95761567e-03]])
-    # Sigma_1 = np.array([[2.00e-02, 4.00e-03],
-    #                     [4.00e-03, 6.00e-03]])
-    # Sigma_2 = np.array([[5.00e-03, -3.00e-03],
-    #                     [-3.00e-03, 2.00e-02]])
-    #
-    # plot_existing_methods_comparison_gaussians(
-    #     output_dir=output_dir,
-    #     plot_cfg=plot_cfg,
-    #     mu_ref=mu_ref,
-    #     mu_cand_1=mu_cand_2,
-    #     mu_cand_2=mu_cand_2,
-    #     Sigma_ref=Sigma_ref,
-    #     Sigma_cand_1=Sigma_1,
-    #     Sigma_cand_2=Sigma_2,
-    #     filename="comparison_same_mean_diff_cov.pdf",
-    #     annotation_fontsize=10,
-    #     annotation_text=(
-    #         r"$\rho_i^{\varphi}(\tilde{\Pi}^{\lambda_1}) = \rho_i^{\varphi}(\tilde{\Pi}^{\lambda_2})$" "\n"
-    #         r"$\rho^{\mathrm{mean}}(\tilde{\Pi}^{\lambda_j})=0$" "\n"
-    #         r"$\rho^{\mathrm{FD}}(\tilde{\Pi}^{\lambda_j})>0$"
-    #     ),
-    # )
+    mu_ref = np.array([3.06293078, 3.05897246])
+    mu_cand_1 = np.array([3.06293078, 3.05897246])
+    mu_cand_2 = np.array([3.06293078, 3.05897246])
+    Sigma_ref = np.array([[7.95761567e-03, 2.11077339e-05],
+                          [2.11077339e-05, 7.95761567e-03]])
+    Sigma_1 = np.array([[2.00e-02, 4.00e-03],
+                        [4.00e-03, 6.00e-03]])
+    Sigma_2 = np.array([[5.00e-03, -3.00e-03],
+                        [-3.00e-03, 2.00e-02]])
+
+    plot_existing_methods_comparison_gaussians(
+        output_dir=output_dir,
+        plot_cfg=plot_cfg,
+        mu_ref=mu_ref,
+        mu_cand_1=mu_cand_2,
+        mu_cand_2=mu_cand_2,
+        Sigma_ref=Sigma_ref,
+        Sigma_cand_1=Sigma_1,
+        Sigma_cand_2=Sigma_2,
+        filename="comparison_same_mean_diff_cov.pdf",
+        annotation_fontsize=10,
+        annotation_text=(
+            r"$\rho^{\mathrm{mean}}(\tilde{\Pi}^{\lambda_j})=0$" "\n"
+            r"$\rho^{\mathrm{FD}}(\tilde{\Pi}^{\lambda_j})>0$"
+        ),
+    )
     #
     # mu_ref = np.array([3.06293078, 3.05897246])
     # mu_cand_1 = np.array([3.4, 2.5])
@@ -880,10 +879,10 @@ def run_priors_optimisation_runtimes(cfg, dim: str = "multivariate"):
 
 
 if __name__ == "__main__":
-    run_gaussian_priors()
+    # run_gaussian_priors()
     # run_gaussian_priors_for_conjugate_fd()
     # run_gaussian_lr()
-    run_multivariate_gaussian_priors()
+    # run_multivariate_gaussian_priors()
     comparison_plot_existing_methods()
     # run_gaussian_priors_qcqp()
     # run_inverse_wishart_priors()

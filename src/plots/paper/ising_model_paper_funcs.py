@@ -843,11 +843,9 @@ def plot_loss_gradient_vs_theta(
     filename: str,
 ):
     """
-    Plot PL or DFD loss gradient vs theta on the left axis,
-    with posterior KDEs for each method on a secondary right axis.
+    Plot PL or DFD loss gradient vs theta.
     """
     import torch
-    from scipy.stats import gaussian_kde
 
     _apply_plot_rc(plot_cfg)
 
@@ -863,12 +861,10 @@ def plot_loss_gradient_vs_theta(
 
     fig, ax1 = _make_figure(plot_cfg)
 
-    colors = _palette(plot_cfg, 3)
-    line_styles = ["-", "--", "-."]
-
     ax1.plot(theta_grid, grad_vals ** 2, color="black", linewidth=1.5)
     ax1.axhline(0, color="black", linewidth=0.6, linestyle=":")
     ax1.spines["top"].set_visible(False)
+    ax1.spines["right"].set_visible(False)
     if loss == "dfd":
         ax1.set_xlabel(r"$\theta$")
     if loss == "pseudolikelihood":
@@ -881,23 +877,6 @@ def plot_loss_gradient_vs_theta(
         _fmt = ScalarFormatter(useMathText=True)
         _fmt.set_powerlimits((2, 2))
         ax1.yaxis.set_major_formatter(_fmt)
-
-    ax2 = ax1.twinx()
-    ax2.spines["top"].set_visible(False)
-    ax2.spines["right"].set_visible(True)
-    ax2.yaxis.set_major_locator(MaxNLocator(nbins=4, integer=True))
-    ax2.set_ylabel(r"$\tilde{\pi}_\mathrm{ref}(\theta)$")
-
-    xs_kde = np.linspace(theta_min, theta_max, 500)
-    methods_list = list(method_labels.keys())
-    for i, (method, label) in enumerate(method_labels.items()):
-        samples = samples_by_method.get(method)
-        kde = gaussian_kde(samples.flatten())
-        ax2.plot(xs_kde, kde(xs_kde), color=colors[i], linestyle=line_styles[i],
-                 linewidth=1.4, label=label)
-
-    lines, labels = ax2.get_legend_handles_labels()
-    # ax2.legend(lines, labels, frameon=False, loc="upper right")
 
     _save_fig(fig, output_dir, filename, plot_cfg)
 

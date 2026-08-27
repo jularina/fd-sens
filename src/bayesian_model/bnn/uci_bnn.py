@@ -23,28 +23,17 @@ DEFAULT_PARAM_GROUPS: Tuple[str, ...] = (
     "net.module.4.bias_prior",
 )
 
-# Column order of the UCI Boston housing covariates, matching the input
-# dimension of net.module.0.weight_prior (shape (64 hidden units, 13 features)).
-# Used only to label that layer's input axis for interpretability.
-BOSTON_FEATURE_NAMES: Tuple[str, ...] = (
-    "CRIM", "ZN", "INDUS", "CHAS", "NOX", "RM", "AGE",
-    "DIS", "RAD", "TAX", "PTRATIO", "B", "LSTAT",
-)
-
 
 class BNNPosteriorSamples:
     """
-    Loads posterior draws for a bnn_priors run (e.g. the UCI Boston 3-layer
-    BNN of Fortuin et al. 2022, saved by `bnn_priors.exp_utils.load_samples`
-    at `results/exp_uci_boston/1/samples.pt`) and exposes, per weight/bias
-    tensor, the scalar reference isotropic-Gaussian prior (loc, scale)
-    shared by every entry of that tensor, plus the (n_samples, n_nodes)
-    matrix of flattened posterior draws for its scalar nodes.
+    Loads posterior draws for a bnn_priors run and exposes, per weight/bias
+    tensor, the scalar reference prior (loc, scale[, df]) shared by every
+    entry, plus the (n_samples, n_nodes) matrix of flattened posterior draws.
 
-    Since pi_ref is isotropic Gaussian and independent across every scalar
-    weight/bias, `loc`/`scale` are constant across both posterior samples and
-    within a tensor (see samples.pt's `<name>.loc`/`<name>.scale` datasets),
-    so they only need to be read once per tensor.
+    Reference prior family is set by `data_config.reference_prior`
+    ("gaussian" or "studentt"); a "studentt" run's weight tensors carry a
+    Student-t prior (loc + scale * T_df) while biases stay Gaussian
+    N(loc, scale^2).
     """
 
     def __init__(self, data_config: Any):
@@ -60,6 +49,7 @@ class BNNPosteriorSamples:
         )
         self.prior_samples_num = int(getattr(data_config, "prior_samples_num", 1000))
         self.seed = int(getattr(data_config, "seed", 0))
+        self.reference_prior = str(getattr(data_config, "reference_prior", "gaussian")).lower()
         self.rng = np.random.default_rng(self.seed)
 
         self.groups: Dict[str, Dict[str, Any]] = {}
@@ -74,12 +64,17 @@ class BNNPosteriorSamples:
                 p = np.asarray(f[f"{name}.p"], dtype=np.float64)  # (m, *node_shape)
                 loc = float(np.asarray(f[f"{name}.loc"])[0])
                 scale = float(np.asarray(f[f"{name}.scale"])[0])
+                df = None
+                if self.reference_prior == "studentt":
+                    df_dataset = f.get(f"{name}.df")
+                    df = float(np.asarray(df_dataset)[0]) if df_dataset is not None else None
                 m = p.shape[0]
                 node_shape = p.shape[1:]
                 n_nodes = int(np.prod(node_shape)) if node_shape else 1
                 self.groups[name] = {
                     "loc": loc,
                     "scale": scale,
+                    "df": df,
                     "posterior": p.reshape(m, n_nodes),
                     "n_nodes": n_nodes,
                     "shape": node_shape,
@@ -91,11 +86,11 @@ class BNNPosteriorSamples:
 
     def sample_prior(self, group_name: str, n_samples: Optional[int] = None) -> np.ndarray:
         """
-        Draw fresh i.i.d. samples from the reference prior N(loc, scale^2) shared
-        by every scalar node in `group_name`. One draw is enough per tensor:
-        the resulting KEF constraint quadratic form A_c is identical for every
-        node in the group (see src.optimization.bnn_node_sensitivity).
+        Draw i.i.d. samples from the reference prior shared by every scalar
+        node in `group_name` (Gaussian, or Student-t if `g["df"]` is set).
         """
         g = self.groups[group_name]
         n = self.prior_samples_num if n_samples is None else int(n_samples)
+        if g.get("df") is not None:
+            return g["loc"] + g["scale"] * self.rng.standard_t(g["df"], size=n)
         return self.rng.normal(g["loc"], g["scale"], size=n)

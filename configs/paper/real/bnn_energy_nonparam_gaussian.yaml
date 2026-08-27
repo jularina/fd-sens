@@ -1,0 +1,47 @@
+data:
+  dataset: energy
+  samples_path: /Users/arinaodv/Desktop/folder/study_phd/code/bnn_priors/results/exp_uci_energy_gaussian/1/samples.pt
+  param_groups:
+    - net.module.0.weight_prior
+    - net.module.0.bias_prior
+    - net.module.2.weight_prior
+    - net.module.2.bias_prior
+    - net.module.4.weight_prior
+    - net.module.4.bias_prior
+  prior_samples_num: 2000
+  seed: 0
+  reference_prior: gaussian
+  feature_names:
+    - X1
+    - X2
+    - X3
+    - X4
+    - X5
+    - X6
+    - X7
+    - X8
+
+model:
+  _target_: src.bayesian_model.bnn.uci_bnn.BNNPosteriorSamples
+
+optimize:
+  nonparametric:
+    basis_funcs_type: MaternBasisFunction
+    basis_funcs_kwargs:
+      num_basis_functions: 15
+      method: halton
+      nu: 2.0
+      estimation_samples_source: prior
+
+sensitivity:
+  radius: 9090.0
+  node_chunk_size: 1024
+  top_k: 20
+  top_k_plot: 20
+  candidate_display_radius: 5.0
+
+flags:
+  plots:
+    output_dir: outputs/paper/plots/fisher/bnn/energy/nonparam/exp_uci_energy_gaussian
+  results:
+    output_dir: outputs/paper/results/bnn/energy/nonparam/exp_uci_energy_gaussian

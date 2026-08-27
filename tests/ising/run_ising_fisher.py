@@ -1,3 +1,4 @@
+import time
 import warnings
 import os
 import hydra
@@ -37,8 +38,10 @@ def main(cfg: DictConfig, dnum=100, pnum=5000, epsilon=0.4) -> None:
             cfg.data.posterior_samples_path = f"{base}/{loss_to_file_name[loss]}_size=6_theta=5.0_dnum={dnum}_pnum={pnum}_{loss}_posteriors_samples_{method}.npy"
             cfg.data.pseudoliklelhood_grads_path = f"{base}/{loss_to_file_name[loss]}_size=6_theta=5.0_dnum={dnum}_pnum={pnum}_{loss}_grads_{method}.npy"
             model = instantiate(cfg.model, data_config=cfg.data)
+            start_time = time.time()
             fisher_estimator = PosteriorFDBase(model=model)
             print(f"[{loss}/{method}] Initial Fisher: {fisher_estimator.estimate_fisher_lr_only():.4f}")
+            print(f"Time: {time.time() - start_time}")
 
             results = {}
             left = beta_ref - epsilon if beta_ref - epsilon > 0 else 0.01
@@ -99,7 +102,7 @@ def create_combined_plots(cfg: DictConfig, dnum=1000, pnum=5000):
             samples_by_method=samples_by_method,
             method_labels=method_labels,
             theta_min=3.5,
-            theta_max=8.0,
+            theta_max=6.0,
             n_theta=1000,
             plot_cfg=plot_cfg,
             output_dir=output_dir,
@@ -112,7 +115,7 @@ def create_combined_plots(cfg: DictConfig, dnum=1000, pnum=5000):
             samples_by_method=samples_by_method,
             method_labels=method_labels,
             theta_min=3.5,
-            theta_max=5.5,
+            theta_max=6.0,
             n_theta=1000,
             plot_cfg=plot_cfg,
             output_dir=output_dir,
