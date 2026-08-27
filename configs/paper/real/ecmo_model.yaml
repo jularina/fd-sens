@@ -25,9 +25,9 @@ data:
   loss:
     _target_: src.losses.logistic_binomial_log_likelihood.ECMOBinomialLogLikelihood
   loss_lr: 1
-  observations_path: /Users/arinaodv/Desktop/folder/study_phd/code/stein-sense/data/ecmo/observations.npy
-  posterior_samples_path: /Users/arinaodv/Desktop/folder/study_phd/code/stein-sense/data/ecmo/posterior_samples.npy
-  prior_samples_path: /Users/arinaodv/Desktop/folder/study_phd/code/stein-sense/data/ecmo/prior_samples.npy
+  observations_path: /Users/arinaodv/Desktop/folder/study_phd/code/fd-sens/data/ecmo/observations.npy
+  posterior_samples_path: /Users/arinaodv/Desktop/folder/study_phd/code/fd-sens/data/ecmo/posterior_samples.npy
+  prior_samples_path: /Users/arinaodv/Desktop/folder/study_phd/code/fd-sens/data/ecmo/prior_samples.npy
   observations_num: null
   posterior_samples_num: null
   prior_samples_num: null

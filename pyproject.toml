@@ -1,5 +1,5 @@
 [project]
-name = "stein-sense"
+name = "fd-sens"
 version = "0.0.0"
 description = "Default template for the Bayesian sensitivity analysis package"
 authors = [

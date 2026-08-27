@@ -25,8 +25,8 @@ data:
   loss:
     _target_: src.losses.logistic_binomial_log_likelihood.LogisticBinomialLogLikelihood
   loss_lr: 1
-  observations_path: /Users/arinaodv/Desktop/folder/study_phd/code/stein-sense/data/bioassay/observations.npy
-  posterior_samples_path: /Users/arinaodv/Desktop/folder/study_phd/code/stein-sense/data/bioassay/samples.npy
+  observations_path: /Users/arinaodv/Desktop/folder/study_phd/code/fd-sens/data/bioassay/observations.npy
+  posterior_samples_path: /Users/arinaodv/Desktop/folder/study_phd/code/fd-sens/data/bioassay/samples.npy
   prior_samples_path: null
   observations_num: null
   posterior_samples_num: null

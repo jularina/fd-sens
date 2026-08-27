@@ -351,7 +351,7 @@ def comparison_plot_existing_methods(cfg):
     #     ),
     # )
 
-    comparison_dir = "/Users/arinaodv/Desktop/folder/study_phd/code/stein-sense/data/multivariate_gaussian/comparison/"
+    comparison_dir = "/Users/arinaodv/Desktop/folder/study_phd/code/fd-sens/data/multivariate_gaussian/comparison/"
 
     combined_results_path = os.path.join(comparison_dir, "finite_sample_results.json")
     if os.path.exists(combined_results_path):
