@@ -13,9 +13,9 @@ plot:
 
   color_palette:
     colors:
-      - "#450314" # dark cherry
+#      - "#450314" # dark cherry
 #      - "#5A051A"  # cherry
-      - "#7c397d" # purple
+#      - "#7c397d" # purple
 #      - "#D20A2E"  # red
 #      - "#EE1E52"  # pink
 #      - "#6E3D6F" # darker purple
@@ -26,7 +26,7 @@ plot:
 #      - "#EE1E52"  # pink
 #      - "#F2BDCD"  # light-light-pink
 #      - "#00BFC4"   # blue-green
-      - "#5b9bd5"  # lighter blue
+#      - "#5b9bd5"  # lighter blue
 #      - "#5A051A"  # cherry
 #      - "#009E73"   # forest green
 #      - "#E69F00"   # orange

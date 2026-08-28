@@ -3796,7 +3796,7 @@ def plot_param_nonparam_skewness_comparison(
     basis_function,
     model,
     plot_cfg,
-    output_dir: str = "outputs/param_nonparam",
+    output_dir: str = "outputs/param_nonparam_skewness",
     domain: tuple = (-15, 15),
     resolution: int = 400,
 ) -> None:
@@ -3875,7 +3875,7 @@ def plot_param_nonparam_skewness_comparison(
     skew_b = _skewness(post_b)
 
     # Colors & labels
-    palette = ["#007200", "#ADEBC8"]
+    palette = ["#9EB8A0", "#ADEBC8"]
     col_ref = "black"
     col_a = palette[0]
     col_b = palette[1]

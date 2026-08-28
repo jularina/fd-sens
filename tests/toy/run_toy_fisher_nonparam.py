@@ -598,11 +598,11 @@ def run_multivariate_gaussian_diff_samples_num_runtimes(cfg, save_samples: bool 
 
 if __name__ == "__main__":
     run_param_nonparam_comparison_skewness()
-    run_param_nonparam_comparison_kurtosis()
-    run_param_nonparam_multimodality_comparison()
+    # run_param_nonparam_comparison_kurtosis()
+    # run_param_nonparam_multimodality_comparison()
     # run_gaussian_priors_nonparametric()
     # run_multivariate_gaussian_priors_nonparametric()
-    run_gaussian_priors_nonparametric_diff_radii()
+    # run_gaussian_priors_nonparametric_diff_radii()
     # run_multivariate_gaussian_priors_nonparametric_diff_radii()
 
     # run_multivariate_gaussian_diff_basis_funcs_num_runtimes()

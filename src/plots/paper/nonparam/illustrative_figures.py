@@ -278,8 +278,8 @@ def plot_sieve_and_mc_precision_combined(
     # Q_r^{K_1}, Q_r^{K_2}, Q_r^{K_3} all share one color (colors[9]) and are told
     # apart by alpha alone -- higher alpha for the smaller, innermost sets; Q_r
     # keeps its own distinct color (colors[6])
-    fill_colors_by_rank = [colors[6], colors[9], colors[9], colors[9]]
-    fill_alphas_by_rank = [0.45, 0.70, 0.55, 0.35]
+    fill_colors_by_rank = [colors[2], colors[6], colors[6], colors[6]]
+    fill_alphas_by_rank = [0.45, 0.60, 0.4, 0.2]
     # pre-blended to opaque RGB per rank so each layer's own alpha sets its look,
     # rather than compositing on top of the (already painted) layers beneath it
     fill_render_colors_by_rank = [_blend_over_white(c, a) for c, a in zip(fill_colors_by_rank, fill_alphas_by_rank)]
@@ -317,7 +317,7 @@ def plot_sieve_and_mc_precision_combined(
         lx, ly = label_r * np.cos(angle_rad), label_r * np.sin(angle_rad)
         # Q_r^{K_1}, Q_r^{K_2}, Q_r^{K_3} text in dark blue; Q_r itself uses its own
         # (fully opaque) area color instead of the faded alpha=0.45 fill
-        text_color = colors[9] if i < len(scales) - 1 else fill_colors_by_rank[0]
+        text_color = colors[6] if i < len(scales) - 1 else fill_colors_by_rank[0]
         text_color = "black"
         ax.text(lx, ly, f"${labels[i]}$", ha="center", va="center",
                 fontsize=label_fontsize, color=text_color, alpha=1.0)
@@ -383,7 +383,4 @@ if __name__ == "__main__":
     plot_config_path = os.path.join(REPO_ROOT, "configs/plots/overleaf_plots_settings.yaml")
     output_dir = os.path.join(REPO_ROOT, "outputs/paper/plots/illustrative/nonparam")
     plot_cfg = load_plot_config(plot_config_path)
-
-    plot_sieve_nested_neighbourhoods(plot_cfg=plot_cfg, output_dir=output_dir)
-    plot_mc_constraint_precision_over_l(plot_cfg=plot_cfg, output_dir=output_dir)
     plot_sieve_and_mc_precision_combined(plot_cfg=plot_cfg, output_dir=output_dir)
