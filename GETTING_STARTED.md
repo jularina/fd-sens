@@ -15,7 +15,7 @@ This approach performs **global Bayesian sensitivity analysis** using the Fisher
 The starting point is a reference Bayesian model of your choice. It consists of a reference prior, a reference likelihood or loss, and the resulting reference posterior $\widetilde\Pi_{\mathrm{ref}}$.
 Sensitivity is assessed relative to this model.
 
-## Candidate analyses
+## Candidate models
 
 The user specifies which modelling choices of the reference Bayesian model may vary and gives a plausible set of values, denoted by $\Gamma$.
 Each $\lambda\in\Gamma$ defines a candidate posterior $\widetilde\Pi^\lambda$.
@@ -34,59 +34,38 @@ The method compares the reference and candidate posteriors using the Fisher dive
 
 $$
 \mathrm{FD}(\widetilde\Pi_{\mathrm{ref}}\|\widetilde\Pi^\lambda)
-=
-\mathbb E_{\theta\sim\widetilde\Pi_{\mathrm{ref}}}
-\left[
-\left\|
-s_{\widetilde\pi_{\mathrm{ref}}}(\theta)
--s_{\widetilde\pi^\lambda}(\theta)
-\right\|^2
-\right].
+=\mathbb E_{\theta\sim\widetilde\Pi_{\mathrm{ref}}}\left[\left\|
+s_{\widetilde\pi_{\mathrm{ref}}}(\theta)-s_{\widetilde\pi^\lambda}(\theta)\right\|^2\right].
 $$
 
 Intuitively, the FD measures how differently the two posteriors behave across the region occupied by the reference posterior.
 A value of zero means that the candidate and reference posteriors coincide. Larger values indicate larger changes to the posterior.
 
 For any candidate $\lambda$, the FD is estimated using the reference-posterior samples:
+
 $$
-\widehat{\mathrm{FD}}_m
-(\widetilde\Pi_{\mathrm{ref}}\|\widetilde\Pi^\lambda)
-=
-\frac{1}{m}
-\sum_{i=1}^m
-\left\|
-s_{\widetilde\pi_{\mathrm{ref}}}(\theta_i)
--s_{\widetilde\pi^\lambda}(\theta_i)
-\right\|^2.
+\widehat{\mathrm{FD}}_m(\widetilde\Pi_{\mathrm{ref}}\|\widetilde\Pi^\lambda)=\frac{1}{m}\sum_{i=1}^m\left\|s_{\widetilde\pi_{\mathrm{ref}}}(\theta_i)-s_{\widetilde\pi^\lambda}(\theta_i)\right\|^2.
 $$
+
 The same reference samples are reused for every candidate. Evaluating a new candidate therefore requires score evaluations but not a new posterior fit.
 
 For the global sensitivity value, the method searches $\Gamma$ for the candidate with the largest estimated FD and the candidate with the smallest estimated FD. The global sensitivity value is their difference:
 
 $$
-\widehat{S}_m^{\mathrm{FD}}(\Gamma)
-=
-\sup_{\lambda\in\Gamma}
-\widehat{\mathrm{FD}}_m
-(\widetilde\Pi_{\mathrm{ref}}\|\widetilde\Pi^\lambda) -
-\inf_{\lambda\in\Gamma}
-\widehat{\mathrm{FD}}_m
-(\widetilde\Pi_{\mathrm{ref}}\|\widetilde\Pi^\lambda).
+\widehat{S}_m^{\mathrm{FD}}(\Gamma)=\sup_{\lambda\in\Gamma}\widehat{\mathrm{FD}}_m(\widetilde\Pi_{\mathrm{ref}}\|\widetilde\Pi^\lambda)-\inf_{\lambda\in\Gamma}\widehat{\mathrm{FD}}_m(\widetilde\Pi_{\mathrm{ref}}\|\widetilde\Pi^\lambda).
 $$
 
 ## Requirements
 - samples $\theta_{1:m}$ from the reference posterior $\widetilde\Pi_{\mathrm{ref}}$;
-- hyperparameter set $\Gamma$;
 - the score of the reference posterior;
-- the score of the candidate posterior for each $\lambda\in\Gamma$.
-
-Note that in many gradient-based Bayesian workflows, the quantities needed to evaluate the scores are already available from posterior computation.
+- the score of the candidate posterior $\widetilde\Pi^{\lambda}$;
+- set $\Gamma$ of hyperparameter $\lambda$ bounds.
 
 ## Interpreting the output
-- **global sensitivity:** the range of posterior change over $\Gamma$;
+- **global sensitivity value:** the range of posterior change over the neighbourhood;
 - **worst-case hyperparameters $\lambda_{\sup}$:** the modelling choice producing the greatest posterior change;
 - **least-sensitive hyperparameters $\lambda_{\inf}$:** the choice producing the smallest posterior change;
-- **maximum and minimum estimated FD values:** the endpoints used to calculate global sensitivity.
+- **maximum and minimum estimated sensitivity values:** the endpoints used to calculate global sensitivity.
 
 
 ## References
