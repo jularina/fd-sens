@@ -1020,7 +1020,7 @@ def plot_sdp_densities(
         label=true_prior_label,
         linestyle="--",
         linewidth=1.5,
-        color="steelblue",
+        color="black",
     )
 
     if show_posterior and posterior_distribution is not None:
@@ -1063,6 +1063,104 @@ def plot_sdp_densities(
     save_path = os.path.join(output_dir, filename)
     fig.savefig(save_path, format="pdf", bbox_inches="tight")
     plt.close(fig)
+
+
+def plot_sdp_density_with_centers(
+    basis_function,
+    lambda_star: np.ndarray,
+    estimate: float,
+    prior_distribution,
+    plot_cfg,
+    output_dir: str,
+    filename: str,
+    domain: tuple = (-15, 15),
+    resolution: int = 500,
+    show_legend: bool = True,
+) -> None:
+    """
+    Single-panel plot: one nonparametric SDP candidate density, the true prior
+    (dashed black), and the resulting basis-function centres shown as a rug
+    of dots along the x-axis.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    plt.rcParams.update({
+        "font.size": plot_cfg.plot.font.size,
+        "font.family": plot_cfg.plot.font.family,
+        "text.usetex": plot_cfg.plot.font.use_tex,
+        "text.latex.preamble": r"\usepackage{amsmath}",
+    })
+
+    x = np.linspace(domain[0], domain[1], resolution)[:, None]
+    dx = float(x[1, 0] - x[0, 0])
+    Phi_x = basis_function.evaluate(x)
+    prior_density_true = prior_distribution.pdf(x).flatten()
+    log_g = prior_distribution.log_pdf(x).flatten()
+
+    palette = list(getattr(plot_cfg.plot.color_palette, "colors", []))
+    color = palette[0] if palette else "C0"
+
+    names = plot_cfg.plot.param_latex_names
+    xlabel = names.get("theta")
+    ylabel_density = names.get("nonparametric_prior", "Density")
+    fd_label = names.get("estimatedSensitivityMeasure")
+
+    fig, ax = plt.subplots(
+        1, 1,
+        figsize=(plot_cfg.plot.figure.size.width,
+                 plot_cfg.plot.figure.size.height),
+        dpi=plot_cfg.plot.figure.dpi,
+    )
+
+    f = (Phi_x @ lambda_star).flatten()
+    log_post = f + log_g
+    logZ = logsumexp(log_post) + np.log(dx)
+    p_hat = np.exp(log_post - logZ)
+    density_line, = ax.plot(
+        x.flatten(), p_hat,
+        label=rf"{fd_label} = {estimate:.1f}", linewidth=1.5, color=color,
+    )
+
+    ax.plot(
+        x.flatten(),
+        prior_density_true,
+        linestyle="--",
+        linewidth=1.5,
+        color="black",
+    )
+
+    ymax = max(float(p_hat.max()), float(prior_density_true.max()))
+    center_y = -0.03 * ymax
+    centers_x = np.asarray(basis_function.centers).reshape(-1)
+    ax.plot(
+        centers_x, np.full_like(centers_x, center_y),
+        marker='o', markersize=4, linestyle='None',
+        color="#F4A6A6", clip_on=False,
+    )
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel_density)
+    ax.set_ylim(bottom=-0.06 * ymax)
+    ax.grid(True, alpha=0.3)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    if show_legend:
+        ax.legend(
+            handles=[density_line],
+            loc="best",
+            frameon=False,
+            fontsize=plt.rcParams["font.size"] * 0.9,
+            handlelength=0,
+            handletextpad=0,
+        )
+
+    if getattr(plot_cfg.plot.figure, "tight_layout", False):
+        plt.tight_layout()
+
+    save_path = os.path.join(output_dir, filename)
+    fig.savefig(save_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {save_path}")
 
 
 def plot_sdp_posterior_comparison(
@@ -1287,10 +1385,10 @@ def plot_sdp_2d_densities(
     ax.contour(
         X, Y, prior_density_true,
         levels=prior_levels,
-        colors="steelblue",
-        linewidths=0.5,
+        colors="black",
+        linewidths=0.4,
         linestyles="dashed",
-        alpha=0.8,
+        alpha=0.7,
     )
 
     ax.set_xlabel(xlabel)
@@ -1315,7 +1413,7 @@ def plot_sdp_2d_densities(
             X, Y, p_hat,
             levels=sdp_levels,
             colors=color,
-            linewidths=1.0,
+            linewidths=1.2,
         )
         legend_handles.append(Line2D([0], [0], color=color, lw=1.8, label=label))
 
@@ -3030,16 +3128,16 @@ def plot_runtime_nonparametric_with_ci(
     plt.close(fig)
 
 
-def plot_runtime_nonparametric_diff_samples_num_with_ci(
+def plot_runtime_nonparametric_diff_basis_funcs_num_diff_samples_with_ci(
     times_nonparametric: dict[int, dict[int, dict[int, float]]],
     plot_cfg: Any,
     output_dir: str,
     ci_level: float = 0.95,
-    filename: str = "runtime_nonparametric_diff_samples_nums.pdf",
+    filename: str = "runtime_nonparametric_diff_basis_funcs_nums_diff_samples.pdf",
 ) -> None:
     """
     Single-axis plot of nonparametric optimisation runtime against the number of
-    posterior/prior samples m, with one line per number of basis functions k.
+    basis functions K, with one line per number of prior/posterior samples m.
 
     Parameters
     ----------
@@ -3080,8 +3178,9 @@ def plot_runtime_nonparametric_diff_samples_num_with_ci(
     tight = bool(_deep_get(plot_cfg, "plot.figure.tight_layout", True))
 
     names = _deep_get(plot_cfg, "plot.param_latex_names", {}) or {}
-    x_label = names.get("numPosteriorSamples", r"$m$")
+    x_label = names.get("K")
     y_label = names.get("runtimeSeconds", "Time (sec.)")
+    legend_prefix = names.get("numPriorPosteriorSamples", "m+l")
 
     # Colors
     palette = list(getattr(_deep_get(plot_cfg, "plot.color_palette", {}), "colors", []))
@@ -3102,29 +3201,38 @@ def plot_runtime_nonparametric_diff_samples_num_with_ci(
     def _to_int(x):
         return int(x)
 
-    # --- Process: one series of (m, mean, ci) per basis size k
+    # --- Process: one series of (k, mean, ci) per samples num m
     samples_nums = sorted(times_nonparametric.keys(), key=_to_int)
-    by_basis = defaultdict(lambda: ([], [], []))
+    by_samples = defaultdict(lambda: ([], [], []))
     for m in samples_nums:
         for k, runs in times_nonparametric[m].items():
             vals = list(runs.values())
             mean, h = mean_ci(vals)
-            xs, means, cis = by_basis[k]
-            xs.append(int(m))
+            xs, means, cis = by_samples[m]
+            xs.append(int(k))
             means.append(mean)
             cis.append(h)
 
     # --- Plot
     fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=fig_dpi)
     handles_ordered, labels_ordered = [], []
+    basis_funcs_nums = None
 
-    for i, k in enumerate(sorted(by_basis.keys(), key=_to_int)):
-        xs, means, cis = by_basis[k]
+    for i, m in enumerate(sorted(by_samples.keys(), key=_to_int)):
+        xs, means, cis = by_samples[m]
+        sorted_idx = np.argsort(xs)
+        xs = list(np.array(xs)[sorted_idx])
+        means = list(np.array(means)[sorted_idx])
+        cis = list(np.array(cis)[sorted_idx])
+        if basis_funcs_nums is None:
+            basis_funcs_nums = xs
+
         color = palette[i % len(palette)]
+        label = rf"{legend_prefix}={m}"
         h_line = ax.plot(
             xs, means,
             marker=marker, markersize=ms, linewidth=lw,
-            color=color, label=rf"K={k}",
+            color=color, label=label,
         )[0]
         ax.fill_between(
             xs,
@@ -3133,12 +3241,14 @@ def plot_runtime_nonparametric_diff_samples_num_with_ci(
             color=color, alpha=0.4,
         )
         handles_ordered.append(h_line)
-        labels_ordered.append(rf"K={k}")
+        labels_ordered.append(label)
 
     # Axes styling
     ax.set_xlabel(x_label)
-    ax.set_xticks([int(m) for m in samples_nums])
-    ax.set_xticklabels([int(m) for m in samples_nums])
+    if basis_funcs_nums is not None:
+        ax.set_xticks(basis_funcs_nums)
+        ax.set_xticklabels([str(v) if i % 2 == 0 else ""
+                            for i, v in enumerate(basis_funcs_nums)])
     ax.set_ylabel(y_label)
     ax.ticklabel_format(axis="y", style="sci", scilimits=(-4, 4), useMathText=True)
     ax.grid(True, alpha=grid_alpha)
@@ -3989,10 +4099,11 @@ def plot_param_nonparam_kurtosis_comparison(
     # hardcoded rather than estimated.
     kurt_a = 0.0
     kurt_b = _excess_kurtosis(pi_b)
+    print(f"Kurtosis for nonparametric {kurt_b}.")
 
     # Colors & labels
-    palette = ["#007200", "#ADEBC8"]
-    col_ref = "steelblue"
+    palette = ["#9EB8A0", "#ADEBC8"]
+    col_ref = "black"
     col_a = palette[0]
     col_b = palette[1]
 
@@ -4091,8 +4202,8 @@ def plot_param_nonparam_multimodality_comparison(
     modes_b = _count_modes(pi_b)
 
     # Colors & labels
-    palette = ["#007200", "#ADEBC8"]
-    col_ref = "steelblue"
+    palette = ["#9EB8A0", "#ADEBC8"]
+    col_ref = "black"
     col_a = palette[0]
     col_b = palette[1]
 

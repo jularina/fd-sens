@@ -33,20 +33,20 @@ plot:
 #      - "#F0E442"   # golden yellow
 #      - "#3F3FFF"   # indigo
   # Green
-      - "#005500" # dark green
+#      - "#005500" # dark green
 #      - "#007200" # forest green
 #      - "#008000"
 #     - "#00A800" #acid bright green
 #     - "#58AF50"
-#     - "#6C936C"
-      - "#9EB8A0" # light green-grey
+      - "#6C936C" # green-grey
+#      - "#9EB8A0" # light green-grey
 #     - "#CCFFCC" # bright mint
-      - "#ADEBC8" # mint
-#     - "#ADEBDC" # blue mint
+#      - "#ADEBC8" # mint
+      - "#ADEBDC" # blue mint
       - "#9dc3c2" # light-grey-blue
-      - "#77a6b6" # grey-blue
+#      - "#77a6b6" # grey-blue
       - "#4d7298" # dark-grey-blue
-      - "#22577a" # dark-blue
+#      - "#22577a" # dark-blue
 
   seaborn:
     style: "whitegrid"
@@ -97,7 +97,7 @@ plot:
     estimatedFDposteriorsQuadraticForm: "$\\hat{\\rho}_m^{FD}(\\tilde{\\Pi}^{\\lambda_L})$"
     fDposteriorsQuadraticForm: "$\\rho^{FD}(\\tilde{\\Pi})$"
     estimatedFDposteriorsQuadraticFormWithK: "$\\hat{\\rho}_m^{FD}(\\tilde{\\Pi}_K)$"
-    estimatedSensitivityMeasure: "$\\widehat{S}_m^{\\mathrm{FD}}(\\widehat{\\mathcal{Q}}_{r,K,l})$"
+    estimatedSensitivityMeasure: "$\\widehat{S}_m^{\\mathrm{FD}}(\\widehat{\\mathcal{Q}}_{r}^{K,l})$"
 
   y_axis:
     log_scale: false

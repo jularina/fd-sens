@@ -40,11 +40,11 @@ fd:
       Gaussian:
         parameters_box_range:
           ranges:
-            mu: [-4, 4]
-            sigma: [1, 4]
+            mu: [-6, 6]
+            sigma: [1, 5]
           nums:
-            mu: 17
-            sigma: 7
+            mu: 25
+            sigma: 9
     loss:
       GaussianLogLikelihood:
         parameters_box_range:

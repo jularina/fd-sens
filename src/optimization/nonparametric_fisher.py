@@ -1,8 +1,9 @@
-from typing import Dict
+from typing import Dict, Optional
 import numpy as np
 import cvxpy as cp
 from omegaconf import OmegaConf
 
+from src.basis_functions.basis_functions import BaseBasisFunction
 from src.utils.basis_functions import BASIS_FUNCTIONS_REGISTRY
 
 
@@ -14,20 +15,28 @@ class OptimisationNonparametricBase:
         config: Dict,
         radius: float = 0.0,
         add_nuggets: bool = False,
+        basis_function: Optional[BaseBasisFunction] = None,
     ):
         """
         Base class to handle nonparametric quadratic form optimization.
+
+        `basis_function`, if given, is used as-is instead of being built from
+        `config` (e.g. to force a basis whose centres are selected from a
+        different sample set than `prior_estimator`/`posterior_estimator`).
         """
         self.posterior_estimator = posterior_estimator
         self.prior_estimator = prior_estimator
 
-        basis_cls_name = config["basis_funcs_type"]
-        basis_cls = BASIS_FUNCTIONS_REGISTRY[basis_cls_name]
-        basis_kwargs = config.get("basis_funcs_kwargs", {})
-        basis_kwargs = OmegaConf.to_container(basis_kwargs, resolve=True)
-        basis_kwargs["prior_samples"] = self.prior_estimator.samples
-        basis_kwargs["posterior_samples"] = self.posterior_estimator.samples
-        self.basis_function = basis_cls(**basis_kwargs)
+        if basis_function is not None:
+            self.basis_function = basis_function
+        else:
+            basis_cls_name = config["basis_funcs_type"]
+            basis_cls = BASIS_FUNCTIONS_REGISTRY[basis_cls_name]
+            basis_kwargs = config.get("basis_funcs_kwargs", {})
+            basis_kwargs = OmegaConf.to_container(basis_kwargs, resolve=True)
+            basis_kwargs["prior_samples"] = self.prior_estimator.samples
+            basis_kwargs["posterior_samples"] = self.posterior_estimator.samples
+            self.basis_function = basis_cls(**basis_kwargs)
 
         self.A, self.b, self.c = self.posterior_estimator.compute_non_parametric_fisher_quadratic_form_prior_only(
             self.basis_function,
