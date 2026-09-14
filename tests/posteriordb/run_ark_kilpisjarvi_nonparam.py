@@ -158,11 +158,11 @@ def plot_posterior_predictive_radius_sweep(
     Overlays the reference posterior-predictive band with every swept KEF
     worst-case radius's predictive mean on one axes, so the progressive
     shift as r grows is visible at a glance. `kef_results` is a list of
-    dicts with keys r, mean, lo, hi, ess_frac (as produced by the radius
-    sweep loop); only its mean curve is drawn per radius (all their bands
-    overlaid would be unreadable) -- colour darkens from light to dark blue
-    with increasing radius, and low-ESS (<5%) radii are drawn dashed to
-    flag them as SNIS-unreliable rather than a genuine worst case.
+    dicts with keys r, mean, lo, hi (as produced by the radius sweep loop);
+    only its mean curve is drawn per radius (all their bands overlaid would
+    be unreadable) -- colour darkens from light to dark blue with
+    increasing radius. (Each radius's SNIS effective sample size is still
+    printed to the console by the caller; it is not shown on this plot.)
     """
     _apply_plot_rc(plot_cfg)
     os.makedirs(output_dir, exist_ok=True)
@@ -187,19 +187,10 @@ def plot_posterior_predictive_radius_sweep(
     n = len(results_sorted)
     for i, res in enumerate(results_sorted):
         color = cmap(0.35 + 0.55 * (i + 1) / n)
-        low_ess = res["ess_frac"] < 0.05
         ax.plot(
-            x_pred_years, res["mean"] + y_mean_offset, color=color, linewidth=0.9,
-            linestyle=":" if low_ess else "-", zorder=3,
-            label=rf"$\tilde x_K$ ($r={res['r']:g}${'*' if low_ess else ''})",
+            x_pred_years, res["mean"] + y_mean_offset, color=color, linewidth=0.9, zorder=3,
+            label=rf"$\tilde x_K$ ($r={res['r']:g}$)",
         )
-
-    if any(res["ess_frac"] < 0.05 for res in results_sorted):
-        # Dummy zero-length handle: a standard trick to fold an explanatory
-        # footnote into the legend box itself (in figure fraction, below the
-        # curve labels) rather than as separate axes text that tight_layout
-        # doesn't reliably keep clear of the x-axis label.
-        ax.plot([], [], " ", label=r"\footnotesize{}* low ESS ($<$5\%): unreliable")
 
     ax.set_xlabel("Year")
     ax.set_ylabel("Temperature (°C)")
@@ -224,8 +215,8 @@ def plot_acf_radius_sweep(
     """
     Combined ACF comparison across the whole radius sweep on one axes,
     mirroring plot_posterior_predictive_radius_sweep: `kef_results` is the
-    same list of dicts (now also carrying an "acf" key), coloured light to
-    dark blue with increasing radius, dotted for low-ESS (<5%) radii.
+    same list of dicts (also carrying an "acf" key), coloured light to
+    dark blue with increasing radius.
     """
     _apply_plot_rc(plot_cfg)
     os.makedirs(output_dir, exist_ok=True)
@@ -243,15 +234,10 @@ def plot_acf_radius_sweep(
     n = len(results_sorted)
     for i, res in enumerate(results_sorted):
         color = cmap(0.35 + 0.55 * (i + 1) / n)
-        low_ess = res["ess_frac"] < 0.05
         ax.plot(
             lags, res["acf"], color=color, linewidth=1.6, zorder=3,
-            linestyle=":" if low_ess else "-",
-            label=rf"$\tilde x_K$ ($r={res['r']:g}${'*' if low_ess else ''})",
+            label=rf"$\tilde x_K$ ($r={res['r']:g}$)",
         )
-
-    if any(res["ess_frac"] < 0.05 for res in results_sorted):
-        ax.plot([], [], " ", label=r"\footnotesize{}* low ESS ($<$5\%): unreliable")
 
     ax.axhline(0.0, color="black", linewidth=0.6, linestyle=":")
     ax.set_xlabel("Lag")
