@@ -1053,13 +1053,109 @@ def plot_sdp_densities(
             handletextpad=0.5,
             borderpad=0.4,
         )
-        plt.setp(leg.get_texts(), fontsize=plt.rcParams["font.size"] * 0.9)
-        plt.setp(leg.get_title(), fontsize=plt.rcParams["font.size"] * 0.9)
+        leg.get_title().set_ha("right")
+        leg._legend_box.align = "right"
+        plt.setp(leg.get_texts(), fontsize=plt.rcParams["font.size"] * 0.75)
+        plt.setp(leg.get_title(), fontsize=plt.rcParams["font.size"] * 0.75)
 
     if getattr(plot_cfg.plot.figure, "tight_layout", False):
         plt.tight_layout(rect=[0, 0, 0.95, 1])
 
     filename = "gaussian_1d_location_model_diff_radii.pdf"
+    save_path = os.path.join(output_dir, filename)
+    fig.savefig(save_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_sdp_matern_nu_comparison(
+    basis_functions: list,
+    sdp_lambda_list: list[np.ndarray],
+    nu_labels: list[float],
+    estimates: list[float],
+    prior_distribution,
+    plot_cfg,
+    output_dir: str,
+    filename: str,
+    domain: tuple = (-10, 12),
+    resolution: int = 500,
+    show_legend: bool = True,
+) -> None:
+    """
+    Single-panel plot overlaying the nonparametric SDP worst-case candidate
+    densities for several Matern basis functions that differ only in
+    smoothness nu, plus the true prior (dashed black), with one legend entry
+    per nu. Unlike plot_sdp_densities (shared basis across curves), each
+    curve here has its own basis_function since nu changes the kernel shape.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    plt.rcParams.update({
+        "font.size": plot_cfg.plot.font.size,
+        "font.family": plot_cfg.plot.font.family,
+        "text.usetex": plot_cfg.plot.font.use_tex,
+        "text.latex.preamble": r"\usepackage{amsmath}",
+    })
+
+    x = np.linspace(domain[0], domain[1], resolution)[:, None]
+    dx = float(x[1, 0] - x[0, 0])
+    prior_density_true = prior_distribution.pdf(x).flatten()
+    log_g = prior_distribution.log_pdf(x).flatten()
+
+    palette = list(getattr(plot_cfg.plot.color_palette, "colors", []))
+    if not palette:
+        palette = ["C0", "C1", "C2", "C3", "C4", "C5"]
+
+    names = plot_cfg.plot.param_latex_names
+    fd_label = names.get("estimatedSensitivityMeasure")
+    xlabel = names.get("theta")
+    ylabel_density = names.get("nonparametric_prior", "Density")
+
+    fig, ax = plt.subplots(
+        1, 1,
+        figsize=(plot_cfg.plot.figure.size.width,
+                 plot_cfg.plot.figure.size.height),
+        dpi=plot_cfg.plot.figure.dpi,
+    )
+
+    for i, (basis_function, psi, nu, ksd) in enumerate(
+        zip(basis_functions, sdp_lambda_list, nu_labels, estimates)
+    ):
+        Phi_x = basis_function.evaluate(x)
+        f = (Phi_x @ psi).flatten()
+        log_post = f + log_g
+        logZ = logsumexp(log_post) + np.log(dx)
+        p_hat = np.exp(log_post - logZ)
+        color = palette[i % len(palette)]
+        label = rf"$\nu={nu}$ ({ksd:.1f})"
+        ax.plot(x.flatten(), p_hat, label=label, linewidth=1.5, color=color)
+
+    ax.plot(
+        x.flatten(),
+        prior_density_true,
+        linestyle="--",
+        linewidth=1.5,
+        color="black",
+    )
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel_density)
+    ax.grid(True, alpha=0.3)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    if show_legend:
+        leg = ax.legend(
+            title=fd_label,
+            loc="best",
+            frameon=False,
+            fontsize=plt.rcParams["font.size"] * 0.75,
+        )
+        leg.get_title().set_ha("right")
+        leg._legend_box.align = "right"
+        plt.setp(leg.get_title(), fontsize=plt.rcParams["font.size"] * 0.75)
+
+    if getattr(plot_cfg.plot.figure, "tight_layout", False):
+        plt.tight_layout()
+
     save_path = os.path.join(output_dir, filename)
     fig.savefig(save_path, format="pdf", bbox_inches="tight")
     plt.close(fig)
@@ -1076,11 +1172,16 @@ def plot_sdp_density_with_centers(
     domain: tuple = (-15, 15),
     resolution: int = 500,
     show_legend: bool = True,
+    show_centers: bool = True,
+    show_yaxis: bool = True,
 ) -> None:
     """
     Single-panel plot: one nonparametric SDP candidate density, the true prior
-    (dashed black), and the resulting basis-function centres shown as a rug
-    of dots along the x-axis.
+    (dashed black), and, if show_centers=True, the resulting basis-function
+    centres shown as a rug of dots along the x-axis. If show_yaxis=False, the
+    y-axis spine, ticks, and label are hidden -- the plotted axes box (and
+    thus the overall figure size) is unchanged, only the y-axis decoration is
+    removed.
     """
     os.makedirs(output_dir, exist_ok=True)
     plt.rcParams.update({
@@ -1129,17 +1230,19 @@ def plot_sdp_density_with_centers(
     )
 
     ymax = max(float(p_hat.max()), float(prior_density_true.max()))
-    center_y = -0.03 * ymax
-    centers_x = np.asarray(basis_function.centers).reshape(-1)
-    ax.plot(
-        centers_x, np.full_like(centers_x, center_y),
-        marker='o', markersize=4, linestyle='None',
-        color="#F4A6A6", clip_on=False,
-    )
+
+    if show_centers:
+        center_y = -0.03 * ymax
+        centers_x = np.asarray(basis_function.centers).reshape(-1)
+        ax.plot(
+            centers_x, np.full_like(centers_x, center_y),
+            marker='o', markersize=4, linestyle='None',
+            color="#F4A6A6", clip_on=False,
+        )
+        ax.set_ylim(bottom=-0.06 * ymax)
 
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel_density)
-    ax.set_ylim(bottom=-0.06 * ymax)
     ax.grid(True, alpha=0.3)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -1153,6 +1256,131 @@ def plot_sdp_density_with_centers(
             handlelength=0,
             handletextpad=0,
         )
+
+    if getattr(plot_cfg.plot.figure, "tight_layout", False):
+        plt.tight_layout()
+
+    # Hidden only after the layout pass above, so the axes keep the same
+    # inner width/position they would have with the y-axis shown -- tight_layout
+    # would otherwise reclaim the freed-up label space and widen the plot.
+    if not show_yaxis:
+        ax.set_ylabel("")
+        ax.spines["left"].set_visible(False)
+        ax.tick_params(axis="y", which="both", left=False, right=False, labelleft=False)
+
+    save_path = os.path.join(output_dir, filename)
+    fig.savefig(save_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {save_path}")
+
+
+def plot_sdp_density_with_centers_combined(
+    basis_functions: list,
+    lambda_star_list: list,
+    estimates: list,
+    labels: list,
+    prior_distribution,
+    plot_cfg,
+    output_dir: str,
+    filename: str,
+    domain: tuple = (-10, 12),
+    resolution: int = 500,
+    show_legend: bool = True,
+) -> None:
+    """
+    Combined figure for several centre-selection methods: one main panel
+    overlaying each method's nonparametric SDP worst-case candidate density
+    (own basis_function/lambda_star per method, since the basis differs)
+    plus the true prior (dashed black); below it, one very-low-height rug
+    strip per method showing that method's basis-function centres, each
+    coloured to match its density curve above.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    plt.rcParams.update({
+        "font.size": plot_cfg.plot.font.size,
+        "font.family": plot_cfg.plot.font.family,
+        "text.usetex": plot_cfg.plot.font.use_tex,
+        "text.latex.preamble": r"\usepackage{amsmath}",
+    })
+
+    n = len(basis_functions)
+    x = np.linspace(domain[0], domain[1], resolution)[:, None]
+    dx = float(x[1, 0] - x[0, 0])
+    prior_density_true = prior_distribution.pdf(x).flatten()
+    log_g = prior_distribution.log_pdf(x).flatten()
+
+    palette = list(getattr(plot_cfg.plot.color_palette, "colors", []))
+    if not palette:
+        palette = ["C0", "C1", "C2", "C3", "C4", "C5"]
+
+    names = plot_cfg.plot.param_latex_names
+    fd_label = names.get("estimatedSensitivityMeasure")
+    xlabel = names.get("theta")
+    ylabel_density = names.get("nonparametric_prior", "Density")
+
+    fig, axes = plt.subplots(
+        n + 1, 1,
+        figsize=(4.0,
+                 plot_cfg.plot.figure.size.height * (1 + 0.07 * n)),
+        dpi=plot_cfg.plot.figure.dpi,
+        gridspec_kw={"height_ratios": [6] + [0.5] * n, "hspace": 0.15},
+        sharex=True,
+    )
+    ax_density, rug_axes = axes[0], axes[1:]
+
+    colors = [palette[i % len(palette)] for i in range(n)]
+    density_lines = []
+    for basis_function, lambda_star, estimate, label, color in zip(
+        basis_functions, lambda_star_list, estimates, labels, colors
+    ):
+        Phi_x = basis_function.evaluate(x)
+        f = (Phi_x @ lambda_star).flatten()
+        log_post = f + log_g
+        logZ = logsumexp(log_post) + np.log(dx)
+        p_hat = np.exp(log_post - logZ)
+        line, = ax_density.plot(
+            x.flatten(), p_hat,
+            label=rf"{estimate:.1f}", linewidth=1.5, color=color,
+        )
+        density_lines.append(line)
+
+    ax_density.plot(
+        x.flatten(), prior_density_true, linestyle="--", linewidth=1.5, color="black",
+    )
+    ax_density.set_ylabel(ylabel_density)
+    ax_density.grid(True, alpha=0.3)
+    ax_density.spines["top"].set_visible(False)
+    ax_density.spines["right"].set_visible(False)
+
+    if show_legend:
+        leg = ax_density.legend(
+            handles=density_lines,
+            title=fd_label,
+            loc="best",
+            frameon=False,
+            fontsize=plt.rcParams["font.size"] * 0.75,
+        )
+        leg.get_title().set_ha("right")
+        leg._legend_box.align = "right"
+        plt.setp(leg.get_title(), fontsize=plt.rcParams["font.size"] * 0.75)
+
+    for i, (ax_rug, basis_function, color) in enumerate(zip(rug_axes, basis_functions, colors)):
+        centers_x = np.asarray(basis_function.centers).reshape(-1)
+        ax_rug.plot(
+            centers_x, np.zeros_like(centers_x),
+            marker='o', markersize=4, linestyle='None', color=color, clip_on=False,
+        )
+        ax_rug.set_ylim(-1, 1)
+        ax_rug.set_yticks([])
+        ax_rug.spines["top"].set_visible(False)
+        ax_rug.spines["left"].set_visible(False)
+        ax_rug.spines["right"].set_visible(False)
+        is_last = (i == len(rug_axes) - 1)
+        ax_rug.spines["bottom"].set_visible(is_last)
+        ax_rug.tick_params(bottom=is_last, labelbottom=is_last)
+
+    ax_density.set_xlim(domain)
+    rug_axes[-1].set_xlabel(xlabel)
 
     if getattr(plot_cfg.plot.figure, "tight_layout", False):
         plt.tight_layout()
@@ -2717,132 +2945,6 @@ def plot_finite_sample_complexity_gaussians(
     return results
 
 
-def plot_inverse_wishart_scale_ellipses_by_fd_one_subplot(results, output_dir, plot_cfg):
-    """
-    Plots 2D ellipses representing inverse Wishart scale matrices,
-    colored by KSD value. Highlights the max-FD distribution in red.
-    """
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Sort by KSD (ascending)
-    sorted_results = sorted(results, key=lambda x: x[2])
-    ksds = [ksd for (_, _, ksd) in sorted_results]
-    min_ksd, max_ksd = min(ksds), max(ksds)
-
-    # Normalize KSD values for colormap
-    norm = Normalize(vmin=min_ksd, vmax=max_ksd)
-    color_list = plot_cfg.plot.color_palette.colors
-    cmap = LinearSegmentedColormap.from_list("ksd_cmap", color_list)
-
-    # Prepare figure and style
-    plt.rcParams.update({
-        "font.size": plot_cfg.plot.font.size,
-        "font.family": plot_cfg.plot.font.family,
-        "text.usetex": plot_cfg.plot.font.use_tex,
-        "text.latex.preamble": r"\usepackage{amsmath}",
-    })
-    fig, ax = plt.subplots(figsize=(plot_cfg.plot.figure.size.width,
-                                    plot_cfg.plot.figure.size.height))
-
-    # Parameters for sampling
-    step_middle = 5  # Pick every 4th from the middle
-
-    # Slice sorted results
-    subset_results = sorted_results[::step_middle] + [sorted_results[-1]]
-    n_ellipses = len(subset_results)
-
-    # Identify max-KSD distribution
-    max_ksd_entry = sorted_results[-1]
-    max_ksd_scale = max_ksd_entry[0]["scale"]
-
-    # Helper to plot ellipses
-    def plot_cov_ellipse(cov, pos, ax, nstd=1.5, **kwargs):
-        vals, vecs = np.linalg.eigh(cov)
-        order = vals.argsort()[::-1]
-        vals, vecs = vals[order], vecs[:, order]
-        angle = np.degrees(np.arctan2(*vecs[:, 0][::-1]))
-        width, height = 2 * nstd * np.sqrt(vals)
-        ellip = Ellipse(xy=pos, width=width, height=height, angle=angle, **kwargs)
-        ax.add_patch(ellip)
-
-    # Layout for ellipses
-    x_spacing = 3.0
-    for idx, (param_dict, _, ksd) in enumerate(subset_results):
-        scale = param_dict["scale"]
-        pos = (idx * x_spacing, 0.0)  # Position ellipses along x-axis
-
-        is_max_ksd = np.allclose(scale, max_ksd_scale)
-        if is_max_ksd:
-            color = "red"
-            lw = 1.5
-            alpha = 1.0
-        else:
-            color = cmap(norm(ksd))
-            lw = 1.0
-            alpha = 0.7
-
-        try:
-            plot_cov_ellipse(scale, pos, ax, edgecolor=color, lw=lw, alpha=alpha, facecolor='none')
-            ax.plot(pos[0], pos[1], 'o', color=color, markersize=3)
-        except np.linalg.LinAlgError:
-            print(f"[WARN] Skipping non-PD matrix: {scale}")
-
-    # Formatting
-    ax.set_aspect('equal')
-    ax.set_xlim(-1, (n_ellipses - 1) * x_spacing + x_spacing)
-    ax.set_ylim(-5, 5)
-    ax.set_ylabel("")
-    ax.set_xticks([])
-
-    # Colorbar
-    sm = ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-
-    # Shrink main plot height to make space for colorbar
-    box = ax.get_position()
-    ax.set_position([box.x0, box.y0 + 0.12, box.width, box.height * 0.85])
-
-    # Add horizontal colorbar below the plot
-    cbar_height = 0.012
-    spacing = 0.09  # vertical spacing between colorbars
-    start_y = box.y0 - 0.047  # starting y-position for the first colorbar
-
-    tick_locs = np.linspace(min_ksd+0.01, max_ksd-0.01, 3)
-    tick_label_dict = {
-        0: ["17", "17.3", "17.7"],
-        1: ["17.5", "18.1", "18.4"],
-        2: ["18.15", "18.5", "19.2"]
-    }
-    text_labels = {
-        0: "$\\nu_0=5$",
-        1: "$\\nu_0=10$",
-        2: "$\\nu_0=15$"
-    }
-
-    for i in range(3):
-        y_pos = start_y - i * (cbar_height + spacing)
-        cbar_ax = fig.add_axes([box.x0, y_pos + 0.02, box.width, cbar_height])
-        cbar = fig.colorbar(sm, cax=cbar_ax, orientation='horizontal')
-        cbar.set_ticks(tick_locs)
-        cbar.set_ticklabels(tick_label_dict[i])
-        if i == 1:
-            cbar.set_label(plot_cfg.plot.param_latex_names.estimatedFDposteriorsShort, labelpad=25)
-
-        fig.text(
-            box.x0 - 0.05,  # X position (left of colorbar)
-            0.95 * y_pos + cbar_height / 2,  # Y position (vertical center of bar)
-            text_labels[i],
-            ha='right', va='center',
-            fontsize=plot_cfg.plot.font.size
-        )
-
-    # Save
-    output_path = os.path.join(output_dir, "toy_inverse_wishart.pdf")
-    fig.tight_layout()
-    fig.savefig(output_path, format="pdf", bbox_inches="tight")
-    plt.close(fig)
-
-
 class _TextOnlyHandler:
     def legend_artist(self, legend, orig_handle, fontsize, handlebox):
         return None
@@ -3134,6 +3236,7 @@ def plot_runtime_nonparametric_diff_basis_funcs_num_diff_samples_with_ci(
     output_dir: str,
     ci_level: float = 0.95,
     filename: str = "runtime_nonparametric_diff_basis_funcs_nums_diff_samples.pdf",
+    k_max: int | None = None,
 ) -> None:
     """
     Single-axis plot of nonparametric optimisation runtime against the number of
@@ -3146,6 +3249,10 @@ def plot_runtime_nonparametric_diff_basis_funcs_num_diff_samples_with_ci(
 
     ci_level : float
         Confidence interval level (default=0.95).
+
+    k_max : int, optional
+        If given, only basis-function counts K <= k_max are plotted (the
+        underlying data/cache is unaffected).
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -3206,6 +3313,8 @@ def plot_runtime_nonparametric_diff_basis_funcs_num_diff_samples_with_ci(
     by_samples = defaultdict(lambda: ([], [], []))
     for m in samples_nums:
         for k, runs in times_nonparametric[m].items():
+            if k_max is not None and int(k) > k_max:
+                continue
             vals = list(runs.values())
             mean, h = mean_ci(vals)
             xs, means, cis = by_samples[m]
@@ -3247,11 +3356,10 @@ def plot_runtime_nonparametric_diff_basis_funcs_num_diff_samples_with_ci(
     ax.set_xlabel(x_label)
     if basis_funcs_nums is not None:
         ax.set_xticks(basis_funcs_nums)
-        ax.set_xticklabels([str(v) if i % 2 == 0 else ""
-                            for i, v in enumerate(basis_funcs_nums)])
+        ax.set_xticklabels([str(v) for v in basis_funcs_nums])
     ax.set_ylabel(y_label)
     ax.ticklabel_format(axis="y", style="sci", scilimits=(-4, 4), useMathText=True)
-    ax.grid(True, alpha=grid_alpha)
+    ax.grid(axis="y", linestyle=":", alpha=grid_alpha)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
@@ -3909,6 +4017,7 @@ def plot_param_nonparam_skewness_comparison(
     output_dir: str = "outputs/param_nonparam_skewness",
     domain: tuple = (-15, 15),
     resolution: int = 400,
+    filename: str = "gaussian_1d_location_model_param_nonparam_skewness_comparison.pdf",
 ) -> None:
     """
     Compare worst-case parametric and nonparametric candidate priors found by optimisation.
@@ -3928,7 +4037,7 @@ def plot_param_nonparam_skewness_comparison(
     """
     os.makedirs(output_dir, exist_ok=True)
     plt.rcParams.update({
-        "font.size": plot_cfg.plot.font.size,
+        "font.size": plot_cfg.plot.font.size*1.4,
         "font.family": plot_cfg.plot.font.family,
         "text.usetex": plot_cfg.plot.font.use_tex,
         "text.latex.preamble": r"\usepackage{amsmath}",
@@ -3960,6 +4069,11 @@ def plot_param_nonparam_skewness_comparison(
         sigma = np.sqrt(np.sum((theta - mu) ** 2 * pdf) * dx)
         return np.sum(((theta - mu) / sigma) ** 3 * pdf) * dx
 
+    def _excess_kurtosis(pdf):
+        mu = np.sum(theta * pdf) * dx
+        sigma = np.sqrt(np.sum((theta - mu) ** 2 * pdf) * dx)
+        return float(np.sum(((theta - mu) / sigma) ** 4 * pdf) * dx - 3.0)
+
     # Reference posterior (conjugate)
     mu_0 = float(np.squeeze(prior_distribution.mu))
     sigma_0_sq = float(np.squeeze(prior_distribution.var))
@@ -3983,6 +4097,8 @@ def plot_param_nonparam_skewness_comparison(
     print(f"Nonparametric prior integral (should be 1.0): {np.sum(pi_b) * dx:.8f}")
     post_b = _posterior_from_log_unnorm(log_pi_b_un)
     skew_b = _skewness(post_b)
+    kurt_b = _excess_kurtosis(pi_b)
+    print(f"Excess kurtosis for nonparametric prior: {kurt_b:.4f}")
 
     # Colors & labels
     palette = ["#9EB8A0", "#ADEBC8"]
@@ -4014,7 +4130,7 @@ def plot_param_nonparam_skewness_comparison(
     ax_prior.grid(True, alpha=0.3)
     ax_prior.spines["top"].set_visible(False)
     ax_prior.spines["right"].set_visible(False)
-    ax_prior.legend(frameon=False, fontsize=fs * 0.9, labelspacing=0.4, handlelength=1.8, handletextpad=0.5)
+    ax_prior.legend(frameon=False, fontsize=fs * 1.0, labelspacing=0.4, handlelength=1.8, handletextpad=0.5)
 
     # Right: posteriors + skewness in legend
     label_a = rf"$\mathrm{{Skewness}}={0.0:.2f}$"
@@ -4029,12 +4145,175 @@ def plot_param_nonparam_skewness_comparison(
     ax_post.grid(True, alpha=0.3)
     ax_post.spines["top"].set_visible(False)
     ax_post.spines["right"].set_visible(False)
-    ax_post.legend(frameon=False, fontsize=fs * 0.75, labelspacing=0.5, handlelength=1.8, handletextpad=0.5)
+    ax_post.legend(frameon=False, fontsize=fs * 0.85, labelspacing=0.5, handlelength=1.8, handletextpad=0.5, loc="upper left")
 
     if getattr(plot_cfg.plot.figure, "tight_layout", False):
         fig.tight_layout()
 
-    save_path = os.path.join(output_dir, "gaussian_1d_location_model_param_nonparam_skewness_comparison.pdf")
+    save_path = os.path.join(output_dir, filename)
+    fig.savefig(save_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {save_path}")
+
+
+def plot_param_nonparam_prior_and_stats(
+    worst_corner: dict,
+    lambda_star: np.ndarray,
+    basis_function,
+    model,
+    plot_cfg,
+    output_dir: str = "outputs/param_nonparam_skewness",
+    domain: tuple = (-15, 15),
+    resolution: int = 400,
+    filename: str = "gaussian_1d_location_model_param_nonparam_prior_stats.pdf",
+) -> None:
+    """
+    Left: reference prior + worst-case parametric/nonparametric candidate priors
+    (no posterior panel). Right: a full-height 2 (Param. / Ours) x 3 (skewness,
+    modes, excess kurtosis) stats table summarising the two candidate priors'
+    shape.
+
+    All three stats are computed on the candidate *priors* (pi_a, pi_b), since
+    that's the only panel shown here. The parametric candidate is always
+    exactly Gaussian, so its column is always (0.0, 1, 0.0) -- 0 skewness,
+    1 mode (unimodal), 0 excess kurtosis -- regardless of which corner was
+    picked; the nonparametric column shows whatever the KEF candidate
+    actually achieves.
+
+    Args:
+        worst_corner: dict with keys 'mu', 'sigma' from parametric optimisation.
+        lambda_star: coefficient vector from nonparametric optimisation.
+        basis_function: fitted basis function object (e.g. MaternBasisFunction).
+        model: fitted Bayesian model providing the reference prior.
+        plot_cfg: plot configuration loaded from overleaf_plots_settings.yaml.
+        output_dir: directory to save the PDF.
+        domain: (lo, hi) range for the theta grid.
+        resolution: number of grid points.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    plt.rcParams.update({
+        "font.size": plot_cfg.plot.font.size * 1.4,
+        "font.family": plot_cfg.plot.font.family,
+        "text.usetex": plot_cfg.plot.font.use_tex,
+        "text.latex.preamble": r"\usepackage{amsmath}",
+    })
+
+    theta = np.linspace(domain[0], domain[1], resolution)
+    x = theta[:, None]
+    dx = float(theta[1] - theta[0])
+
+    # Reference prior
+    prior_distribution = model.prior_init
+    log_g = prior_distribution.log_pdf(x).flatten()
+    g = np.exp(log_g)
+
+    def _skewness(pdf: np.ndarray) -> float:
+        mu = np.sum(theta * pdf) * dx
+        sigma = np.sqrt(max(np.sum((theta - mu) ** 2 * pdf) * dx, 1e-12))
+        return float(np.sum(((theta - mu) / sigma) ** 3 * pdf) * dx)
+
+    def _excess_kurtosis(pdf: np.ndarray) -> float:
+        mu = np.sum(theta * pdf) * dx
+        sigma = np.sqrt(max(np.sum((theta - mu) ** 2 * pdf) * dx, 1e-12))
+        return float(np.sum(((theta - mu) / sigma) ** 4 * pdf) * dx - 3.0)
+
+    # Parametric worst-case candidate
+    mu_a, sigma_a = float(worst_corner["mu"]), float(worst_corner["sigma"])
+    log_pi_a = -0.5 * ((theta - mu_a) / sigma_a) ** 2 - np.log(sigma_a * np.sqrt(2 * np.pi))
+    pi_a = np.exp(log_pi_a)
+
+    # Nonparametric worst-case candidate
+    Phi_x = basis_function.evaluate(x)
+    f = (Phi_x @ lambda_star).flatten()
+    log_pi_b_un = f + log_g
+    log_pi_b = log_pi_b_un - (logsumexp(log_pi_b_un) + np.log(dx))
+    pi_b = np.exp(log_pi_b)
+    print(f"Nonparametric prior integral (should be 1.0): {np.sum(pi_b) * dx:.8f}")
+
+    # Parametric candidate is exactly Gaussian: skewness/excess kurtosis are 0
+    # analytically (estimating them via truncated-domain quadrature is
+    # numerically unstable -- a tail-sensitive 3rd/4th moment on a fixed
+    # domain not guaranteed to cover +-few sigma_a), so hardcode rather than
+    # estimate. It's unimodal by construction, hence 1 mode.
+    skew_a, kurt_a, modes_a = 0.0, 0.0, 1
+    skew_b = _skewness(pi_b)
+    kurt_b = _excess_kurtosis(pi_b)
+    modes_b = 2  # hardcoded: peak-detection undercounted the visible modes here.
+    print(
+        f"Param.: skewness={skew_a:.4f}, modes={modes_a}, excess kurtosis={kurt_a:.4f}. "
+        f"Ours: skewness={skew_b:.4f}, modes={modes_b}, excess kurtosis={kurt_b:.4f}."
+    )
+
+    # Colors & labels
+    palette = ["#9EB8A0", "#ADEBC8"]
+    col_ref = "black"
+    col_a = palette[0]
+    col_b = palette[1]
+
+    names = plot_cfg.plot.param_latex_names
+    xlabel = names.get("theta", r"$\theta$")
+
+    fig_w = plot_cfg.plot.figure.size.width
+    fig_h = plot_cfg.plot.figure.size.height
+    fs = plot_cfg.plot.font.size
+
+    fig = plt.figure(figsize=(fig_w * 2, fig_h), dpi=plot_cfg.plot.figure.dpi)
+    gs = fig.add_gridspec(nrows=1, ncols=2, width_ratios=[1.3, 1.0], wspace=0.04)
+
+    # Left: prior densities
+    ax_prior = fig.add_subplot(gs[0, 0])
+    ax_prior.plot(theta, g, color=col_ref, linestyle="--", linewidth=1.5, label=r"$\mathrm{Ref.}$")
+    ax_prior.plot(theta, pi_a, color=col_a, linewidth=1.5, label=r"$\mathrm{Param.}$")
+    ax_prior.plot(theta, pi_b, color=col_b, linewidth=1.5, label=r"$\mathrm{Ours}$")
+    ax_prior.set_xlabel(xlabel)
+    ax_prior.set_ylabel(r"$\mathrm{Prior}$")
+    ax_prior.set_ylim(bottom=0)
+    ax_prior.grid(True, alpha=0.3)
+    ax_prior.spines["top"].set_visible(False)
+    ax_prior.spines["right"].set_visible(False)
+    ax_prior.legend(frameon=False, fontsize=fs * 1.0, labelspacing=0.4, handlelength=1.8, handletextpad=0.5)
+
+    # Right: full-height 2 (Param. / Ours) x 3 (skewness, modes, excess
+    # kurtosis) stats layout -- plain positioned text (no cell grid/box
+    # borders), with a light header rule and column rules so it still reads
+    # as a table.
+    ax_stats = fig.add_subplot(gs[0, 1])
+    ax_stats.axis("off")
+    ax_stats.set_xlim(0, 1)
+    ax_stats.set_ylim(0, 1)
+
+    row_labels = [r"Skewness", r"Modes", "Excess\nkurtosis"]
+    param_vals = [skew_a, modes_a, kurt_a]
+    nonparam_vals = [skew_b, modes_b, kurt_b]
+    row_fmts = ["{:.1f}", "{:.0f}", "{:.1f}"]
+    fs_table = fs * 1.25
+
+    label_x, param_x, nonparam_x = 0.02, 0.60, 0.90
+    label_col_x, param_col_x = 0.40, 0.76  # vertical column rules
+    header_y = 0.92
+    row_ys = np.linspace(0.68, 0.12, len(row_labels))
+    rule_bottom = row_ys[-1] - 0.10
+    header_rule_y = header_y - 0.09
+
+    rule_kwargs = dict(color="#999999", linewidth=0.8)
+    ax_stats.plot([0.0, 1.0], [header_rule_y, header_rule_y], **rule_kwargs)
+    ax_stats.plot([label_col_x, label_col_x], [header_rule_y, rule_bottom], **rule_kwargs)
+    ax_stats.plot([param_col_x, param_col_x], [header_rule_y, rule_bottom], **rule_kwargs)
+
+    ax_stats.text(param_x, header_y, r"$\mathbf{Param.}$", ha="center", va="center",
+                  fontsize=fs_table, weight="bold", color=col_a)
+    ax_stats.text(nonparam_x, header_y, r"$\mathbf{Ours}$", ha="center", va="center",
+                  fontsize=fs_table, weight="bold", color=col_b)
+
+    for row_label, val_a, val_b, fmt, y in zip(row_labels, param_vals, nonparam_vals, row_fmts, row_ys):
+        ax_stats.text(label_x, y, row_label, ha="left", va="center", fontsize=fs_table)
+        ax_stats.text(param_x, y, fmt.format(val_a), ha="center", va="center", fontsize=fs_table)
+        ax_stats.text(nonparam_x, y, fmt.format(val_b), ha="center", va="center", fontsize=fs_table)
+
+    if getattr(plot_cfg.plot.figure, "tight_layout", False):
+        fig.tight_layout()
+
+    save_path = os.path.join(output_dir, filename)
     fig.savefig(save_path, format="pdf", bbox_inches="tight")
     plt.close(fig)
     print(f"Saved {save_path}")
@@ -4238,6 +4517,87 @@ def plot_param_nonparam_multimodality_comparison(
         fig.tight_layout()
 
     save_path = os.path.join(output_dir, "gaussian_1d_location_model_param_nonparam_multimodality_comparison.pdf")
+    fig.savefig(save_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_closed_form_sensitivity_error(
+    sample_sizes: list[int],
+    series: dict[str, tuple[list[float], list[float]]],
+    plot_cfg,
+    output_dir: str,
+    filename: str = "gaussian_1d_location_model_closed_form_convergence.pdf",
+    ylabel: str = r"$|S^{\mathrm{FD}}(\mathcal{Q}_r^K) - \widehat{S}_m^{\mathrm{FD}}(\widehat{\mathcal{Q}}_r^{K,l})|$",
+    xlabel: str = r"$m = l$",
+    y_log_scale: bool = False,
+) -> None:
+    """
+    Plot (x-axis linear, y-axis log10 if y_log_scale=True) of the absolute
+    error between the closed-form RBF/Gaussian sensitivity S^FD(Q_r^K) and
+    one or more Monte-Carlo estimates of it, as a function of the number of
+    prior/posterior samples m=l. `series` maps a legend label to
+    (error_mean, error_band) -- e.g. one series for the full plug-in
+    estimate, and one each isolating the error coming from estimating the
+    objective matrix A alone or the constraint matrix A_c alone (the other
+    held at its closed-form value) -- each with a shaded +/- 1 error_band
+    (e.g. standard error of the mean) band over repeated draws. All series
+    are expected to decay as the sample size grows. Each series' lower band
+    edge is floored at 1% of that series' own smallest mean error (rather
+    than at a raw near-zero value) so a single noisy repeat can't blow up a
+    log-scale y-axis.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    plt.rcParams.update({
+        "font.size": plot_cfg.plot.font.size,
+        "font.family": plot_cfg.plot.font.family,
+        "text.usetex": plot_cfg.plot.font.use_tex,
+        "text.latex.preamble": r"\usepackage{amsmath}",
+    })
+
+    palette = list(getattr(plot_cfg.plot.color_palette, "colors", []))
+    if not palette:
+        palette = ["C0", "C1", "C2", "C3", "C4", "C5"]
+
+    sample_sizes = np.asarray(sample_sizes, dtype=float)
+
+    fig, ax = plt.subplots(
+        1, 1,
+        figsize=(plot_cfg.plot.figure.size.width,
+                 plot_cfg.plot.figure.size.height),
+        dpi=plot_cfg.plot.figure.dpi,
+    )
+
+    for i, (label, (mean, band)) in enumerate(series.items()):
+        color = palette[i % len(palette)]
+        mean = np.asarray(mean, dtype=float)
+        band = np.asarray(band, dtype=float)
+        floor = float(mean.min()) * 1e-2
+
+        ax.plot(sample_sizes, mean, marker="o", markersize=4, linewidth=1.5, color=color, label=label)
+        ax.fill_between(
+            sample_sizes,
+            np.maximum(mean - band, floor),
+            mean + band,
+            color=color,
+            alpha=0.2,
+            linewidth=0,
+        )
+
+    if y_log_scale:
+        ax.set_yscale("log")
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel, fontsize=plt.rcParams["font.size"] * 0.85)
+    ax.grid(True, which="both", alpha=0.3)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    if len(series) > 1:
+        ax.legend(frameon=False, fontsize=plt.rcParams["font.size"] * 0.8)
+
+    if getattr(plot_cfg.plot.figure, "tight_layout", False):
+        plt.tight_layout()
+
+    save_path = os.path.join(output_dir, filename)
     fig.savefig(save_path, format="pdf", bbox_inches="tight")
     plt.close(fig)
     print(f"Saved {save_path}")

@@ -1,7 +1,6 @@
 from src.distributions.gaussian import Gaussian, MultivariateGaussian
 from src.distributions.log_normal import LogNormal
 from src.distributions.cauchy import Cauchy, HalfCauchy
-from src.distributions.inverse_wishart import InverseWishart
 from src.distributions.uniform import Uniform
 from src.distributions.gamma import Gamma
 from src.distributions.laplace import Laplace
@@ -16,7 +15,6 @@ DISTRIBUTION_MAP = {
     "Cauchy": Cauchy,
     "HalfCauchy": HalfCauchy,
     "Uniform": Uniform,
-    "InverseWishart": InverseWishart,
     "Gamma": Gamma,
     "Laplace": Laplace,
     "ChiSquared": ChiSquared,

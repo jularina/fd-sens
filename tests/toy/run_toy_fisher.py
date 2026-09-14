@@ -657,30 +657,6 @@ def run_multivariate_gaussian_priors_nonparametric_basis_funcs_nums(cfg, save_sa
     )
 
 
-@hydra.main(version_base="1.1", config_path="../../configs/paper/ksd_calculation/toy/", config_name="inverse_wishart")
-def run_inverse_wishart_priors(cfg) -> None:
-    """
-    Main function to compute FD and perform prior parameter grid search using Hydra for configuration.
-
-    Args:
-        cfg (DictConfig): Configuration loaded by Hydra.
-    """
-    model = instantiate(cfg.model, data_config=cfg.data)
-    posterior_samples = model.sample_posterior(cfg.data.posterior_samples_num)
-    posterior_samples_vec = model.vectorize_samples(posterior_samples)
-    fisher_estimator = PosteriorFDBase(samples=posterior_samples_vec, model=model, candidate_type="loss")
-    print(f"Initial FD: {fisher_estimator.estimate_fisher():.4f}")
-
-    optimizer = OptimizationCornerPointsInverseWishart(
-        fisher_estimator, cfg.ksd.optimize.prior.InverseWishart, cfg.ksd.optimize.loss.MultivariateGaussianLogLikelihood)
-    qf_prior_all_combinations = optimizer.evaluate_all_prior_combinations()
-
-    plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
-    output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
-    plot_cfg = load_plot_config(plot_config_path)
-    plot_inverse_wishart_scale_ellipses_by_fd_one_subplot(qf_prior_all_combinations, output_dir, plot_cfg)
-
-
 @hydra.main(version_base="1.1", config_path="../../configs/paper/ksd_calculation/toy/", config_name="univariate_gaussian")
 def run_gaussian_priors_nonparametric_diff_samples_num(cfg) -> None:
     """
@@ -885,7 +861,6 @@ if __name__ == "__main__":
     # run_multivariate_gaussian_priors()
     comparison_plot_existing_methods()
     # run_gaussian_priors_qcqp()
-    # run_inverse_wishart_priors()
     # run_gaussian_priors_nonparametric_diff_radii()
     # run_multivariate_gaussian_priors_nonparametric_diff_radii()
     # run_multivariate_gaussian_priors_nonparametric_basis_funcs_nums()

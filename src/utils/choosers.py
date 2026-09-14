@@ -2,7 +2,6 @@ from omegaconf import DictConfig
 
 from src.optimization.corner_points import (
     OptimizationCornerPointsUnivariateGaussian,
-    OptimizationCornerPointsInverseWishart,
     OptimizationCornerPointsMultivariateGaussian,
     OptimizationCornerPointsCompositePrior
 )
@@ -15,12 +14,10 @@ def pick_optimizer(cfg: DictConfig, ksd_estimator: PosteriorKSDParametric):
         return OptimizationCornerPointsUnivariateGaussian(ksd_estimator, prior_cfg.Gaussian)
     if hasattr(prior_cfg, "MultivariateGaussian"):
         return OptimizationCornerPointsMultivariateGaussian(ksd_estimator, prior_cfg.MultivariateGaussian)
-    if hasattr(prior_cfg, "InverseWishart"):
-        return OptimizationCornerPointsInverseWishart(ksd_estimator, prior_cfg.InverseWishart)
     if hasattr(prior_cfg, "Composite"):
         return OptimizationCornerPointsCompositePrior(ksd_estimator, prior_cfg.Composite, precomputed_qfs=True)
     raise ValueError(
         "No supported prior found under cfg.ksd.optimize.prior. "
-        "Supported: Gaussian, MultivariateGaussian, InverseWishart, Composite"
+        "Supported: Gaussian, MultivariateGaussian, Composite"
     )
 

@@ -7,7 +7,6 @@ from tqdm import tqdm
 from scipy.optimize import differential_evolution, dual_annealing
 from dataclasses import dataclass
 
-from distributions.inverse_wishart import InverseWishart
 from src.distributions.gaussian import Gaussian, MultivariateGaussian
 from src.distributions.gamma import Gamma
 from src.optimization.corners import get_corners
@@ -1193,74 +1192,3 @@ class OptimizationCornerPointsGamma(OptimizationCornerPointsBase):
                 "distribution": dist
             }
         return parameter_grid
-
-
-class OptimizationCornerPointsInverseWishart(OptimizationCornerPointsBase):
-    def __init__(
-        self,
-        posterior_estimator,
-        prior_config: Dict,
-        loss_config: Dict,
-        distribution_cls=InverseWishart,
-    ):
-        """
-        Grid/corner quadratic form generation and optimization for Inverse Wishart.
-        """
-        super().__init__(posterior_estimator=posterior_estimator, prior_config=prior_config,
-                         loss_config=loss_config, distribution_cls=distribution_cls)
-
-    def _generate_df_grid(self) -> np.ndarray:
-        return np.linspace(self.param_ranges["df"][0], self.param_ranges["df"][1], self.param_nums["df"])
-
-    def _generate_scale_grid(self) -> List[np.ndarray]:
-        scale_ranges = self.param_ranges['scale']
-        scale_nums = self.param_nums['scale']
-        keys = sorted(scale_ranges.keys())
-        axes = [
-            np.linspace(*scale_ranges[k], scale_nums[k]) for k in keys
-        ]
-        scale_matrices = []
-        for values in itertools.product(*axes):
-            scale = np.zeros((2, 2))  # assumes 2D, generalize if needed
-            for idx, k in enumerate(keys):
-                i, j = map(int, k.split('_'))
-                scale[i, j] = values[idx]
-            scale_matrices.append(scale)
-        return scale_matrices
-
-    def _generate_full_parameter_grid(self) -> Dict:
-        df_grid = self._generate_df_grid()
-        scale_grid = self._generate_scale_grid()
-        parameter_grid = {}
-
-        for df, scale in itertools.product(df_grid, scale_grid):
-            try:
-                dist = self.distribution_cls(df=df, scale=np.array(scale))
-            except Exception as e:
-                print(f"Exception: {e} while initializing the distribution with df={df}, scale={scale}.")
-                continue
-
-            augmented_eta = dist.augmented_natural_parameters()
-            eta = dist.natural_parameters()
-            scale_key = tuple(tuple(row) for row in scale)
-            parameter_grid[(df, scale_key)] = {
-                "augmented_natural_parameters": augmented_eta,
-                "natural_parameters": eta,
-                "distribution": dist
-            }
-
-        return parameter_grid
-
-    def _generate_corner_points(self) -> List[Dict[str, float]]:
-        all_eta = np.stack([v["natural_parameters"] for v in self.parameter_grid.values()])
-        eta_min = all_eta.min(axis=0)
-        eta_max = all_eta.max(axis=0)
-        corners = list(itertools.product(*zip(eta_min, eta_max)))
-        corner_set = {tuple(np.round(corner, 8)) for corner in corners}
-        selected_distributions = [
-            v["distribution"]
-            for v in self.parameter_grid.values()
-            if tuple(np.round(v["natural_parameters"], 8)) in corner_set
-        ]
-
-        return selected_distributions

@@ -17,8 +17,8 @@ data:
   observations_path: data/univariate_gaussian/observations.npy
   posterior_samples_path: data/univariate_gaussian/posterior_samples.npy
   prior_samples_path: data/univariate_gaussian/prior_samples.npy
-  posterior_samples_num: 1000
-  prior_samples_num: 1000
+  posterior_samples_num: 5000
+  prior_samples_num: 5000
 
 model:
   _target_: src.bayesian_model.gaussian.SimpleGaussianModel
@@ -26,7 +26,7 @@ model:
 optimize:
     nonparametric:
       basis_funcs_type: MaternBasisFunction
-      basis_funcs_kwargs: {"num_basis_functions": 15, "method": "halton", "nu":2.0, "estimation_samples_source":"prior"}
+      basis_funcs_kwargs: {"num_basis_functions": 30, "method": "kmeans", "nu":5.0, "estimation_samples_source":"prior"}
 
 flags:
   plots:

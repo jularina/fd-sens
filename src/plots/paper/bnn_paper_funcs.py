@@ -3,8 +3,33 @@ from typing import Any, Dict, List
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from scipy.special import logsumexp
 from scipy.stats import gaussian_kde, norm, t as student_t
+
+
+def _alpha_fade_cmap(name: str, hex_color: str, alpha_low: float = 0.12, alpha_high: float = 1.0):
+    """
+    Single-hue colormap that fades low values out via alpha (mostly
+    transparent) rather than blending toward white -- keeps the hue visible
+    at low opacity instead of desaturating to an achromatic color.
+    """
+    r, g, b = to_rgb(hex_color)
+    return LinearSegmentedColormap.from_list(name, [(r, g, b, alpha_low), (r, g, b, alpha_high)])
+
+
+# Single-hue dark-grey-blue palette for the weight-sensitivity heatmaps,
+# using the active dark-grey-blue swatch from configs/plots/overleaf_plots_
+# settings.yaml's color_palette ("#4d7298"): low sensitivity fades toward
+# transparent rather than white, high sensitivity is fully opaque.
+BNN_HEATMAP_CMAP = _alpha_fade_cmap("bnn_heatmap_greyblue_alpha", "#4d7298")
+
+# Sequential grey-blue palette for the row/column marginal bars, built from
+# the two active grey-blue swatches in that same color_palette: light-grey
+# -blue ("#9dc3c2", low sensitivity) to dark-grey-blue ("#4d7298", high
+# sensitivity) -- no white/disabled colors mixed in.
+_BNN_BAR_COLORS = ["#9dc3c2", "#4d7298"]
+BNN_BAR_CMAP = LinearSegmentedColormap.from_list("bnn_bar_greyblue", _BNN_BAR_COLORS)
 
 
 def _deep_get(cfg, path, default=None):
@@ -24,8 +49,8 @@ def plot_bnn_weight_heatmaps(
     plot_cfg: Any,
     output_dir: str,
     filename: str = "bnn_weight_heatmaps.pdf",
-    cmap: str = "BuGn",
-    value_label: str = r"$\hat{S}_m^\mathrm{FD}(\widehat{\mathcal{Q}}_{r,K,l})$",
+    cmap: Any = BNN_HEATMAP_CMAP,
+    value_label: str = r"$\widehat{S}_m^{\FD}(\widehat{\mathcal{Q}}_{r_j}^{j, K,l})$",
 ) -> None:
     """
     One heatmap per 2D weight tensor (output units x input units/features).
@@ -33,64 +58,71 @@ def plot_bnn_weight_heatmaps(
     os.makedirs(output_dir, exist_ok=True)
 
     plt.rcParams.update({
-        "font.size": _deep_get(plot_cfg, "plot.font.size", 12),
+        "font.size": float(_deep_get(plot_cfg, "plot.font.size", 14)) * 1.2,
         "font.family": _deep_get(plot_cfg, "plot.font.family", "serif"),
         "text.usetex": bool(_deep_get(plot_cfg, "plot.font.use_tex", False)),
+        "text.latex.preamble": r"\usepackage{amsmath}\providecommand{\FD}{\mathrm{FD}}",
     })
     fig_w = float(_deep_get(plot_cfg, "plot.figure.size.width", 6.0))
     fig_h = float(_deep_get(plot_cfg, "plot.figure.size.height", 4.0))
     fig_dpi = int(_deep_get(plot_cfg, "plot.figure.dpi", 150))
 
     n = len(tensors)
-    fig = plt.figure(figsize=(n * fig_w * 1.4, fig_h * 1.6), dpi=fig_dpi)
-    gs_outer = fig.add_gridspec(1, n + 1, width_ratios=[*([1.0] * n), 0.08], wspace=0.6)
+    fig = plt.figure(figsize=(n * fig_w * 1.0, fig_h * 1.3), dpi=fig_dpi)
+    gs_root = fig.add_gridspec(1, 2, width_ratios=[n, 0.08], wspace=0.08)
+    gs_outer = gs_root[0].subgridspec(1, n, wspace=0.2)
 
     matrices = [np.asarray(t["matrix"], dtype=float) for t in tensors]
     vmin = min(M.min() for M in matrices)
     vmax = max(M.max() for M in matrices)
+    bar_norm = Normalize(vmin=vmin, vmax=vmax)
 
     im = None
     for i, t in enumerate(tensors):
         M = matrices[i]
         n_rows, n_cols = M.shape
-
-        gs = gs_outer[i].subgridspec(
-            2, 2, width_ratios=[4, 1], height_ratios=[4, 1], wspace=0.08, hspace=0.08
-        )
+        col_label = str(t.get("col_label", "column"))
+        show_col_marginal = bool(t.get("show_col_marginal", True))
+        gs = gs_outer[i].subgridspec(2, 1, height_ratios=[4, 1], hspace=0.5)
         ax_main = fig.add_subplot(gs[0, 0])
-        ax_row = fig.add_subplot(gs[0, 1], sharey=ax_main)
-        ax_col = fig.add_subplot(gs[1, 0], sharex=ax_main)
+        ax_col = fig.add_subplot(gs[1, 0], sharex=ax_main) if show_col_marginal else None
 
         im = ax_main.imshow(M, aspect="auto", cmap=cmap, interpolation="nearest", vmin=vmin, vmax=vmax)
         ax_main.set_title(t.get("label", ""), fontsize=plt.rcParams["font.size"])
         ax_main.set_ylabel(t.get("row_label", "row"))
-        ax_main.set_xticks([])
-        if n_rows <= 8:
-            ax_main.set_yticks(np.arange(n_rows))
+        ax_main.set_yticks(np.arange(-0.5, n_rows, 1))
+        ax_main.set_yticklabels([])
 
-        row_means = M.mean(axis=1)
-        ax_row.barh(np.arange(n_rows), row_means, color="#9dc3c2", alpha=1.0)
-        plt.setp(ax_row.get_yticklabels(), visible=False)
-
-        col_means = M.mean(axis=0)
-        ax_col.bar(np.arange(n_cols), col_means, color="#9dc3c2", alpha=1.0)
-        ax_col.set_ylabel(r"$\hat{S}_m^\mathrm{FD}(\widehat{\mathcal{Q}}_{r,K,l})$",
-                          fontsize=plt.rcParams["font.size"] * 0.8)
-        if t.get("col_names"):
-            ax_col.set_xticks(np.arange(n_cols))
-            ax_col.set_xticklabels(t["col_names"], rotation=90, fontsize=plt.rcParams["font.size"] * 0.7)
+        if show_col_marginal:
+            # locator (the label ticks at cell centers, set further down).
+            ax_main.set_xticks(np.arange(-0.5, n_cols, 1), minor=True)
+            ax_main.tick_params(axis="x", which="major", bottom=False, top=False, labelbottom=False)
+            ax_main.tick_params(axis="x", which="minor", bottom=True, top=False, labelbottom=False)
+            col_means = M.mean(axis=0)
+            ax_col.bar(np.arange(n_cols), col_means, color=BNN_BAR_CMAP(bar_norm(col_means)), alpha=1.0)
+            ax_col.set_ylabel(r"avg. $\hat{S}_m^\mathrm{FD}(\widehat{\mathcal{Q}}_{r}^{K,l})$",
+                              fontsize=plt.rcParams["font.size"]*0.9)
+            if t.get("col_names"):
+                ax_col.set_xticks(np.arange(n_cols))
+                ax_col.set_xticklabels(t["col_names"], rotation=90, fontsize=plt.rcParams["font.size"] * 0.6)
+                ax_col.set_xticks(np.arange(-0.5, n_cols, 1), minor=True)
+                ax_col.tick_params(axis="x", which="minor", length=3)
+            else:
+                ax_col.set_xticks(np.arange(-0.5, n_cols, 1))
+                ax_col.set_xticklabels([])
+                ax_col.set_xlabel(col_label)
         else:
-            ax_col.set_xticks([])
-            ax_col.set_xlabel(t.get("col_label", "column"))
-        ax_main.tick_params(axis="x", which="both", bottom=False, top=False, labelbottom=False)
+            ax_main.set_xticks(np.arange(-0.5, n_cols, 1))
+            ax_main.set_xticklabels([])
+            ax_main.set_xlabel(col_label)
 
-        for ax in (ax_main, ax_row, ax_col):
-            ax.spines["top"].set_visible(False)
-            ax.spines["right"].set_visible(False)
+        for ax in (ax_main, ax_col):
+            if ax is not None:
+                ax.spines["top"].set_visible(False)
+                ax.spines["right"].set_visible(False)
 
-    cax = fig.add_subplot(gs_outer[0, n])
+    cax = fig.add_subplot(gs_root[0, 1])
     fig.colorbar(im, cax=cax, label=value_label)
-
     fig.savefig(os.path.join(output_dir, filename), bbox_inches="tight")
     plt.close(fig)
 
@@ -162,7 +194,9 @@ def _plot_bnn_node_candidate_prior(
     y_log: bool,
     y_floor: float,
     show_legend: bool,
-    show_title: bool = True
+    show_title: bool = True,
+    show_posterior_density: bool = False,
+    xlabel: str = r"$\theta$",
 ) -> None:
     loc, scale = float(node["loc"]), float(node["scale"])
     df = node.get("df")
@@ -187,21 +221,22 @@ def _plot_bnn_node_candidate_prior(
 
     color = palette[0]
     ax.plot(x.flatten(), ref_density, linestyle="--", linewidth=1.5,
-            color="steelblue", label=r"$\Pi_{\mathrm{ref}}$")
+            color="black", label=r"$\Pi_{\mathrm{ref}}$")
     ax.plot(x.flatten(), cand_density, linewidth=1.5, color=color,
             label=r"$\Pi_K^{\lambda_m^\mathrm{sup}}$")
 
-    post_samples = np.asarray(node.get("posterior_samples"))
-    if post_samples is not None and post_samples.size > 1 and np.std(post_samples) > 1e-12:
-        try:
-            kde = gaussian_kde(post_samples)
-            kde_density = kde(x.flatten())
-            if y_log:
-                kde_density = np.maximum(kde_density, y_floor)
-            ax.fill_between(x.flatten(), kde_density, y_floor if y_log else 0.0,
-                            alpha=0.25, color="gray", label=r"$\tilde{\Pi}_{\mathrm{ref}}$")
-        except np.linalg.LinAlgError:
-            pass
+    if show_posterior_density:
+        post_samples = np.asarray(node.get("posterior_samples"))
+        if post_samples is not None and post_samples.size > 1 and np.std(post_samples) > 1e-12:
+            try:
+                kde = gaussian_kde(post_samples)
+                kde_density = kde(x.flatten())
+                if y_log:
+                    kde_density = np.maximum(kde_density, y_floor)
+                ax.fill_between(x.flatten(), kde_density, y_floor if y_log else 0.0,
+                                alpha=0.25, color="gray", label=r"$\tilde{\Pi}_{\mathrm{ref}}$")
+            except np.linalg.LinAlgError:
+                pass
 
     if y_log:
         ax.set_yscale("log")
@@ -220,7 +255,7 @@ def _plot_bnn_node_candidate_prior(
         title = f"{title.replace(".weight", "")}, {', '.join(subtitle_parts)}"
     if show_title:
         ax.set_title(title, fontsize=plt.rcParams["font.size"] * 0.9)
-    ax.set_xlabel(r"$\theta$")
+    ax.set_xlabel(xlabel)
     ax.set_ylabel(r"$\pi$" if not y_log else r"$\log\pi$")
     ax.grid(True, alpha=0.3)
     ax.spines["top"].set_visible(False)
@@ -241,6 +276,8 @@ def plot_bnn_node_candidate_priors(
     y_floor: float = 1e-6,
     save_individual: bool = True,
     individual_dirname: str = "individual",
+    show_posterior_density: bool = False,
+    xlabel: str = r"$\theta$",
 ) -> None:
     os.makedirs(output_dir, exist_ok=True)
 
@@ -270,7 +307,8 @@ def plot_bnn_node_candidate_priors(
     for i, node in enumerate(nodes):
         ax = axes[i // n_cols][i % n_cols]
         _plot_bnn_node_candidate_prior(
-            ax, node, palette, n_scales, resolution, y_log, y_floor, show_legend=(i == 0)
+            ax, node, palette, n_scales, resolution, y_log, y_floor, show_legend=False,
+            show_posterior_density=show_posterior_density, xlabel=xlabel,
         )
 
     for j in range(n, n_rows * n_cols):
@@ -290,6 +328,7 @@ def plot_bnn_node_candidate_priors(
             fig_i, ax_i = plt.subplots(figsize=(fig_w, fig_h), dpi=fig_dpi)
             _plot_bnn_node_candidate_prior(
                 ax_i, node, palette, n_scales, resolution, y_log, y_floor, show_legend=False, show_title=False,
+                show_posterior_density=show_posterior_density, xlabel=xlabel,
             )
             fig_i.tight_layout()
             label = str(node.get("label", f"node{i}"))

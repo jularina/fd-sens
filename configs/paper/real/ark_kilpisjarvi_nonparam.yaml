@@ -1,0 +1,116 @@
+data:
+  base_prior:
+    _target_: src.distributions.composite.CompositeProduct
+    distributions:
+      alpha:
+        _target_: src.distributions.gaussian.Gaussian
+        mu: 0
+        sigma: 5
+      beta1:
+        _target_: src.distributions.gaussian.Gaussian
+        mu: 0
+        sigma: 5
+      beta2:
+        _target_: src.distributions.gaussian.Gaussian
+        mu: 0
+        sigma: 5
+      beta3:
+        _target_: src.distributions.gaussian.Gaussian
+        mu: 0
+        sigma: 5
+      beta4:
+        _target_: src.distributions.gaussian.Gaussian
+        mu: 0
+        sigma: 5
+      beta5:
+        _target_: src.distributions.gaussian.Gaussian
+        mu: 0
+        sigma: 5
+      sigma:
+        _target_: src.distributions.cauchy.HalfCauchy
+        gamma: 1
+  candidate_prior:
+    _target_: src.distributions.composite.CompositeProduct
+    distributions:
+      alpha:
+        _target_: src.distributions.gaussian.Gaussian
+        mu: -2
+        sigma: 1
+      beta1:
+        _target_: src.distributions.gaussian.Gaussian
+        mu: 2
+        sigma: 1
+      beta2:
+        _target_: src.distributions.gaussian.Gaussian
+        mu: 2
+        sigma: 1
+      beta3:
+        _target_: src.distributions.gaussian.Gaussian
+        mu: 2
+        sigma: 1
+      beta4:
+        _target_: src.distributions.gaussian.Gaussian
+        mu: -2
+        sigma: 1
+      beta5:
+        _target_: src.distributions.gaussian.Gaussian
+        mu: 2
+        sigma: 1
+      sigma:
+        _target_: src.distributions.inverse_gamma.InverseGamma
+        alpha: 3.0
+        beta: 1.0
+  true_dgp: null
+  loss:
+    _target_: src.losses.gaussian_log_likelihood.GaussianARLogLikelihood
+  loss_lr: 1
+  warmup: 1000
+  posterior_draws_path: "/Users/arinaodv/Desktop/folder/study_phd/code/posteriordb/posterior_database/reference_posteriors/draws/draws/kilpisjarvi-reference-draws.json"
+  prior_samples_num: 10000
+  center_prior_samples_num: 5000
+  seed: 0
+
+model:
+  _target_: src.bayesian_model.posteriordb.kilpisjarvi.KilpisjarviNonparametricLoader
+
+optimize:
+  nonparametric:
+    # Every component is first mapped to z = Phi^{-1}(F_ref(theta)) (see
+    # run_ark_kilpisjarvi_nonparam.py's _to_z_space), so all 7 reference-
+    # prior marginals become exactly N(0, 1) regardless of the original
+    # family (Gaussian alpha/beta1..5, Half-Cauchy sigma). The same kernel
+    # family, number of centres, centre-selection procedure and lengthscale-
+    # selection rule below therefore apply identically and fairly to every
+    # component -- no per-group override needed.
+    basis_funcs_type: MaternBasisFunction
+    basis_funcs_kwargs:
+      num_basis_functions: 300
+      method: kmeans
+      nu: 2.5
+      estimation_samples_source: prior
+
+sensitivity:
+  # Shared neighbourhood radius, applied identically to all 7 components.
+  # Because every component lives in the same standardized (z) space, r_j
+  # now represents a genuinely comparable degree of prior perturbation for
+  # every one of them, and raw sensitivity = r_j * omega_max is directly
+  # comparable/summable across components (C_j = S_j / sum_k S_k).
+  r_j: 50.0
+  # Radii to sweep for the posterior-predictive (reference vs. KEF
+  # worst-case) comparison specifically -- independent of r_j above, since
+  # each component's *share* of the total sensitivity doesn't change with
+  # radius (only magnitudes do), so this can be pushed larger purely to
+  # make the predictive gap visible. Self-normalised importance-sampling
+  # reweighting degrades (falling effective sample size) as radius grows,
+  # so the sweep is meant to show where that breakdown starts too.
+  posterior_predictive_radii: [5, 20, 50, 100, 200, 500]
+
+flags:
+  plots:
+    output_dir: outputs/paper/plots/fisher/kilpisjarvi/nonparam
+  results:
+    output_dir: outputs/paper/results/kilpisjarvi/nonparam
+
+playground:
+  output_prefix: kilpisjarvi_nonparam
+  save_json: true

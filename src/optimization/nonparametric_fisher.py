@@ -23,6 +23,12 @@ class OptimisationNonparametricBase:
         `basis_function`, if given, is used as-is instead of being built from
         `config` (e.g. to force a basis whose centres are selected from a
         different sample set than `prior_estimator`/`posterior_estimator`).
+
+        When built from `config`, prior-based centres are never chosen from
+        `prior_estimator.samples` (those samples estimate the Fisher
+        divergence). Instead, a fresh, independent i.i.d. draw of the same
+        size from the reference prior is used as the pool to select centres
+        from, decoupling centre selection from the FD estimate.
         """
         self.posterior_estimator = posterior_estimator
         self.prior_estimator = prior_estimator
@@ -34,7 +40,10 @@ class OptimisationNonparametricBase:
             basis_cls = BASIS_FUNCTIONS_REGISTRY[basis_cls_name]
             basis_kwargs = config.get("basis_funcs_kwargs", {})
             basis_kwargs = OmegaConf.to_container(basis_kwargs, resolve=True)
-            basis_kwargs["prior_samples"] = self.prior_estimator.samples
+            np.random.seed(27)
+            basis_kwargs["prior_samples"] = self.prior_estimator.model.sample_from_base_prior(
+                n_samples=len(self.prior_estimator.samples),
+            )
             basis_kwargs["posterior_samples"] = self.posterior_estimator.samples
             self.basis_function = basis_cls(**basis_kwargs)
 

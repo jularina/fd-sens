@@ -54,6 +54,9 @@ class BaseBasisFunction(ABC):
 class PolynomialBasisFunction(BaseBasisFunction):
     def __init__(self, degree: int):
         self.degree = degree
+        # No localized centres for a global polynomial basis; kept so plotting
+        # helpers that expect a `.centers` rug can handle this basis uniformly.
+        self.centers = np.empty((0, 1))
 
     def evaluate(self, samples: np.ndarray) -> np.ndarray:
         m, d = samples.shape
@@ -108,7 +111,7 @@ class MaternBasisFunction(BaseBasisFunction):
         lengthscale: Optional[float] = None,
         nu: float = 1.5,
         variance: float = 1.0,
-        method: Literal["kmeans", "farthest", "halton"] = "kmeans",
+        method: Literal["kmeans", "farthest", "halton", "random"] = "kmeans",
         estimation_samples_source: Optional[str] = "prior",
         scale_multiplier: float = 1.0,
         B: Optional[float] = None,
@@ -186,6 +189,9 @@ class MaternBasisFunction(BaseBasisFunction):
         if method == "halton":
             return self._halton_centers(X, num_centers)
 
+        if method == "random":
+            return self._random_centers(X, num_centers)
+
         raise ValueError(f"Unknown center selection method: {method}")
 
     def _halton_centers(self, X: np.ndarray, num_centers: int) -> np.ndarray:
@@ -205,6 +211,47 @@ class MaternBasisFunction(BaseBasisFunction):
         for j in range(d):
             centers[:, j] = np.quantile(X[:, j], u[:, j])
         return centers
+
+    def _random_centers(self, X: np.ndarray, num_centers: int) -> np.ndarray:
+        """
+        Centers via random subsampling of the distinct rows of X, rejecting
+        a candidate that lands too close to an already-chosen center and
+        drawing another one instead.
+
+        Plain uniform-without-replacement subsampling can (and empirically
+        does) draw two centers within a small fraction of the eventual
+        lengthscale of each other; for a smooth radial basis their gradients
+        are then nearly identical functions of theta, which collapses
+        several directions of the K x K gradient Gram matrix A_c to
+        near-zero eigenvalues (verified: two random centers within ~5% of
+        the fitted lengthscale were enough to wipe out 4-5 of 50 gradient
+        directions). That numerically inflates the FD-sensitivity
+        generalized-eigenvalue ratio omega_max for any node with even a
+        small projection onto that spurious near-null direction -- exact
+        deduplication alone does not catch this, since the offending centers
+        are all distinct floats, just clustered.
+        """
+        X_unique = np.unique(X, axis=0)
+        n = X_unique.shape[0]
+        num_centers = min(num_centers, n)
+        spread = float(np.linalg.norm(X_unique.max(axis=0) - X_unique.min(axis=0)))
+        min_sep = spread / (2 * max(num_centers, 1))
+
+        order = self.rng.permutation(n)
+        chosen: list[int] = []
+        for i in order:
+            if len(chosen) == num_centers:
+                break
+            cand = X_unique[i]
+            if chosen and np.linalg.norm(X_unique[chosen] - cand, axis=1).min() < min_sep:
+                continue
+            chosen.append(int(i))
+
+        if len(chosen) < num_centers:
+            leftover = [int(i) for i in order if i not in chosen]
+            chosen.extend(leftover[: num_centers - len(chosen)])
+
+        return X_unique[chosen]
 
     def _farthest_point_sampling(self, X: np.ndarray, k: int) -> np.ndarray:
         n = X.shape[0]
@@ -383,7 +430,7 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
         metric: Literal["diag", "full"] = "diag",
         nu: float = 1.5,
         variance: float = 1.0,
-        method: Literal["kmeans", "farthest", "halton", "quantile_grid"] = "kmeans",
+        method: Literal["kmeans", "farthest", "halton", "quantile_grid", "random"] = "kmeans",
         estimation_samples_source: Optional[str] = "prior",  # "prior" or "posterior"
         estimation_centers_source: Optional[str] = "prior",
         scale_multiplier: float = 1.0,
@@ -563,6 +610,9 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
         if method == "quantile_grid":
             return self._select_centers_quantile_grid(X, num_centers=num_centers)
 
+        if method == "random":
+            return self._random_centers(X, num_centers)
+
         raise ValueError(f"Unknown center selection method: {method}")
 
     def _select_centers_quantile_grid(
@@ -620,6 +670,47 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
             centers_idx.append(i)
             dist = np.minimum(dist, cdist(X[[i]], X).reshape(-1))
         return X[np.array(centers_idx)]
+
+    def _random_centers(self, X: np.ndarray, num_centers: int) -> np.ndarray:
+        """
+        Centers via random subsampling of the distinct rows of X, rejecting
+        a candidate that lands too close to an already-chosen center and
+        drawing another one instead.
+
+        Plain uniform-without-replacement subsampling can (and empirically
+        does) draw two centers within a small fraction of the eventual
+        lengthscale of each other; for a smooth radial basis their gradients
+        are then nearly identical functions of theta, which collapses
+        several directions of the K x K gradient Gram matrix A_c to
+        near-zero eigenvalues (verified: two random centers within ~5% of
+        the fitted lengthscale were enough to wipe out 4-5 of 50 gradient
+        directions). That numerically inflates the FD-sensitivity
+        generalized-eigenvalue ratio omega_max for any node with even a
+        small projection onto that spurious near-null direction -- exact
+        deduplication alone does not catch this, since the offending centers
+        are all distinct floats, just clustered.
+        """
+        X_unique = np.unique(X, axis=0)
+        n = X_unique.shape[0]
+        num_centers = min(num_centers, n)
+        spread = float(np.linalg.norm(X_unique.max(axis=0) - X_unique.min(axis=0)))
+        min_sep = spread / (2 * max(num_centers, 1))
+
+        order = self.rng.permutation(n)
+        chosen: list[int] = []
+        for i in order:
+            if len(chosen) == num_centers:
+                break
+            cand = X_unique[i]
+            if chosen and np.linalg.norm(X_unique[chosen] - cand, axis=1).min() < min_sep:
+                continue
+            chosen.append(int(i))
+
+        if len(chosen) < num_centers:
+            leftover = [int(i) for i in order if i not in chosen]
+            chosen.extend(leftover[: num_centers - len(chosen)])
+
+        return X_unique[chosen]
 
     # ---------------- estimation helpers ----------------
     def _median_heuristic_per_dim(self, x: np.ndarray, jitter: float = 1e-12) -> np.ndarray:
@@ -860,7 +951,7 @@ class RBFBasisFunction(BaseBasisFunction):
         num_basis_functions: int,
         prior_samples: Optional[np.ndarray] = None,
         lengthscale: Optional[float] = None,
-        method: Literal["kmeans", "farthest"] = "kmeans",
+        method: Literal["kmeans", "farthest", "halton", "random"] = "kmeans",
         estimation_samples_source: Optional[str] = "prior",
         scale_multiplier: float = 1.0,
     ):
@@ -908,7 +999,68 @@ class RBFBasisFunction(BaseBasisFunction):
         if method == "farthest":
             return self._farthest_point_sampling(X, min(num_centers, m))
 
+        if method == "halton":
+            return self._halton_centers(X, num_centers)
+
+        if method == "random":
+            return self._random_centers(X, num_centers)
+
         raise ValueError(f"Unknown center selection method: {method}")
+
+    def _halton_centers(self, X: np.ndarray, num_centers: int) -> np.ndarray:
+        """
+        Quasi-uniform centers via a scrambled Halton sequence mapped through
+        the empirical quantiles of X (dimension-wise). See
+        MaternBasisFunction._halton_centers for details.
+        """
+        d = X.shape[1]
+        sampler = Halton(d=d, scramble=True, seed=27)
+        u = sampler.random(n=num_centers)          # (K, d) in [0, 1]^d
+        centers = np.empty((num_centers, d), dtype=float)
+        for j in range(d):
+            centers[:, j] = np.quantile(X[:, j], u[:, j])
+        return centers
+
+    def _random_centers(self, X: np.ndarray, num_centers: int) -> np.ndarray:
+        """
+        Centers via random subsampling of the distinct rows of X, rejecting
+        a candidate that lands too close to an already-chosen center and
+        drawing another one instead.
+
+        Plain uniform-without-replacement subsampling can (and empirically
+        does) draw two centers within a small fraction of the eventual
+        lengthscale of each other; for a smooth radial basis their gradients
+        are then nearly identical functions of theta, which collapses
+        several directions of the K x K gradient Gram matrix A_c to
+        near-zero eigenvalues (verified: two random centers within ~5% of
+        the fitted lengthscale were enough to wipe out 4-5 of 50 gradient
+        directions). That numerically inflates the FD-sensitivity
+        generalized-eigenvalue ratio omega_max for any node with even a
+        small projection onto that spurious near-null direction -- exact
+        deduplication alone does not catch this, since the offending centers
+        are all distinct floats, just clustered.
+        """
+        X_unique = np.unique(X, axis=0)
+        n = X_unique.shape[0]
+        num_centers = min(num_centers, n)
+        spread = float(np.linalg.norm(X_unique.max(axis=0) - X_unique.min(axis=0)))
+        min_sep = spread / (2 * max(num_centers, 1))
+
+        order = self.rng.permutation(n)
+        chosen: list[int] = []
+        for i in order:
+            if len(chosen) == num_centers:
+                break
+            cand = X_unique[i]
+            if chosen and np.linalg.norm(X_unique[chosen] - cand, axis=1).min() < min_sep:
+                continue
+            chosen.append(int(i))
+
+        if len(chosen) < num_centers:
+            leftover = [int(i) for i in order if i not in chosen]
+            chosen.extend(leftover[: num_centers - len(chosen)])
+
+        return X_unique[chosen]
 
     def _farthest_point_sampling(self, X: np.ndarray, k: int) -> np.ndarray:
         n = X.shape[0]
@@ -960,6 +1112,66 @@ class RBFBasisFunction(BaseBasisFunction):
         x = sp.symbols(f"x0:{dim}")
         c = self.centers[0]  # just validate the first center
         return sp.exp(-sum([(x[i] - c[i])**2 for i in range(dim)]) / (2 * self.lengthscale**2))
+
+
+def rbf_gaussian_gram_closed_form(
+    centers: np.ndarray,
+    lengthscale: float,
+    mu: np.ndarray,
+    Sigma: np.ndarray,
+) -> np.ndarray:
+    r"""
+    Closed-form K x K Gram matrix
+
+        M_{ij} = E_{theta ~ N(mu, Sigma)}[ grad phi_i(theta) . grad phi_j(theta) ],
+
+    for the RBF kernel phi_i(theta) = exp(-||theta - c_i||^2 / (2 ell^2)), when
+    the reference measure is Gaussian. This is the closed form used for both
+    A (theta ~ posterior) and A_c (theta ~ prior) in the FDsens+ RBF setting:
+    call this once with (mu_ref, Sigma_ref) for A_c, and once with
+    (mu_post, Sigma_post) for A.
+
+    Args:
+        centers: (K, d) kernel centres bar_theta_1, ..., bar_theta_K.
+        lengthscale: RBF lengthscale ell.
+        mu: (d,) mean of the Gaussian reference measure.
+        Sigma: (d, d) covariance of the Gaussian reference measure.
+
+    Returns:
+        (K, K) symmetric PSD matrix M.
+    """
+    centers = np.atleast_2d(np.asarray(centers, dtype=float))
+    K, d = centers.shape
+    mu = np.asarray(mu, dtype=float).reshape(d)
+    Sigma = np.asarray(Sigma, dtype=float).reshape(d, d)
+    ell = float(lengthscale)
+
+    theta_bar = centers.T  # (d, K), bar_Theta in the derivation
+    U = mu.reshape(d, 1) - theta_bar  # (d, K), mu 1_K^T - bar_Theta
+
+    def G(P: np.ndarray) -> np.ndarray:
+        return U.T @ P @ U  # (K, K)
+
+    def Q(P: np.ndarray) -> np.ndarray:
+        g = G(P)
+        diag_g = np.diag(g)
+        return 0.25 * (diag_g[:, None] + diag_g[None, :] + 2.0 * g)
+
+    sq_norms = np.sum(theta_bar ** 2, axis=0)  # (K,)
+    D = sq_norms[:, None] + sq_norms[None, :] - 2.0 * (theta_bar.T @ theta_bar)
+    D = np.maximum(D, 0.0)  # (K, K), squared pairwise distances between centres
+
+    B = np.eye(d) + (2.0 / ell ** 2) * Sigma
+    B_inv = np.linalg.inv(B)
+    B_inv2 = B_inv @ B_inv
+    det_B = np.linalg.det(B)
+    trace_term = float(np.trace(Sigma @ B_inv))
+
+    exponent = -D / (4.0 * ell ** 2) - Q(B_inv) / ell ** 2
+    bracket = trace_term * np.ones((K, K)) + Q(B_inv2) - D / 4.0
+
+    M = (det_B ** (-0.5) / ell ** 4) * np.exp(exponent) * bracket
+    return 0.5 * (M + M.T)
 
 
 class SigmoidBasisFunction(BaseBasisFunction):

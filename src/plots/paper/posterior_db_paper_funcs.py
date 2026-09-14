@@ -937,6 +937,7 @@ def plot_component_sensitivity_bar(
     tail_beta_keys: list | None = None,
     filename: str | None = None,
     prefix: str = "kilpisjarvi",
+    ylabel: str | None = None,
 ):
     try:
         _apply_plot_rc(plot_cfg)
@@ -1007,7 +1008,7 @@ def plot_component_sensitivity_bar(
     ax.set_ylim(0, 100)
     ax.set_yticks([0, 50, 100])
     ax.set_yticklabels(["0%", "50%", "100%"], usetex=False)
-    ax.set_ylabel(r"$\widehat{S}_m^{\mathrm{FD}}(\Gamma_j)$ \%")
+    ax.set_ylabel(ylabel if ylabel is not None else r"$\widehat{S}_m^{\mathrm{FD}}(\Gamma_j)$ \%")
 
     ax.tick_params(axis="x", length=0, labelcolor="none")
 
