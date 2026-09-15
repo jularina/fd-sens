@@ -142,6 +142,186 @@ def _kef_reweight_posterior(
     return posterior_full[resample_idx], ess, ess_frac
 
 
+# ---------------------------------------------------------------------------
+# Parametric-style worst-case corner search performed entirely in z-space,
+# using ONE shared neighbourhood for every component -- unlike
+# run_ark_kilpisjarvi_param_nonparam.py's parametric analysis, where
+# alpha/beta1..5's box (mu in [-2,2], sigma in [0.25,1], original scale) and
+# sigma's box (gamma in [0.2,5.0], Half-Cauchy) are declared independently in
+# each family's own native units, so they are NOT the same neighbourhood
+# budget at all -- they were just chosen separately per family, with no
+# principled way to compare their sizes.
+#
+# Since every component's reference becomes exactly N(0,1) in z-space
+# regardless of its original family (Gaussian alpha/beta1..5, Half-Cauchy
+# sigma), positing the SAME Gaussian-in-z candidate family and the SAME
+# numeric box (mu_z, sigma_z ranges) for every one of the 7 components makes
+# them genuinely comparable -- no black-box, family-specific search for
+# sigma needed at all, since we no longer require its candidate to stay
+# within the Half-Cauchy family.
+# ---------------------------------------------------------------------------
+
+def _fd_z_posterior_gaussian_in_z(
+    mu_z_cand: float, sigma_z_cand: float, z_post_mean: float, z_post_meansq: float,
+) -> float:
+    """
+    Exact E_{z~posterior_z}[(score_ref_z(z) - score_cand_z(z))^2] for a
+    reference N(0,1) and a Gaussian-in-z candidate N(mu_z_cand,
+    sigma_z_cand^2), using the posterior's own empirical z-moments (mean,
+    second moment) -- diff_z(z) = a*z + b is affine in z (a = 1/sigma_z_cand^2
+    - 1, b = -mu_z_cand/sigma_z_cand^2), so E[diff_z(z)^2] = a^2*E[z^2] +
+    2ab*E[z] + b^2 exactly (same derivation as run_ark_kilpisjarvi_param_
+    nonparam.py's _fd_z_posterior_gaussian_gaussian, reimplemented here,
+    parametrised directly by the z-space candidate (mu_z, sigma_z) instead
+    of an original-scale Gaussian object, to avoid a circular import between
+    the two files).
+    """
+    a = 1.0 / sigma_z_cand ** 2 - 1.0
+    b = -mu_z_cand / sigma_z_cand ** 2
+    return float(a ** 2 * z_post_meansq + 2.0 * a * b * z_post_mean + b ** 2)
+
+
+def compute_uniform_z_neighbourhood_parametric_sensitivity(
+    loader,
+    mu_z_range: tuple = (-0.4, 0.4),
+    sigma_z_range: tuple = (0.8, 1.25),
+) -> dict:
+    """
+    For each of Kilpisjarvi's 7 scalar components, find the worst-case
+    Gaussian-in-z candidate within the SAME shared box (mu_z in mu_z_range,
+    sigma_z in sigma_z_range) -- the posterior-based z-space FD, maximised
+    over the box's 4 corners (the quadratic form is convex in the candidate's
+    z-space natural parameters, so its supremum over a box is attained at a
+    vertex; see run_ark_kilpisjarvi_param_nonparam.py's
+    _posterior_sup_z_gaussian for the same argument).
+
+    Defaults: mu_z in [-0.4,0.4] (reused from alpha/beta1..5's own declared
+    mu box, [-2,2], divided by their reference sigma_ref=5), sigma_z in
+    [0.8,1.25] -- a genuine neighbourhood of the reference sigma_z=1
+    (0.8 = 1/1.25, so it's symmetric in log-scale around 1), unlike
+    [0.25,1]/5=[0.05,0.2] (alpha/beta1..5's own declared sigma box), which
+    never actually contains sigma_z=1 and so isn't a neighbourhood of the
+    reference at all in the scale direction.
+
+    Returns {component_name: fd_z_sup}.
+    """
+    mu_lo, mu_hi = mu_z_range
+    sig_lo, sig_hi = sigma_z_range
+    corners = [(mu_lo, sig_lo), (mu_lo, sig_hi), (mu_hi, sig_lo), (mu_hi, sig_hi)]
+
+    fd_z_sup = {}
+    for group_name in loader.param_groups:
+        g = loader.groups[group_name]
+        prior_dist = g["prior_dist"]
+        posterior = np.asarray(g["posterior"], dtype=float)
+        for local_idx, node_name in enumerate(g["node_names"]):
+            z_post = _to_z_space(prior_dist, posterior[:, local_idx])
+            z_mean = float(np.mean(z_post))
+            z_meansq = float(np.mean(z_post ** 2))
+            vals = [
+                _fd_z_posterior_gaussian_in_z(mu_z, sig_z, z_mean, z_meansq)
+                for mu_z, sig_z in corners
+            ]
+            fd_z_sup[node_name] = float(max(vals))
+
+    return fd_z_sup
+
+
+def _fd_z_prior_gaussian_in_z(mu_z_cand: float, sigma_z_cand: float) -> float:
+    """
+    Exact PRIOR-based FD_z = E_{z~N(0,1)}[(score_ref_z(z)-score_cand_z(z))^2]
+    for a Gaussian-in-z candidate against the N(0,1) reference -- unlike
+    _fd_z_posterior_gaussian_in_z, this is evaluated under the *reference*
+    measure (E[z]=0, E[z^2]=1 exactly), not under any component's posterior,
+    so it does not depend on the data at all: diff_z(z)=a*z+b reduces to
+    E[diff_z(z)^2] = a^2*1 + 2ab*0 + b^2 = a^2+b^2.
+    """
+    a = 1.0 / sigma_z_cand ** 2 - 1.0
+    b = -mu_z_cand / sigma_z_cand ** 2
+    return float(a ** 2 + b ** 2)
+
+
+def compute_uniform_z_neighbourhood_prior_fd(
+    mu_z_range: tuple = (-0.4, 0.4),
+    sigma_z_range: tuple = (0.8, 1.25),
+) -> dict:
+    """
+    Prior-based FD_z sup under the SAME shared Gaussian-in-z box as
+    compute_uniform_z_neighbourhood_parametric_sensitivity (which, despite
+    its name, computes the *posterior*-based sup -- see its docstring).
+    Because this quantity is evaluated under the fixed reference measure
+    z~N(0,1) rather than any component's own posterior, it does not depend
+    on the data at all: with an identical box and an identical (always-
+    N(0,1)) z-space reference for every component, this sup is therefore
+    exactly identical across all 7 components -- unlike the posterior-based
+    sup, which genuinely differs per component (different real posteriors).
+    Returned per-component anyway (rather than a single scalar) to make
+    that equality explicit/checkable.
+    """
+    mu_lo, mu_hi = mu_z_range
+    sig_lo, sig_hi = sigma_z_range
+    corners = [(mu_lo, sig_lo), (mu_lo, sig_hi), (mu_hi, sig_lo), (mu_hi, sig_hi)]
+    sup_val = max(_fd_z_prior_gaussian_in_z(mu_z, sig_z) for mu_z, sig_z in corners)
+    return {name: sup_val for name in COMPONENT_ORDER}
+
+
+def compute_nonparametric_sensitivity_at_radii(
+    loader,
+    basis_cls,
+    basis_kwargs: dict,
+    r_j_by_component: dict,
+    center_samples_num: int = 5000,
+) -> dict:
+    """
+    Transforms a set of per-component radii (e.g. uniform_fd_z_sup from
+    compute_uniform_z_neighbourhood_parametric_sensitivity) into the actual
+    realised nonparametric KEF sensitivity at those radii: per node, fits
+    lambda_star/omega_max at that node's OWN r_j = r_j_by_component[node]
+    (instead of one shared r_j applied identically to every node, as
+    run_ark_kilpisjarvi_nonparametric_sensitivity's main loop does), then
+    sensitivity = r_j * omega_max exactly as elsewhere in this module.
+
+    Returns {"sensitivity": {name: value}, "percentages": {name: pct},
+    "node_records": [...]} -- node_records carries lambda_star/basis/r_j per
+    node too, reusable for candidate-density plotting or posterior-
+    predictive reweighting (see run_ark_kilpisjarvi_param_nonparam.py's
+    _kef_reweight_posterior_own_radii).
+    """
+    node_records = []
+    for group_name in loader.param_groups:
+        g = loader.groups[group_name]
+        prior_dist = g["prior_dist"]
+
+        prior_samples_z = _to_z_space(prior_dist, loader.sample_prior(group_name))
+        center_prior_samples_z = _to_z_space(
+            prior_dist, loader.sample_prior(group_name, n_samples=center_samples_num)
+        )
+        posterior_z = _to_z_space(prior_dist, g["posterior"])
+
+        for local_idx, node_name in enumerate(g["node_names"]):
+            r_j = float(r_j_by_component[node_name])
+            lam_star, omega_max, basis, _diag = compute_node_lambda_star(
+                posterior_samples_col=posterior_z[:, local_idx],
+                loc=0.0,
+                scale=1.0,
+                prior_samples=prior_samples_z,
+                basis_cls=basis_cls,
+                basis_kwargs=basis_kwargs,
+                radius_j=r_j,
+                center_prior_samples=center_prior_samples_z,
+            )
+            node_records.append({
+                "name": node_name, "group": group_name, "r_j": r_j,
+                "lambda_star": lam_star, "basis": basis, "omega_max": omega_max,
+                "sensitivity": r_j * omega_max,
+            })
+
+    sensitivity = {rec["name"]: rec["sensitivity"] for rec in node_records}
+    total = sum(sensitivity.values())
+    percentages = {name: v / total * 100.0 for name, v in sensitivity.items()}
+    return {"sensitivity": sensitivity, "percentages": percentages, "node_records": node_records}
+
+
 def plot_posterior_predictive_radius_sweep(
     plot_cfg,
     output_dir: str,
@@ -227,7 +407,8 @@ def plot_acf_radius_sweep(
     )
 
     lags = np.arange(len(acf_ref))
-    ax.plot(lags, acf_ref, color="#7c397d", linewidth=2.0, linestyle="--", zorder=4, label=r"$\tilde{x}_{\mathrm{ref}}$")
+    ax.plot(lags, acf_ref, color="#7c397d", linewidth=2.0,
+            linestyle="--", zorder=4, label=r"$\tilde{x}_{\mathrm{ref}}$")
 
     cmap = plt.get_cmap("Blues")
     results_sorted = sorted(kef_results, key=lambda d: d["r"])
@@ -327,6 +508,44 @@ def run_ark_kilpisjarvi_nonparametric_sensitivity(cfg: DictConfig) -> None:
     loader = instantiate(cfg.model, data_config=cfg.data)
     basis_cls = BASIS_FUNCTIONS_REGISTRY[cfg.optimize.nonparametric.basis_funcs_type]
     basis_kwargs = OmegaConf.to_container(cfg.optimize.nonparametric.basis_funcs_kwargs, resolve=True)
+
+    uniform_fd_z_sup = compute_uniform_z_neighbourhood_parametric_sensitivity(loader)
+    print("Parametric-style sup sensitivity under a SINGLE shared z-space neighbourhood "
+          "(mu_z in [-0.4, 0.4], sigma_z in [0.8, 1.25] for every component, incl. sigma):")
+    for name in COMPONENT_ORDER:
+        print(f"  {name}: {uniform_fd_z_sup[name]:.4f}")
+    print(
+        "  (compare sigma's value above against the ~1.30 it got under its own independently-chosen "
+        "Half-Cauchy gamma-in-[0.2,5.0] box in run_ark_kilpisjarvi_param_nonparam.py -- with a "
+        "genuinely shared neighbourhood, sigma's own sup should no longer be handicapped by that "
+        "box having been chosen separately/more conservatively than alpha/beta1..5's.)"
+    )
+    print(
+        "  (NOTE: the values above are POSTERIOR-based -- they use each component's own real "
+        "posterior draws, which is why alpha/beta1..5 differ even under the identical box/reference.)"
+    )
+
+    prior_fd_z_sup = compute_uniform_z_neighbourhood_prior_fd()
+    print("\nPrior-based FD_z sup under the SAME shared z-space neighbourhood (data-independent -- "
+          "identical for every component, since the z-space reference is always N(0,1) regardless "
+          "of family, and this is evaluated under that reference, not under any posterior):")
+    for name in COMPONENT_ORDER:
+        print(f"  {name}: {prior_fd_z_sup[name]:.4f}")
+
+    # Transform the uniform-z-neighbourhood parametric sup above into an
+    # actual nonparametric KEF radius per component (r_j_by_component =
+    # uniform_fd_z_sup), and realise the resulting sensitivity/percentages.
+    center_samples_num_uniform = int(cfg.data.get("center_prior_samples_num", 5000))
+    uniform_nonparam = compute_nonparametric_sensitivity_at_radii(
+        loader, basis_cls, basis_kwargs, uniform_fd_z_sup, center_samples_num=center_samples_num_uniform,
+    )
+    print("\nNonparametric KEF sensitivity realised at the uniform-z-neighbourhood radii above "
+          "(r_j * omega_max, own radius per component):")
+    for name in COMPONENT_ORDER:
+        print(
+            f"  {name}: r_j={uniform_fd_z_sup[name]:.4f}, sensitivity={uniform_nonparam['sensitivity'][name]:.4f} "
+            f"({uniform_nonparam['percentages'][name]:.1f}%)"
+        )
 
     J = loader.total_nodes
     r_j = float(cfg.sensitivity.r_j)

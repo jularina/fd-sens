@@ -129,6 +129,7 @@ def compute_group_omega_max(
     node_chunk_size: int = 1024,
     center_prior_samples: Optional[np.ndarray] = None,
     rel_tol: float = 1e-8,
+    decomposed: bool = True,
 ) -> np.ndarray:
     """
     Per-node omega_max(A_j, A_c) for every scalar node (column) of
@@ -154,6 +155,18 @@ def compute_group_omega_max(
                    kept separate from `prior_samples` so the same samples
                    never both pick the centres and estimate A_c. Falls back
                    to `prior_samples` if not given.
+    decomposed: if True (default), exploit parameter independence within the
+                   block -- the basis and constraint matrix A_c are fit ONCE
+                   for the whole group, and only the per-node objective A_j
+                   is recomputed per parameter (the O(J*l*K^2 +
+                   paramdim*(mK^2+K^3)) cost in the paper, since the A_c/l*K^2
+                   term is paid once per block, not once per parameter). If
+                   False, the basis and A_c are rebuilt from scratch inside
+                   the per-node loop instead -- paramdim*l*K^2 instead of
+                   J*l*K^2 for that term -- to benchmark the cost of NOT
+                   exploiting parameter independence. Same basis/samples
+                   either way, so omega_max is numerically identical; only
+                   the redundant recomputation (and hence runtime) differs.
 
     Bases flagged `SEPARABLE = True` (e.g. FixedCentersRBFBasisFunction) treat
     every column of a (m, d) sample matrix as an independent scalar node, so
@@ -161,10 +174,29 @@ def compute_group_omega_max(
     Other bases (e.g. MaternBasisFunction, RBFBasisFunction, ...) compute a
     single joint kernel value over the *whole* d-dimensional sample point, so
     they must be called once per node (d=1 each time); the basis fit itself
-    (centres/lengthscale) still only happens once for the whole group.
+    (centres/lengthscale) still only happens once for the whole group (when
+    decomposed=True).
     """
     posterior_samples = np.asarray(posterior_samples, dtype=float)
     m, n_nodes = posterior_samples.shape
+
+    if not decomposed:
+        prior_col = np.asarray(prior_samples, dtype=float).reshape(-1, 1)
+        omega_max = np.empty(n_nodes, dtype=float)
+        for j in range(n_nodes):
+            basis_j = _build_basis(
+                basis_cls, loc, scale, prior_samples, basis_kwargs,
+                posterior_samples_for_centers=posterior_samples[:, 0],
+                center_prior_samples=center_prior_samples,
+            )
+            grad_prior_j = basis_j.gradient(prior_col)  # (m_prior, 1, K)
+            m_prior = grad_prior_j.shape[0]
+            A_c_j = np.einsum("mdk,mdl->kl", grad_prior_j, grad_prior_j) / m_prior  # (K, K)
+
+            grad = basis_j.gradient(posterior_samples[:, j:j + 1])  # (m, 1, K)
+            A_j = np.einsum("mdk,mdl->kl", grad, grad, optimize=True) / m  # (K, K)
+            omega_max[j] = _generalized_eigvals_max_batch(A_j[None, :, :], A_c_j, rel_tol=rel_tol)[0]
+        return omega_max
 
     basis = _build_basis(
         basis_cls, loc, scale, prior_samples, basis_kwargs,

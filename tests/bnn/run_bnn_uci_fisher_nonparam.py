@@ -79,6 +79,7 @@ def _basis_config_hash(basis_type: str, basis_kwargs: Dict[str, Any]) -> str:
 # lets a rerun skip straight to plotting instead of repeating the slow
 # per-node optimisation.
 SENSITIVITY_CACHE_DIR = "data/bnn"
+RUNTIME_BENCHMARK_DIR = "data/bnn/runtimes"
 _CACHE_TIMESTAMP_FMT = "%Y%m%d_%H%M%S"
 
 
@@ -128,7 +129,9 @@ def _build_tensor_axis_meta(feature_names):
     }
 
 
-def compute_bnn_group_sensitivities(cfg) -> Tuple[Any, Dict[str, Dict[str, Any]], float, int, float, Dict, Dict]:
+def compute_bnn_group_sensitivities(
+    cfg, decomposed: bool = True, use_cache: bool = True,
+) -> Tuple[Any, Dict[str, Dict[str, Any]], float, int, float, Dict, Dict]:
     """
     Core per-group FD sensitivity computation shared by
     run_bnn_uci_node_sensitivity (single dataset/prior, with plots) and
@@ -137,12 +140,22 @@ def compute_bnn_group_sensitivities(cfg) -> Tuple[Any, Dict[str, Dict[str, Any]]
     centre-selection) prior samples for every param group, and computes each
     group's per-node omega_max/sensitivity.
 
-    If a cached run for this dataset/prior tag already exists under
-    data/bnn/ (see SENSITIVITY_CACHE_DIR), the slow per-node optimisation is
-    skipped and its full per-node results (omega_max + the prior/center
-    draws used to build each group's basis) are loaded instead -- this is
-    what lets a rerun go straight to plotting. Otherwise the sensitivities
-    are computed as before and a new, timestamped cache file is written.
+    decomposed: passed straight through to compute_group_omega_max (see its
+    docstring) -- True (default) exploits parameter independence (A_c fit
+    once per block); False rebuilds the basis/A_c per scalar parameter, to
+    benchmark the cost of not decomposing. Does not affect the numerical
+    result, only how it's computed.
+
+    If use_cache=True (default) and a cached run for this dataset/prior tag
+    already exists under data/bnn/ (see SENSITIVITY_CACHE_DIR), the slow
+    per-node optimisation is skipped and its full per-node results (omega_max
+    + the prior/center draws used to build each group's basis) are loaded
+    instead -- this is what lets a rerun go straight to plotting. Otherwise
+    the sensitivities are computed as before. A new, timestamped cache file
+    is written only when use_cache=True -- pass use_cache=False to force a
+    genuine from-scratch computation and skip the cache entirely (both read
+    and write), e.g. for runtime benchmarking, where hitting the cache would
+    make every run after the first artificially near-instant.
 
     Returns (loader, group_results, radius, J, r_j, prior_samples_cache,
     center_prior_samples_cache).
@@ -161,7 +174,7 @@ def compute_bnn_group_sensitivities(cfg) -> Tuple[Any, Dict[str, Dict[str, Any]]
     basis_kwargs = OmegaConf.to_container(cfg.optimize.nonparametric.basis_funcs_kwargs, resolve=True)
     tag = f"{base_tag}_b{_basis_config_hash(cfg.optimize.nonparametric.basis_funcs_type, basis_kwargs)}"
 
-    cache_path = _find_latest_sensitivity_cache(tag)
+    cache_path = _find_latest_sensitivity_cache(tag) if use_cache else None
     if cache_path is not None:
         print(f"Found existing sensitivity cache at {cache_path}, skipping computation.")
         cached = load_results_json(cache_path)
@@ -216,6 +229,7 @@ def compute_bnn_group_sensitivities(cfg) -> Tuple[Any, Dict[str, Dict[str, Any]]
             basis_kwargs=basis_kwargs,
             node_chunk_size=node_chunk_size,
             center_prior_samples=center_prior_samples,
+            decomposed=decomposed,
         )
         sensitivity = r_j * omega_max
         group_elapsed = time.perf_counter() - group_start
@@ -240,38 +254,44 @@ def compute_bnn_group_sensitivities(cfg) -> Tuple[Any, Dict[str, Dict[str, Any]]
     elapsed = time.perf_counter() - start
     print(f"Per-node sensitivity computation time: {elapsed:.3f}s")
 
-    new_cache_path = _new_sensitivity_cache_path(tag)
-    save_to_serializable_json(
-        {
-            "radius": radius,
-            "J": J,
-            "r_j": r_j,
-            "groups": {
-                name: {
-                    "loc": res["loc"],
-                    "scale": res["scale"],
-                    "n_nodes": res["n_nodes"],
-                    "shape": res["shape"],
-                    "omega_max": res["omega_max"],
-                    "prior_samples": prior_samples_cache[name],
-                    "center_prior_samples": center_prior_samples_cache[name],
-                }
-                for name, res in group_results.items()
+    if use_cache:
+        new_cache_path = _new_sensitivity_cache_path(tag)
+        save_to_serializable_json(
+            {
+                "radius": radius,
+                "J": J,
+                "r_j": r_j,
+                "groups": {
+                    name: {
+                        "loc": res["loc"],
+                        "scale": res["scale"],
+                        "n_nodes": res["n_nodes"],
+                        "shape": res["shape"],
+                        "omega_max": res["omega_max"],
+                        "prior_samples": prior_samples_cache[name],
+                        "center_prior_samples": center_prior_samples_cache[name],
+                    }
+                    for name, res in group_results.items()
+                },
             },
-        },
-        new_cache_path,
-    )
-    print(f"Saved sensitivity cache to {new_cache_path}")
+            new_cache_path,
+        )
+        print(f"Saved sensitivity cache to {new_cache_path}")
 
     return loader, group_results, radius, J, r_j, prior_samples_cache, center_prior_samples_cache
 
 
-def _run_bnn_uci_node_sensitivity_core(cfg) -> None:
+def _run_bnn_uci_node_sensitivity_core(cfg, decomposed: bool = True, use_cache: bool = True) -> None:
     """
     Core of run_bnn_uci_node_sensitivity, factored out as a plain function so
     it can also be called directly (outside a Hydra job context) when looping
     over many configs, e.g. from run_bnn_uci_all_datasets_sensitivity. Uses
     _project_root() instead of get_original_cwd() so it works either way.
+
+    decomposed/use_cache are passed straight through to
+    compute_bnn_group_sensitivities (see its docstring) -- both default to
+    the normal, always-decomposed, cache-using behaviour; a caller (e.g. a
+    runtime benchmark) can override them without affecting everyday use.
     """
     core_start = time.perf_counter()
     tensor_axis_meta = _build_tensor_axis_meta(cfg.data.get("feature_names"))
@@ -281,9 +301,9 @@ def _run_bnn_uci_node_sensitivity_core(cfg) -> None:
 
     start = time.perf_counter()
     loader, group_results, radius, J, r_j, prior_samples_cache, center_prior_samples_cache = (
-        compute_bnn_group_sensitivities(cfg)
+        compute_bnn_group_sensitivities(cfg, decomposed=decomposed, use_cache=use_cache)
     )
-    total =  time.perf_counter() - start
+    total = time.perf_counter() - start
     print(f"Total optimisation time: {total:.3f}s")
 
     total_sensitivity = float(sum(v["total_sensitivity"] for v in group_results.values()))
@@ -495,6 +515,74 @@ def run_bnn_uci_all_datasets_sensitivity() -> None:
             cfg = OmegaConf.load(config_path)
             print(f"=== {TABLE_DATASET_LABELS[dataset]} / {TABLE_PRIOR_LABELS[prior]} ===")
             _run_bnn_uci_node_sensitivity_core(cfg)
+
+
+def run_bnn_uci_sensitivity_runtime_benchmark(
+    config_name: str = "bnn_boston_nonparam_gaussian",
+    n_repeats: int = 10,
+) -> Dict[str, Any]:
+    """
+    Benchmarks run_bnn_uci_node_sensitivity's wall-clock runtime, decomposed
+    (default -- exploits parameter independence, A_c fit once per block) vs.
+    without decomposition (A_c and the basis rebuilt from scratch for every
+    single scalar parameter instead -- see compute_group_omega_max's
+    `decomposed` argument). Both conditions are run n_repeats times with the
+    on-disk sensitivity cache disabled throughout (use_cache=False) -- the
+    cache would otherwise make every run after the first near-instant,
+    defeating the point of a runtime benchmark. Every individual run's
+    wall-clock time and the mean/std are saved as JSON under
+    data/bnn/runtimes/bnn_sensitivity_runtime_{config_name}_{decomposed,
+    no_decomposition}.json.
+
+    Note: since decomposed=False rebuilds the basis/A_c per scalar
+    parameter, its runtime scales with total node count J (5121 for the
+    default boston config, dominated by net.module.2.weight_prior's 4096
+    nodes) rather than the ~4 param-group blocks decomposed=True pays that
+    cost for -- expect it to run substantially slower.
+    """
+    config_path = os.path.join(CONFIGS_DIR, f"{config_name}.yaml")
+    cfg = OmegaConf.load(config_path)
+
+    runtime_dir = os.path.join(_project_root(), RUNTIME_BENCHMARK_DIR)
+    os.makedirs(runtime_dir, exist_ok=True)
+
+    results: Dict[str, Dict[str, Any]] = {}
+    for decomposed, label in ((True, "decomposed"), (False, "no_decomposition")):
+        print(f"=== Runtime benchmark: {label} ({n_repeats} repeats, config={config_name}) ===")
+        runtimes = []
+        for i in range(n_repeats):
+            start = time.perf_counter()
+            _run_bnn_uci_node_sensitivity_core(cfg, decomposed=decomposed, use_cache=False)
+            elapsed = time.perf_counter() - start
+            runtimes.append(elapsed)
+            print(f"  [{label}] run {i + 1}/{n_repeats}: {elapsed:.3f}s")
+
+        mean_runtime = float(np.mean(runtimes))
+        std_runtime = float(np.std(runtimes))
+        results[label] = {
+            "config_name": config_name,
+            "decomposed": decomposed,
+            "n_repeats": n_repeats,
+            "runtimes_seconds": runtimes,
+            "mean_seconds": mean_runtime,
+            "std_seconds": std_runtime,
+        }
+        print(f"  [{label}] mean={mean_runtime:.3f}s, std={std_runtime:.3f}s")
+
+        save_to_serializable_json(
+            results[label],
+            os.path.join(runtime_dir, f"bnn_sensitivity_runtime_{config_name}_{label}.json"),
+        )
+
+    speedup = results["no_decomposition"]["mean_seconds"] / results["decomposed"]["mean_seconds"]
+    print(
+        f"\nMean runtime over {n_repeats} repeats ({config_name}): "
+        f"decomposed={results['decomposed']['mean_seconds']:.3f}s, "
+        f"without decomposition={results['no_decomposition']['mean_seconds']:.3f}s "
+        f"(speedup={speedup:.2f}x)."
+    )
+
+    return results
 
 
 def _layer_mean_sensitivities(group_results: Dict[str, Dict[str, Any]]) -> Dict[str, float]:
