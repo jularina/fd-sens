@@ -20,6 +20,99 @@ import time
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
+def _closed_form_conjugate_gaussian_M(mu_ref, Sigma_ref, x_bar, Sigma_over_n) -> float:
+    """
+    Closed form M = ||l(.;x_1:n)||_{L^inf(Pi_ref)} / Z_ref for the conjugate
+    Gaussian location model, with likelihood ~ N(x_bar, Sigma/n) and reference
+    prior ~ N(mu_ref, Sigma_ref):
+
+        M = sqrt(|Sigma/n + Sigma_ref| / |Sigma/n|)
+            * exp(0.5 * (x_bar - mu_ref)^T (Sigma/n + Sigma_ref)^{-1} (x_bar - mu_ref))
+
+    so that S^FD(Q_r) = M * r (Thm. exact-fd-sensitivity).
+    """
+    mu_ref = np.atleast_1d(np.asarray(mu_ref, dtype=float))
+    x_bar = np.atleast_1d(np.asarray(x_bar, dtype=float))
+    Sigma_ref = np.atleast_2d(np.asarray(Sigma_ref, dtype=float))
+    Sigma_over_n = np.atleast_2d(np.asarray(Sigma_over_n, dtype=float))
+
+    combined = Sigma_over_n + Sigma_ref
+    diff = x_bar - mu_ref
+    log_det_ratio = np.linalg.slogdet(combined)[1] - np.linalg.slogdet(Sigma_over_n)[1]
+    quad_form = float(diff @ np.linalg.solve(combined, diff))
+    return float(np.exp(0.5 * log_det_ratio + 0.5 * quad_form))
+
+
+def _k_dependent_basis_settings(
+    samples: np.ndarray, K: int, n_mc_samples: int, span: float = 3.0, safe_fraction: float = 0.2,
+) -> tuple[int, float]:
+    """
+    (K_eff, lengthscale) for an isotropic RBF/Matern sieve whose bandwidth
+    shrinks as the number of basis functions grows: lengthscale =
+    domain_scale / K_eff^(1/d), with K_eff = min(K, safe_fraction *
+    n_mc_samples) *also* used as the actual number of basis functions built
+    (not just to compute the bandwidth).
+
+    Without this, MaternBasisFunction(Multidim)'s default bandwidth is
+    estimated once from `samples` independent of K (median pairwise sample
+    distance, or sample covariance), so raising num_basis_functions in a
+    config just adds near-duplicate centres at a fixed, too-wide bandwidth
+    and the sieve sensitivity barely grows (verified empirically: it
+    plateaus after only a few dozen centres).
+
+    K_eff is capped at safe_fraction * n_mc_samples (n_mc_samples = number of
+    Monte-Carlo prior/posterior samples used to estimate A, A_c) because
+    pushing the bandwidth past what those samples can resolve makes A, A_c
+    ill-conditioned and the generalised eigenvalue blow up by orders of
+    magnitude (verified empirically: stable and monotonically increasing up
+    to K ~ 0.2x n_mc_samples, then degrades and eventually explodes).
+    Crucially, K_eff must also cap the *number of centres actually built*:
+    capping only the bandwidth while still placing all K (possibly far more
+    than K_eff) centres just recreates the same ill-conditioning from
+    near-duplicate centres crammed inside a bandwidth sized for fewer of them
+    (verified empirically). So requesting more basis functions than
+    safe_fraction * n_mc_samples silently gets fewer than requested; that
+    ceiling is a property of the finite sample size, not of this schedule,
+    and can only be raised by increasing prior/posterior_samples_num.
+    """
+    samples = np.asarray(samples, dtype=float)
+    _, d = samples.shape
+    domain_scale = span * float(np.sqrt(np.max(np.var(samples, axis=0))))
+    K_eff = min(K, max(1, int(safe_fraction * n_mc_samples)))
+    if K > K_eff:
+        print(
+            f"WARNING: num_basis_functions K={K} exceeds {safe_fraction:.0%} of the "
+            f"Monte-Carlo sample size (n={n_mc_samples}) used to estimate A, A_c. "
+            f"Using only K_eff={K_eff} basis functions (with a correspondingly "
+            "smaller bandwidth) to avoid an ill-conditioned generalised "
+            "eigenvalue problem; increase prior/posterior_samples_num to "
+            "safely benefit from a larger K."
+        )
+    lengthscale = float(domain_scale / (K_eff ** (1.0 / d)))
+    return K_eff, lengthscale
+
+
+def _anisotropic_precision_from_lengthscale(samples: np.ndarray, lengthscale: float) -> np.ndarray:
+    """
+    Precision matrix combining the samples' covariance *shape* (so
+    orientation/anisotropy, e.g. Sigma_ref's off-diagonal correlation, is
+    preserved like MaternBasisFunctionMultidim's default
+    _estimate_precision_from_samples) with an overall *scale* set by
+    `lengthscale` (so it still shrinks with K per
+    _k_dependent_basis_settings): normalises inv(cov(samples)) to unit
+    determinant (encodes only shape) then divides by lengthscale**2 (sets
+    the scale), so det(precision) == det(I / lengthscale**2) in an isotropic
+    basis of the same dimension.
+    """
+    samples = np.asarray(samples, dtype=float)
+    d = samples.shape[1]
+    cov = np.cov(samples, rowvar=False)
+    P0 = np.linalg.inv(cov)
+    P0 = 0.5 * (P0 + P0.T)
+    P0 /= np.linalg.det(P0) ** (1.0 / d)
+    return P0 / lengthscale ** 2
+
+
 def _json_keys_to_int(obj):
     """Recursively cast dict keys serialised as strings by json back to int."""
     if isinstance(obj, dict):
@@ -180,7 +273,24 @@ def run_gaussian_priors_nonparametric_diff_radii(cfg, save_samples: bool = False
     basis_kwargs["posterior_samples"] = None
     basis_kwargs["estimation_samples_source"] = "prior"
     basis_kwargs["method"] = "random"
+
+    # Lengthscale shrinks with K so increasing num_basis_functions in the
+    # config actually grows the achievable sensitivity, instead of the
+    # class's default (K-independent, sample-based) bandwidth causing it to
+    # plateau after a few dozen centres -- see _k_dependent_basis_settings.
+    n_mc_samples = min(len(model.prior_samples_init), len(model.posterior_samples_init))
+    basis_kwargs["num_basis_functions"], basis_kwargs["lengthscale"] = _k_dependent_basis_settings(
+        centers_pool_samples, basis_kwargs["num_basis_functions"], n_mc_samples,
+    )
     basis_function = basis_cls(**basis_kwargs)
+
+    M_closed = _closed_form_conjugate_gaussian_M(
+        mu_ref=model.prior_init.mu,
+        Sigma_ref=model.prior_init.var,
+        x_bar=model.x_bar,
+        Sigma_over_n=model.loss.var / model.observations_num,
+    )
+    print(f"Closed-form M (conjugate Gaussian location model): {M_closed:.4f}")
 
     for radius in [0.5, 1.0, 5.0, 10.0]:
         optimizer = OptimisationNonparametricBase(
@@ -198,7 +308,8 @@ def run_gaussian_priors_nonparametric_diff_radii(cfg, save_samples: bool = False
         sdp_lambda_list.append(result_sdp["lambda_star"])
         sdp_fd_estimates_list.append(result_sdp["primal_value"])
         radius_labels.append(radius)
-        print(f"Radius: {radius}, sensitivity: {result_sdp['primal_value']}")
+        print(
+            f"Radius: {radius}, sensitivity: {result_sdp['primal_value']}, closed-form S^FD = M*r: {M_closed * radius:.4f}")
 
     plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
     output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
@@ -265,7 +376,7 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
       (d) Random (i.i.d. subsample) centres from the fresh reference-prior draw.
       (e) Random (i.i.d. subsample) centres from the posterior samples.
     """
-    radius = 10.0
+    radius = 5.0
     model = instantiate(cfg.model, data_config=cfg.data)
     output_dir = os.path.join(get_original_cwd(), "data/univariate_gaussian")
 
@@ -295,6 +406,17 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
     base_basis_kwargs["num_basis_functions"] = 30
     base_basis_kwargs["nu"] = 5.0
 
+    # Lengthscale shrinks with K (per basis function's own centre count) so
+    # increasing num_basis_functions actually grows the achievable
+    # sensitivity instead of plateauing -- see _k_dependent_basis_settings.
+    n_mc_samples = min(len(model.prior_samples_init), len(model.posterior_samples_init))
+
+    def _apply_k_schedule(kwargs, samples_for_scale):
+        kwargs["num_basis_functions"], kwargs["lengthscale"] = _k_dependent_basis_settings(
+            samples_for_scale, kwargs["num_basis_functions"], n_mc_samples,
+        )
+        return kwargs
+
     def _run_and_plot(method_label, filename, optimizer):
         result_sdp = optimizer.optimize_through_sdp_relaxation()
         print(f"[{method_label}] Nonparametric FD (primal value): {result_sdp['primal_value']:.4f}")
@@ -317,6 +439,7 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
     basis_kwargs["posterior_samples"] = None
     basis_kwargs["estimation_samples_source"] = "prior"
     basis_kwargs["method"] = "halton"
+    basis_kwargs = _apply_k_schedule(basis_kwargs, centers_pool_samples)
     basis_function_halton = basis_cls(**basis_kwargs)
     optimizer = OptimisationNonparametricBase(
         estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
@@ -334,6 +457,7 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
     basis_kwargs["posterior_samples"] = None
     basis_kwargs["estimation_samples_source"] = "prior"
     basis_kwargs["method"] = "kmeans"
+    basis_kwargs = _apply_k_schedule(basis_kwargs, centers_pool_samples)
     basis_function_kmeans = basis_cls(**basis_kwargs)
     optimizer = OptimisationNonparametricBase(
         estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
@@ -351,6 +475,12 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
     basis_kwargs["posterior_samples"] = estimator_posterior.samples
     basis_kwargs["estimation_samples_source"] = "posterior"
     basis_kwargs["method"] = "halton"
+    # Not scheduled: posterior samples are far more concentrated than the
+    # fresh prior draw, so the same K-dependent formula produces a
+    # disproportionately narrow (unstable) bandwidth here -- verified
+    # empirically (already inflated at K=30, SDP relaxation unbounded by
+    # K=70 in the loop below). Left on the class's own auto-estimated
+    # (K-independent) bandwidth.
     basis_function_posterior = basis_cls(**basis_kwargs)
     optimizer = OptimisationNonparametricBase(
         estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
@@ -368,6 +498,7 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
     basis_kwargs["posterior_samples"] = None
     basis_kwargs["estimation_samples_source"] = "prior"
     basis_kwargs["method"] = "random"
+    basis_kwargs = _apply_k_schedule(basis_kwargs, centers_pool_samples)
     basis_function_random_prior = basis_cls(**basis_kwargs)
     optimizer = OptimisationNonparametricBase(
         estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
@@ -385,6 +516,7 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
     basis_kwargs["posterior_samples"] = estimator_posterior.samples
     basis_kwargs["estimation_samples_source"] = "posterior"
     basis_kwargs["method"] = "random"
+    # Not scheduled: see the "Halton (posterior)" case above.
     basis_function_random_posterior = basis_cls(**basis_kwargs)
     optimizer = OptimisationNonparametricBase(
         estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
@@ -408,22 +540,25 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
         )
         return optimizer.optimize_through_sdp_relaxation()
 
-    for K in [10, 20, 30, 40, 50, 60, 70, 80, 90]:
+    for K in [60, 70, 80, 90, 100]:
         k_basis_kwargs = dict(base_basis_kwargs)
         k_basis_kwargs["num_basis_functions"] = K
 
         kmeans_kwargs = dict(k_basis_kwargs, prior_samples=centers_pool_samples, posterior_samples=None,
-                              estimation_samples_source="prior", method="kmeans")
+                             estimation_samples_source="prior", method="kmeans")
+        kmeans_kwargs = _apply_k_schedule(kmeans_kwargs, centers_pool_samples)
         basis_function_kmeans_k = basis_cls(**kmeans_kwargs)
         result_kmeans_k = _compute(basis_function_kmeans_k)
 
         random_prior_kwargs = dict(k_basis_kwargs, prior_samples=centers_pool_samples, posterior_samples=None,
-                                    estimation_samples_source="prior", method="random")
+                                   estimation_samples_source="prior", method="random")
+        random_prior_kwargs = _apply_k_schedule(random_prior_kwargs, centers_pool_samples)
         basis_function_random_prior_k = basis_cls(**random_prior_kwargs)
         result_random_prior_k = _compute(basis_function_random_prior_k)
 
+        # Not scheduled: see the "Halton (posterior)" case above.
         random_posterior_kwargs = dict(k_basis_kwargs, prior_samples=None, posterior_samples=estimator_posterior.samples,
-                                        estimation_samples_source="posterior", method="random")
+                                       estimation_samples_source="posterior", method="random")
         basis_function_random_posterior_k = basis_cls(**random_posterior_kwargs)
         result_random_posterior_k = _compute(basis_function_random_posterior_k)
 
@@ -476,7 +611,7 @@ def run_gaussian_priors_nonparametric_diff_kernels(cfg, save_samples: bool = Fal
     fresh, independent i.i.d. draw of the reference prior -- never the
     samples used to estimate the Fisher divergence.
     """
-    radius = 10.0
+    radius = 5.0
     model = instantiate(cfg.model, data_config=cfg.data)
     output_dir = os.path.join(get_original_cwd(), "data/univariate_gaussian")
 
@@ -502,6 +637,14 @@ def run_gaussian_priors_nonparametric_diff_kernels(cfg, save_samples: bool = Fal
     centers_pool_samples = model.sample_from_base_prior(n_samples=len(original_prior_samples))
 
     num_basis_functions = 30
+
+    # Lengthscale shrinks with K (per basis function's own centre count) so
+    # increasing num_basis_functions actually grows the achievable
+    # sensitivity instead of plateauing -- see _k_dependent_basis_settings.
+    n_mc_samples = min(len(model.prior_samples_init), len(model.posterior_samples_init))
+    num_basis_functions, kernel_lengthscale = _k_dependent_basis_settings(
+        centers_pool_samples, num_basis_functions, n_mc_samples,
+    )
 
     def _run_and_plot(method_label, filename, basis_function, show_centers=True, show_yaxis=True):
         optimizer = OptimisationNonparametricBase(
@@ -533,6 +676,7 @@ def run_gaussian_priors_nonparametric_diff_kernels(cfg, save_samples: bool = Fal
             posterior_samples=None,
             prior_samples=centers_pool_samples,
             num_basis_functions=num_basis_functions,
+            lengthscale=kernel_lengthscale,
             method="kmeans",
             nu=nu,
             estimation_samples_source="prior",
@@ -568,6 +712,7 @@ def run_gaussian_priors_nonparametric_diff_kernels(cfg, save_samples: bool = Fal
         posterior_samples=None,
         prior_samples=centers_pool_samples,
         num_basis_functions=num_basis_functions,
+        lengthscale=kernel_lengthscale,
         method="kmeans",
         estimation_samples_source="prior",
     )
@@ -659,10 +804,31 @@ def run_multivariate_gaussian_priors_nonparametric_diff_radii(cfg, save_samples:
     basis_kwargs["prior_samples"] = centers_pool_samples
     basis_kwargs["posterior_samples"] = None
     basis_kwargs["estimation_samples_source"] = "prior"
-    basis_kwargs["num_basis_functions"] = 30
     basis_kwargs["nu"] = 5
     basis_kwargs["method"] = "random"
+
+    # Precision (metric="full") shrinks (isotropically) with K so increasing
+    # num_basis_functions in the config actually grows the achievable
+    # sensitivity, instead of the class's default (K-independent,
+    # covariance-based) bandwidth causing it to plateau -- see
+    # _k_dependent_basis_settings. Previously num_basis_functions was
+    # hardcoded to 30 here, so editing the config's value had no effect at
+    # all; it now comes from the config like every other basis_funcs_kwargs
+    # entry.
+    n_mc_samples = min(len(model.prior_samples_init), len(model.posterior_samples_init))
+    basis_kwargs["num_basis_functions"], ell = _k_dependent_basis_settings(
+        centers_pool_samples, basis_kwargs["num_basis_functions"], n_mc_samples,
+    )
+    basis_kwargs["precision"] = _anisotropic_precision_from_lengthscale(centers_pool_samples, ell)
     basis_function = basis_cls(**basis_kwargs)
+
+    M_closed = _closed_form_conjugate_gaussian_M(
+        mu_ref=model.prior_init.mu,
+        Sigma_ref=model.prior_init.cov,
+        x_bar=model.x_bar,
+        Sigma_over_n=model.loss.cov / model.observations_num,
+    )
+    print(f"Closed-form M (conjugate Gaussian location model): {M_closed:.4f}")
 
     for radius in [0.5, 1.0, 5.0, 10.0]:  # [0.5, 1.0, 5.0, 15.0]
         optimizer = OptimisationNonparametricBase(
@@ -680,7 +846,8 @@ def run_multivariate_gaussian_priors_nonparametric_diff_radii(cfg, save_samples:
         sdp_lambda_list.append(result_sdp["lambda_star"])
         fd_estimates_list.append(result_sdp["primal_value"])
         radius_labels.append(radius)
-        print(f"Radius: {radius}, sensitivity: {result_sdp['primal_value']}")
+        print(
+            f"Radius: {radius}, sensitivity: {result_sdp['primal_value']}, closed-form S^FD = M*r: {M_closed * radius:.4f}")
 
     plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
     output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
@@ -699,6 +866,108 @@ def run_multivariate_gaussian_priors_nonparametric_diff_radii(cfg, save_samples:
         resolution=500,
         contour_levels=5,
         show_legend=False,
+    )
+
+
+@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/",
+            config_name="multivariate_gaussian_nonparam")
+def run_multivariate_gaussian_priors_nonparametric_sensitivity_vs_K(cfg, radius: float = 5.0) -> None:
+    """
+    Validates that the closed-form RBF/Gaussian sieve sensitivity
+    S^FD(Q_r^K) = r * gamma_max(A, A_c) converges to the exact
+    (unrestricted) closed-form sensitivity S^FD(Q_r) = M*r
+    (Thm. exact-fd-sensitivity) as the number of RBF basis functions K
+    grows, for the bivariate conjugate Gaussian location model.
+
+    A and A_c are computed analytically via rbf_gaussian_gram_closed_form
+    (exact expectations under the Gaussian reference prior/posterior)
+    rather than estimated by Monte Carlo from samples, so this isolates the
+    *sieve approximation* (bias) question from finite-sample estimation
+    noise -- the latter is instead studied (at a single fixed K) by
+    run_gaussian_priors_nonparametric_closed_form_convergence.
+
+    RBF centres sit on a growing square grid centred at mu_ref, spanning
+    +/- `span` prior standard deviations per axis (using the largest prior
+    variance across the two dimensions so the grid covers both axes), with
+    lengthscale fixed to the grid spacing -- so the lengthscale shrinks as
+    the grid gets denser, as required for the sieve to be consistent.
+    A naive Matern/RBF sieve whose bandwidth is instead estimated once from
+    the sample pool (independent of K) does *not* converge this way: it
+    plateaus well below the true value once the fixed-bandwidth basis
+    functions become near-collinear (verified empirically before adding
+    this function).
+    """
+    results_dir = os.path.join(get_original_cwd(), "data/multivariate_gaussian/sensitivity_vs_K")
+    results_path = os.path.join(results_dir, "sensitivity_vs_K_r5_grid_3_4_5_7_10_14_20_28_40_56_64_72_80.json")
+
+    if os.path.exists(results_path):
+        print(f"Found existing results at {results_path}, skipping computation.")
+        cached = load_results_json(results_path)
+        true_sensitivity = cached["true_sensitivity"]
+        basis_funcs_nums = cached["basis_funcs_nums"]
+        estimates = cached["estimates"]
+        print(f"True sensitivity at r={radius}: {true_sensitivity:.4f}")
+        for K, S_hat in zip(basis_funcs_nums, estimates):
+            print(f"K={K}, sensitivity: {S_hat:.4f}")
+    else:
+        model = instantiate(cfg.model, data_config=cfg.data)
+
+        mu_ref = np.asarray(model.prior_init.mu, dtype=float)
+        Sigma_ref = np.asarray(model.prior_init.cov, dtype=float)
+        mu_post, Sigma_post = model.compute_posterior_params()
+        mu_post = np.asarray(mu_post, dtype=float)
+        Sigma_post = np.asarray(Sigma_post, dtype=float)
+
+        M_closed = _closed_form_conjugate_gaussian_M(
+            mu_ref=mu_ref,
+            Sigma_ref=Sigma_ref,
+            x_bar=model.x_bar,
+            Sigma_over_n=np.asarray(model.loss.cov, dtype=float) / model.observations_num,
+        )
+        true_sensitivity = M_closed * radius
+        print(f"Closed-form M: {M_closed:.4f}, true sensitivity at r={radius}: {true_sensitivity:.4f}")
+
+        span = 3.0
+        half_width = span * float(np.sqrt(np.max(np.diag(Sigma_ref))))
+
+        grid_sides = [3, 4, 5, 7, 10, 14, 20, 28, 40, 56, 64, 72, 80]
+        basis_funcs_nums, estimates = [], []
+        for n_side in grid_sides:
+            axis = np.linspace(-half_width, half_width, n_side)
+            xx, yy = np.meshgrid(axis, axis)
+            centers = np.stack([xx.ravel(), yy.ravel()], axis=1) + mu_ref
+            lengthscale = float(axis[1] - axis[0])
+
+            A_c_closed = rbf_gaussian_gram_closed_form(centers, lengthscale, mu=mu_ref, Sigma=Sigma_ref)
+            A_closed = rbf_gaussian_gram_closed_form(centers, lengthscale, mu=mu_post, Sigma=Sigma_post)
+            gamma_max = _gamma_max_generalized_eig(A_closed, A_c_closed)
+            S_hat = radius * gamma_max
+
+            K = n_side ** 2
+            basis_funcs_nums.append(K)
+            estimates.append(S_hat)
+            print(f"K={K} (grid {n_side}x{n_side}), lengthscale={lengthscale:.4f}, sensitivity: {S_hat:.4f}")
+
+        save_to_serializable_json(
+            {
+                "true_sensitivity": true_sensitivity,
+                "basis_funcs_nums": basis_funcs_nums,
+                "estimates": estimates,
+            },
+            results_path,
+        )
+
+    plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
+    output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
+    plot_cfg = load_plot_config(plot_config_path)
+
+    plot_sensitivity_vs_basis_funcs_num(
+        basis_funcs_nums=basis_funcs_nums,
+        estimates=estimates,
+        true_value=true_sensitivity,
+        plot_cfg=plot_cfg,
+        output_dir=output_dir,
+        filename="gaussian_2d_location_model_sensitivity_vs_K.pdf",
     )
 
 
@@ -1161,7 +1430,8 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
                 estimator_posterior = PosteriorFDNonParametric(model=model)
 
                 A_c_hat, _, _ = estimator_prior.compute_non_parametric_fisher_quadratic_form_prior_only(basis_function)
-                A_hat, _, _ = estimator_posterior.compute_non_parametric_fisher_quadratic_form_prior_only(basis_function)
+                A_hat, _, _ = estimator_posterior.compute_non_parametric_fisher_quadratic_form_prior_only(
+                    basis_function)
 
                 # Full plug-in: both A and A_c estimated from samples.
                 S_hat_full = radius * _gamma_max_generalized_eig(A_hat, A_c_hat)
@@ -1246,6 +1516,7 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
         xlabel=r"$l$",
     )
 
+
 if __name__ == "__main__":
     # run_param_nonparam_comparison_skewness()
     # run_param_nonparam_comparison_skewness_matched_radius()
@@ -1254,8 +1525,9 @@ if __name__ == "__main__":
     # run_gaussian_priors_nonparametric()
     # run_multivariate_gaussian_priors_nonparametric()
     # run_gaussian_priors_nonparametric_diff_radii()
-    # run_gaussian_priors_nonparametric_diff_center_methods()
+    run_gaussian_priors_nonparametric_diff_center_methods()
     # run_gaussian_priors_nonparametric_diff_kernels()
     # run_multivariate_gaussian_priors_nonparametric_diff_radii()
-    run_multivariate_gaussian_diff_basis_funcs_num_runtimes()
+    # run_multivariate_gaussian_priors_nonparametric_sensitivity_vs_K()
+    # run_multivariate_gaussian_diff_basis_funcs_num_runtimes()
     # run_gaussian_priors_nonparametric_closed_form_convergence()

@@ -20,7 +20,7 @@ data:
   observations_path: null
   posterior_samples_path: null
   prior_samples_path: null
-  observations_num: 10
+  observations_num: 100
   posterior_samples_num: 5000
   prior_samples_num: 5000
 
@@ -30,7 +30,7 @@ model:
 optimize:
   nonparametric:
     basis_funcs_type: MaternBasisFunctionMultidim
-    basis_funcs_kwargs: {"num_basis_functions": 20, "method": "halton", "nu": 7, "estimation_samples_source": "prior", "estimation_centers_source": "prior", "metric": "full"}
+    basis_funcs_kwargs: {"num_basis_functions": 1000, "method": "halton", "nu": 5, "estimation_samples_source": "prior", "estimation_centers_source": "prior", "metric": "full"}
 
   parametric:
    prior:

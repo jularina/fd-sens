@@ -8,7 +8,6 @@ from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.colors as mcolors
 from matplotlib.colors import to_rgb, Normalize, ListedColormap, BoundaryNorm
 import matplotlib.cm as cmx
-from matplotlib.patches import Ellipse
 from matplotlib.cm import ScalarMappable
 from scipy.special import logsumexp
 import os
@@ -1368,7 +1367,7 @@ def plot_sdp_density_with_centers_combined(
         centers_x = np.asarray(basis_function.centers).reshape(-1)
         ax_rug.plot(
             centers_x, np.zeros_like(centers_x),
-            marker='o', markersize=4, linestyle='None', color=color, clip_on=False,
+            marker='o', markersize=2, linestyle='None', color=color, clip_on=False,
         )
         ax_rug.set_ylim(-1, 1)
         ax_rug.set_yticks([])
@@ -4145,7 +4144,8 @@ def plot_param_nonparam_skewness_comparison(
     ax_post.grid(True, alpha=0.3)
     ax_post.spines["top"].set_visible(False)
     ax_post.spines["right"].set_visible(False)
-    ax_post.legend(frameon=False, fontsize=fs * 0.85, labelspacing=0.5, handlelength=1.8, handletextpad=0.5, loc="upper left")
+    ax_post.legend(frameon=False, fontsize=fs * 0.85, labelspacing=0.5,
+                   handlelength=1.8, handletextpad=0.5, loc="upper left")
 
     if getattr(plot_cfg.plot.figure, "tight_layout", False):
         fig.tight_layout()
@@ -4593,6 +4593,74 @@ def plot_closed_form_sensitivity_error(
 
     if len(series) > 1:
         ax.legend(frameon=False, fontsize=plt.rcParams["font.size"] * 0.8)
+
+    if getattr(plot_cfg.plot.figure, "tight_layout", False):
+        plt.tight_layout()
+
+    save_path = os.path.join(output_dir, filename)
+    fig.savefig(save_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {save_path}")
+
+
+def plot_sensitivity_vs_basis_funcs_num(
+    basis_funcs_nums: list[int],
+    estimates: list[float],
+    true_value: float,
+    plot_cfg,
+    output_dir: str,
+    filename: str = "gaussian_2d_location_model_sensitivity_vs_K.pdf",
+    xlabel: str = r"$K$",
+    ylabel: str = r"$\widehat{S}^{\mathrm{FD}}_m(\widehat{\mathcal{Q}}_r^{K,l})$",
+    true_value_label: str = r"$S^{\mathrm{FD}}(\mathcal{Q}_r)$",
+    x_log_scale: bool = True,
+) -> None:
+    """
+    Plot the nonparametric sieve sensitivity estimate as a function of the
+    number of basis functions K, together with a horizontal line at the
+    exact closed-form sensitivity S^FD(Q_r) = M*r that the sieve estimate is
+    expected to approach as K grows.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    plt.rcParams.update({
+        "font.size": plot_cfg.plot.font.size,
+        "font.family": plot_cfg.plot.font.family,
+        "text.usetex": plot_cfg.plot.font.use_tex,
+        "text.latex.preamble": r"\usepackage{amsmath}",
+    })
+
+    palette = list(getattr(plot_cfg.plot.color_palette, "colors", []))
+    color = palette[0] if palette else "C0"
+
+    fig, ax = plt.subplots(
+        1, 1,
+        figsize=(plot_cfg.plot.figure.size.width,
+                 plot_cfg.plot.figure.size.height),
+        dpi=plot_cfg.plot.figure.dpi,
+    )
+
+    ax.plot(basis_funcs_nums, estimates, marker="o", markersize=4, linewidth=1.5, color=color)
+    ax.axhline(true_value, linestyle="--", linewidth=1.5, color="black")
+
+    if x_log_scale:
+        ax.set_xscale("log")
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel, fontsize=plt.rcParams["font.size"] * 0.85)
+    ax.grid(True, which="both", alpha=0.3)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    y_bottom, y_top = ax.get_ylim()
+    y_top = max(y_top, true_value * 1.15)
+    ax.set_ylim(y_bottom, y_top)
+
+    label_offset = 0.04 * (y_top - y_bottom)
+    ax.text(
+        0.5, true_value + label_offset, true_value_label,
+        transform=ax.get_yaxis_transform(),
+        ha="center", va="bottom",
+        fontsize=plt.rcParams["font.size"] * 0.8,
+    )
 
     if getattr(plot_cfg.plot.figure, "tight_layout", False):
         plt.tight_layout()

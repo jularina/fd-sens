@@ -130,7 +130,7 @@ def _build_tensor_axis_meta(feature_names):
 
 
 def compute_bnn_group_sensitivities(
-    cfg, decomposed: bool = True, use_cache: bool = True,
+    cfg, use_cache: bool = True,
 ) -> Tuple[Any, Dict[str, Dict[str, Any]], float, int, float, Dict, Dict]:
     """
     Core per-group FD sensitivity computation shared by
@@ -139,12 +139,6 @@ def compute_bnn_group_sensitivities(
     a summary table): builds the loader, draws the (FD-estimation,
     centre-selection) prior samples for every param group, and computes each
     group's per-node omega_max/sensitivity.
-
-    decomposed: passed straight through to compute_group_omega_max (see its
-    docstring) -- True (default) exploits parameter independence (A_c fit
-    once per block); False rebuilds the basis/A_c per scalar parameter, to
-    benchmark the cost of not decomposing. Does not affect the numerical
-    result, only how it's computed.
 
     If use_cache=True (default) and a cached run for this dataset/prior tag
     already exists under data/bnn/ (see SENSITIVITY_CACHE_DIR), the slow
@@ -229,7 +223,6 @@ def compute_bnn_group_sensitivities(
             basis_kwargs=basis_kwargs,
             node_chunk_size=node_chunk_size,
             center_prior_samples=center_prior_samples,
-            decomposed=decomposed,
         )
         sensitivity = r_j * omega_max
         group_elapsed = time.perf_counter() - group_start
@@ -281,17 +274,16 @@ def compute_bnn_group_sensitivities(
     return loader, group_results, radius, J, r_j, prior_samples_cache, center_prior_samples_cache
 
 
-def _run_bnn_uci_node_sensitivity_core(cfg, decomposed: bool = True, use_cache: bool = True) -> None:
+def _run_bnn_uci_node_sensitivity_core(cfg, use_cache: bool = True) -> None:
     """
     Core of run_bnn_uci_node_sensitivity, factored out as a plain function so
     it can also be called directly (outside a Hydra job context) when looping
     over many configs, e.g. from run_bnn_uci_all_datasets_sensitivity. Uses
     _project_root() instead of get_original_cwd() so it works either way.
 
-    decomposed/use_cache are passed straight through to
-    compute_bnn_group_sensitivities (see its docstring) -- both default to
-    the normal, always-decomposed, cache-using behaviour; a caller (e.g. a
-    runtime benchmark) can override them without affecting everyday use.
+    use_cache is passed straight through to compute_bnn_group_sensitivities
+    (see its docstring) -- defaults to the normal cache-using behaviour; a
+    caller can override it without affecting everyday use.
     """
     core_start = time.perf_counter()
     tensor_axis_meta = _build_tensor_axis_meta(cfg.data.get("feature_names"))
@@ -301,7 +293,7 @@ def _run_bnn_uci_node_sensitivity_core(cfg, decomposed: bool = True, use_cache: 
 
     start = time.perf_counter()
     loader, group_results, radius, J, r_j, prior_samples_cache, center_prior_samples_cache = (
-        compute_bnn_group_sensitivities(cfg, decomposed=decomposed, use_cache=use_cache)
+        compute_bnn_group_sensitivities(cfg, use_cache=use_cache)
     )
     total = time.perf_counter() - start
     print(f"Total optimisation time: {total:.3f}s")
@@ -517,42 +509,74 @@ def run_bnn_uci_all_datasets_sensitivity() -> None:
             _run_bnn_uci_node_sensitivity_core(cfg)
 
 
-def run_bnn_uci_sensitivity_runtime_benchmark(
-    config_name: str = "bnn_boston_nonparam_gaussian",
+def run_bnn_uci_sensitivity_batching_runtime_benchmark(
+    config_name: str = "bnn_boston_nonparam_gaussian_rbf_benchmark",
     n_repeats: int = 10,
+    conditions: Tuple[Tuple[bool, str], ...] = ((True, "batched"), (False, "per_node_loop")),
 ) -> Dict[str, Any]:
     """
-    Benchmarks run_bnn_uci_node_sensitivity's wall-clock runtime, decomposed
-    (default -- exploits parameter independence, A_c fit once per block) vs.
-    without decomposition (A_c and the basis rebuilt from scratch for every
-    single scalar parameter instead -- see compute_group_omega_max's
-    `decomposed` argument). Both conditions are run n_repeats times with the
-    on-disk sensitivity cache disabled throughout (use_cache=False) -- the
-    cache would otherwise make every run after the first near-instant,
-    defeating the point of a runtime benchmark. Every individual run's
-    wall-clock time and the mean/std are saved as JSON under
-    data/bnn/runtimes/bnn_sensitivity_runtime_{config_name}_{decomposed,
-    no_decomposition}.json.
+    Benchmarks compute_group_omega_max's wall-clock runtime, batched
+    (default -- each group's nodes are pushed through basis.gradient() in
+    chunks and their (chunk, K, K) objective matrices solved together in one
+    batched generalised-eigenvalue call, i.e. one large joint linear-algebra
+    problem for many parameters at once) vs. per_node_loop (every node's
+    sensitivity problem solved separately, one at a time -- see
+    compute_group_omega_max's `batched` argument).
 
-    Note: since decomposed=False rebuilds the basis/A_c per scalar
-    parameter, its runtime scales with total node count J (5121 for the
-    default boston config, dominated by net.module.2.weight_prior's 4096
-    nodes) rather than the ~4 param-group blocks decomposed=True pays that
-    cost for -- expect it to run substantially slower.
+    This distinction is only meaningful for a SEPARABLE basis (see
+    compute_group_omega_max's docstring) -- the default config here
+    (bnn_boston_nonparam_gaussian_rbf_benchmark.yaml) uses
+    FixedCentersRBFBasisFunction specifically for this benchmark. The paper's
+    real configs use MaternBasisFunction, which is not SEPARABLE and
+    therefore always loops node-by-node regardless of `batched`; running
+    this benchmark against one of those would show no difference between
+    conditions.
+
+    Each condition in `conditions` is run n_repeats times, timing only the
+    per-node optimisation itself (compute_group_omega_max over every param
+    group) -- not the surrounding plotting/diagnostics pipeline in
+    run_bnn_uci_node_sensitivity, which is orthogonal to what `batched`
+    affects. Every individual run's wall-clock time and the mean/std are
+    saved as JSON under data/bnn/runtimes/bnn_sensitivity_batching_runtime_
+    {config_name}_{batched,per_node_loop}.json.
+
+    `conditions` defaults to running both, but can be narrowed (e.g. to just
+    one) to split the two conditions across separate invocations.
     """
     config_path = os.path.join(CONFIGS_DIR, f"{config_name}.yaml")
     cfg = OmegaConf.load(config_path)
 
+    basis_cls = BASIS_FUNCTIONS_REGISTRY[cfg.optimize.nonparametric.basis_funcs_type]
+    basis_kwargs = OmegaConf.to_container(cfg.optimize.nonparametric.basis_funcs_kwargs, resolve=True)
+    node_chunk_size = int(cfg.sensitivity.get("node_chunk_size", 1024))
+    center_samples_num = int(cfg.data.get("center_prior_samples_num", 5000))
+
     runtime_dir = os.path.join(_project_root(), RUNTIME_BENCHMARK_DIR)
     os.makedirs(runtime_dir, exist_ok=True)
 
+    loader = instantiate(cfg.model, data_config=cfg.data)
+
     results: Dict[str, Dict[str, Any]] = {}
-    for decomposed, label in ((True, "decomposed"), (False, "no_decomposition")):
-        print(f"=== Runtime benchmark: {label} ({n_repeats} repeats, config={config_name}) ===")
+    for batched, label in conditions:
+        print(f"=== Batching runtime benchmark: {label} ({n_repeats} repeats, config={config_name}) ===")
         runtimes = []
         for i in range(n_repeats):
             start = time.perf_counter()
-            _run_bnn_uci_node_sensitivity_core(cfg, decomposed=decomposed, use_cache=False)
+            for group_name in loader.param_groups:
+                g = loader.groups[group_name]
+                prior_samples = loader.sample_prior(group_name)
+                center_prior_samples = loader.sample_prior(group_name, n_samples=center_samples_num)
+                compute_group_omega_max(
+                    posterior_samples=g["posterior"],
+                    loc=g["loc"],
+                    scale=g["scale"],
+                    prior_samples=prior_samples,
+                    basis_cls=basis_cls,
+                    basis_kwargs=basis_kwargs,
+                    node_chunk_size=node_chunk_size,
+                    center_prior_samples=center_prior_samples,
+                    batched=batched,
+                )
             elapsed = time.perf_counter() - start
             runtimes.append(elapsed)
             print(f"  [{label}] run {i + 1}/{n_repeats}: {elapsed:.3f}s")
@@ -561,7 +585,7 @@ def run_bnn_uci_sensitivity_runtime_benchmark(
         std_runtime = float(np.std(runtimes))
         results[label] = {
             "config_name": config_name,
-            "decomposed": decomposed,
+            "batched": batched,
             "n_repeats": n_repeats,
             "runtimes_seconds": runtimes,
             "mean_seconds": mean_runtime,
@@ -571,16 +595,17 @@ def run_bnn_uci_sensitivity_runtime_benchmark(
 
         save_to_serializable_json(
             results[label],
-            os.path.join(runtime_dir, f"bnn_sensitivity_runtime_{config_name}_{label}.json"),
+            os.path.join(runtime_dir, f"bnn_sensitivity_batching_runtime_{config_name}_{label}.json"),
         )
 
-    speedup = results["no_decomposition"]["mean_seconds"] / results["decomposed"]["mean_seconds"]
-    print(
-        f"\nMean runtime over {n_repeats} repeats ({config_name}): "
-        f"decomposed={results['decomposed']['mean_seconds']:.3f}s, "
-        f"without decomposition={results['no_decomposition']['mean_seconds']:.3f}s "
-        f"(speedup={speedup:.2f}x)."
-    )
+    if "batched" in results and "per_node_loop" in results:
+        speedup = results["per_node_loop"]["mean_seconds"] / results["batched"]["mean_seconds"]
+        print(
+            f"\nMean runtime over {n_repeats} repeats ({config_name}): "
+            f"batched={results['batched']['mean_seconds']:.3f}s, "
+            f"per-node loop={results['per_node_loop']['mean_seconds']:.3f}s "
+            f"(speedup={speedup:.2f}x)."
+        )
 
     return results
 

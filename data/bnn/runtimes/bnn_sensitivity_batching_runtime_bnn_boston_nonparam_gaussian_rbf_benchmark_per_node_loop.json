@@ -1,0 +1,10 @@
+{
+  "config_name": "bnn_boston_nonparam_gaussian_rbf_benchmark",
+  "batched": false,
+  "n_repeats": 1,
+  "runtimes_seconds": [
+    45.80291275000127
+  ],
+  "mean_seconds": 45.80291275000127,
+  "std_seconds": 0.0
+}

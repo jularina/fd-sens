@@ -129,7 +129,7 @@ def compute_group_omega_max(
     node_chunk_size: int = 1024,
     center_prior_samples: Optional[np.ndarray] = None,
     rel_tol: float = 1e-8,
-    decomposed: bool = True,
+    batched: bool = True,
 ) -> np.ndarray:
     """
     Per-node omega_max(A_j, A_c) for every scalar node (column) of
@@ -149,54 +149,41 @@ def compute_group_omega_max(
                    (the basis itself is therefore also built once per group,
                    even for data-driven bases whose centres/lengthscale are
                    fit from prior_samples, unless center_prior_samples is
-                   given -- see below).
+                   given -- see below). The basis and constraint matrix A_c
+                   are fit ONCE for the whole group; only the per-node
+                   objective A_j is computed per parameter.
     center_prior_samples: optional fresh, independent prior draw used only to
                    select the basis centres/lengthscale (e.g. via kmeans),
                    kept separate from `prior_samples` so the same samples
                    never both pick the centres and estimate A_c. Falls back
                    to `prior_samples` if not given.
-    decomposed: if True (default), exploit parameter independence within the
-                   block -- the basis and constraint matrix A_c are fit ONCE
-                   for the whole group, and only the per-node objective A_j
-                   is recomputed per parameter (the O(J*l*K^2 +
-                   paramdim*(mK^2+K^3)) cost in the paper, since the A_c/l*K^2
-                   term is paid once per block, not once per parameter). If
-                   False, the basis and A_c are rebuilt from scratch inside
-                   the per-node loop instead -- paramdim*l*K^2 instead of
-                   J*l*K^2 for that term -- to benchmark the cost of NOT
-                   exploiting parameter independence. Same basis/samples
-                   either way, so omega_max is numerically identical; only
-                   the redundant recomputation (and hence runtime) differs.
 
     Bases flagged `SEPARABLE = True` (e.g. FixedCentersRBFBasisFunction) treat
     every column of a (m, d) sample matrix as an independent scalar node, so
-    all n_nodes can be pushed through one batched gradient() call per chunk.
-    Other bases (e.g. MaternBasisFunction, RBFBasisFunction, ...) compute a
-    single joint kernel value over the *whole* d-dimensional sample point, so
-    they must be called once per node (d=1 each time); the basis fit itself
-    (centres/lengthscale) still only happens once for the whole group (when
-    decomposed=True).
+    all n_nodes can be pushed through one batched gradient() call per chunk
+    (large (chunk, K, K) tensors solved in one generalised-eigenvalue call --
+    see `batched` below). Other bases (e.g. MaternBasisFunction,
+    RBFBasisFunction, ...) compute a single joint kernel value over the
+    *whole* d-dimensional sample point, so they must be called once per node
+    (d=1 each time) regardless of `batched`; the basis fit itself
+    (centres/lengthscale) still only happens once for the whole group.
+
+    batched: only meaningful for a SEPARABLE basis. If True (default), nodes
+                   are pushed through basis.gradient() in chunks of
+                   node_chunk_size and their (chunk, K, K) objective matrices
+                   solved together in one batched generalised-eigenvalue
+                   call. If False, forces the one-node-at-a-time loop even
+                   for a SEPARABLE basis -- i.e. solving each parameter's
+                   sensitivity problem separately instead of as one large
+                   joint linear-algebra problem -- to benchmark the cost of
+                   NOT exploiting that batching. Same basis/A_c either way,
+                   so omega_max is numerically identical; only the batching
+                   (and hence runtime) differs. Ignored (always node-by-node)
+                   for a non-SEPARABLE basis, since it can't be batched at
+                   all without corrupting the result (see above).
     """
     posterior_samples = np.asarray(posterior_samples, dtype=float)
     m, n_nodes = posterior_samples.shape
-
-    if not decomposed:
-        prior_col = np.asarray(prior_samples, dtype=float).reshape(-1, 1)
-        omega_max = np.empty(n_nodes, dtype=float)
-        for j in range(n_nodes):
-            basis_j = _build_basis(
-                basis_cls, loc, scale, prior_samples, basis_kwargs,
-                posterior_samples_for_centers=posterior_samples[:, 0],
-                center_prior_samples=center_prior_samples,
-            )
-            grad_prior_j = basis_j.gradient(prior_col)  # (m_prior, 1, K)
-            m_prior = grad_prior_j.shape[0]
-            A_c_j = np.einsum("mdk,mdl->kl", grad_prior_j, grad_prior_j) / m_prior  # (K, K)
-
-            grad = basis_j.gradient(posterior_samples[:, j:j + 1])  # (m, 1, K)
-            A_j = np.einsum("mdk,mdl->kl", grad, grad, optimize=True) / m  # (K, K)
-            omega_max[j] = _generalized_eigvals_max_batch(A_j[None, :, :], A_c_j, rel_tol=rel_tol)[0]
-        return omega_max
 
     basis = _build_basis(
         basis_cls, loc, scale, prior_samples, basis_kwargs,
@@ -210,7 +197,7 @@ def compute_group_omega_max(
 
     omega_max = np.empty(n_nodes, dtype=float)
 
-    if getattr(basis_cls, "SEPARABLE", False):
+    if getattr(basis_cls, "SEPARABLE", False) and batched:
         for start in range(0, n_nodes, node_chunk_size):
             end = min(start + node_chunk_size, n_nodes)
             grad = basis.gradient(posterior_samples[:, start:end])  # (m, c, K)
