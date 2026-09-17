@@ -338,7 +338,7 @@ def run_gaussian_priors_nonparametric_diff_radii(cfg, save_samples: bool = False
         posterior_distribution=posterior_dist,
         plot_cfg=plot_cfg,
         output_dir=output_dir,
-        domain=(-6, 12),
+        domain=(-2, 8),
         resolution=500,
         show_legend=False,
     )
@@ -585,7 +585,7 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
             plot_cfg=plot_cfg,
             output_dir=plots_output_dir,
             filename=f"gaussian_1d_location_model_centers_combined_K{K}.pdf",
-            domain=(-10, 12),
+            domain=(-6, 12),
             resolution=500,
         )
 
@@ -871,13 +871,16 @@ def run_multivariate_gaussian_priors_nonparametric_diff_radii(cfg, save_samples:
 
 @hydra.main(version_base="1.1", config_path="../../configs/paper/toy/",
             config_name="multivariate_gaussian_nonparam")
-def run_multivariate_gaussian_priors_nonparametric_sensitivity_vs_K(cfg, radius: float = 5.0) -> None:
+def run_gaussian_priors_nonparametric_sensitivity_vs_K(
+    cfg, radius: float = 5.0, x_log_scale: bool = False,
+) -> None:
     """
     Validates that the closed-form RBF/Gaussian sieve sensitivity
     S^FD(Q_r^K) = r * gamma_max(A, A_c) converges to the exact
     (unrestricted) closed-form sensitivity S^FD(Q_r) = M*r
     (Thm. exact-fd-sensitivity) as the number of RBF basis functions K
-    grows, for the bivariate conjugate Gaussian location model.
+    grows, for the conjugate Gaussian location model (univariate or
+    multivariate -- dimension-agnostic, see below).
 
     A and A_c are computed analytically via rbf_gaussian_gram_closed_form
     (exact expectations under the Gaussian reference prior/posterior)
@@ -886,9 +889,10 @@ def run_multivariate_gaussian_priors_nonparametric_sensitivity_vs_K(cfg, radius:
     noise -- the latter is instead studied (at a single fixed K) by
     run_gaussian_priors_nonparametric_closed_form_convergence.
 
-    RBF centres sit on a growing square grid centred at mu_ref, spanning
+    RBF centres sit on a growing d-dimensional square grid centred at
+    mu_ref (K = n_side^d basis functions per grid side n_side), spanning
     +/- `span` prior standard deviations per axis (using the largest prior
-    variance across the two dimensions so the grid covers both axes), with
+    variance across dimensions so the grid covers all axes), with
     lengthscale fixed to the grid spacing -- so the lengthscale shrinks as
     the grid gets denser, as required for the sieve to be consistent.
     A naive Matern/RBF sieve whose bandwidth is instead estimated once from
@@ -896,9 +900,40 @@ def run_multivariate_gaussian_priors_nonparametric_sensitivity_vs_K(cfg, radius:
     plateaus well below the true value once the fixed-bandwidth basis
     functions become near-collinear (verified empirically before adding
     this function).
+
+    Dimension-agnostic: works for both the univariate (Gaussian prior) and
+    multivariate (MultivariateGaussian prior) configs -- d is inferred from
+    the model's prior, and the cache directory / plot filename are tagged
+    "univariate_gaussian"/"gaussian_1d_location_model" or
+    "multivariate_gaussian"/"gaussian_2d_location_model" accordingly, so the
+    two configs' cached results and plots never collide.
     """
-    results_dir = os.path.join(get_original_cwd(), "data/multivariate_gaussian/sensitivity_vs_K")
-    results_path = os.path.join(results_dir, "sensitivity_vs_K_r5_grid_3_4_5_7_10_14_20_28_40_56_64_72_80.json")
+    model = instantiate(cfg.model, data_config=cfg.data)
+
+    mu_ref = np.atleast_1d(np.asarray(model.prior_init.mu, dtype=float))
+    cov_ref = getattr(model.prior_init, "cov", model.prior_init.var)
+    Sigma_ref = np.atleast_2d(np.asarray(cov_ref, dtype=float))
+    mu_post, cov_post = model.compute_posterior_params()
+    mu_post = np.atleast_1d(np.asarray(mu_post, dtype=float))
+    Sigma_post = np.atleast_2d(np.asarray(cov_post, dtype=float))
+    d = mu_ref.shape[0]
+    dim_tag = "univariate_gaussian" if d == 1 else "multivariate_gaussian"
+    plot_tag = "gaussian_1d_location_model" if d == 1 else "gaussian_2d_location_model"
+
+    # Univariate converges to the true value fast enough (in K) that the
+    # grid can be pushed out until the sieve estimate actually reaches it;
+    # multivariate converges far slower in K (see the docstring), so a
+    # comparably large n_side would mean K = n_side^2 basis functions --
+    # infeasible -- so it keeps the original, more modest grid.
+    if d == 1:
+        grid_sides = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 150, 200,
+                       250, 300, 400, 500, 700, 1000, 1500, 2000]
+    else:
+        grid_sides = [3, 4, 5, 7, 10, 14, 20, 28, 40, 56, 64, 72, 80]
+
+    results_dir = os.path.join(get_original_cwd(), f"data/{dim_tag}/sensitivity_vs_K")
+    grid_tag = "_".join(str(n) for n in grid_sides)
+    results_path = os.path.join(results_dir, f"sensitivity_vs_K_r{radius:g}_grid_{grid_tag}.json")
 
     if os.path.exists(results_path):
         print(f"Found existing results at {results_path}, skipping computation.")
@@ -910,19 +945,12 @@ def run_multivariate_gaussian_priors_nonparametric_sensitivity_vs_K(cfg, radius:
         for K, S_hat in zip(basis_funcs_nums, estimates):
             print(f"K={K}, sensitivity: {S_hat:.4f}")
     else:
-        model = instantiate(cfg.model, data_config=cfg.data)
-
-        mu_ref = np.asarray(model.prior_init.mu, dtype=float)
-        Sigma_ref = np.asarray(model.prior_init.cov, dtype=float)
-        mu_post, Sigma_post = model.compute_posterior_params()
-        mu_post = np.asarray(mu_post, dtype=float)
-        Sigma_post = np.asarray(Sigma_post, dtype=float)
-
+        loss_cov = getattr(model.loss, "cov", model.loss.var)
         M_closed = _closed_form_conjugate_gaussian_M(
             mu_ref=mu_ref,
             Sigma_ref=Sigma_ref,
             x_bar=model.x_bar,
-            Sigma_over_n=np.asarray(model.loss.cov, dtype=float) / model.observations_num,
+            Sigma_over_n=np.atleast_2d(np.asarray(loss_cov, dtype=float)) / model.observations_num,
         )
         true_sensitivity = M_closed * radius
         print(f"Closed-form M: {M_closed:.4f}, true sensitivity at r={radius}: {true_sensitivity:.4f}")
@@ -930,12 +958,11 @@ def run_multivariate_gaussian_priors_nonparametric_sensitivity_vs_K(cfg, radius:
         span = 3.0
         half_width = span * float(np.sqrt(np.max(np.diag(Sigma_ref))))
 
-        grid_sides = [3, 4, 5, 7, 10, 14, 20, 28, 40, 56, 64, 72, 80]
         basis_funcs_nums, estimates = [], []
         for n_side in grid_sides:
             axis = np.linspace(-half_width, half_width, n_side)
-            xx, yy = np.meshgrid(axis, axis)
-            centers = np.stack([xx.ravel(), yy.ravel()], axis=1) + mu_ref
+            mesh = np.meshgrid(*([axis] * d))
+            centers = np.stack([m.ravel() for m in mesh], axis=1) + mu_ref
             lengthscale = float(axis[1] - axis[0])
 
             A_c_closed = rbf_gaussian_gram_closed_form(centers, lengthscale, mu=mu_ref, Sigma=Sigma_ref)
@@ -943,10 +970,10 @@ def run_multivariate_gaussian_priors_nonparametric_sensitivity_vs_K(cfg, radius:
             gamma_max = _gamma_max_generalized_eig(A_closed, A_c_closed)
             S_hat = radius * gamma_max
 
-            K = n_side ** 2
+            K = n_side ** d
             basis_funcs_nums.append(K)
             estimates.append(S_hat)
-            print(f"K={K} (grid {n_side}x{n_side}), lengthscale={lengthscale:.4f}, sensitivity: {S_hat:.4f}")
+            print(f"K={K} (grid n_side={n_side}, d={d}), lengthscale={lengthscale:.4f}, sensitivity: {S_hat:.4f}")
 
         save_to_serializable_json(
             {
@@ -967,7 +994,70 @@ def run_multivariate_gaussian_priors_nonparametric_sensitivity_vs_K(cfg, radius:
         true_value=true_sensitivity,
         plot_cfg=plot_cfg,
         output_dir=output_dir,
-        filename="gaussian_2d_location_model_sensitivity_vs_K.pdf",
+        filename=f"{plot_tag}_sensitivity_vs_K.pdf",
+        x_log_scale=x_log_scale,
+    )
+
+
+def run_gaussian_priors_nonparametric_sensitivity_vs_K_combined(
+    grid_sides_univariate: list = None,
+    grid_sides_multivariate: list = None,
+    radius: float = 5.0,
+    x_log_scale: bool = True,
+) -> None:
+    """
+    Overlay the univariate and multivariate sensitivity-vs-K results (each
+    produced beforehand by run_gaussian_priors_nonparametric_sensitivity_vs_K
+    for its own config) in one figure: univariate on the left y-axis,
+    multivariate on the right -- see plot_sensitivity_vs_basis_funcs_num_dual.
+    This reads each config's cached JSON directly and does not recompute or
+    instantiate any model; raises FileNotFoundError if either config's
+    result for the given grid_sides/radius hasn't been computed yet.
+
+    Plain (non-hydra) function, run from the repo root -- unlike the other
+    functions in this file, it needs no cfg (it never instantiates a model),
+    so it isn't decorated with @hydra.main.
+    """
+    if grid_sides_univariate is None:
+        grid_sides_univariate = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 150, 200,
+                                  250, 300, 400, 500, 700, 1000, 1500, 2000]
+    if grid_sides_multivariate is None:
+        grid_sides_multivariate = [3, 4, 5, 7, 10, 14, 20, 28, 40, 56, 64, 72, 80]
+
+    def _grid_tag(grid_sides):
+        return "_".join(str(n) for n in grid_sides)
+
+    uni_path = os.path.join(
+        "data/univariate_gaussian/sensitivity_vs_K",
+        f"sensitivity_vs_K_r{radius:g}_grid_{_grid_tag(grid_sides_univariate)}.json",
+    )
+    multi_path = os.path.join(
+        "data/multivariate_gaussian/sensitivity_vs_K",
+        f"sensitivity_vs_K_r{radius:g}_grid_{_grid_tag(grid_sides_multivariate)}.json",
+    )
+    for path in (uni_path, multi_path):
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"{path} not found -- run run_gaussian_priors_nonparametric_sensitivity_vs_K() "
+                "for that config (with matching grid_sides/radius) first."
+            )
+
+    uni = load_results_json(uni_path)
+    multi = load_results_json(multi_path)
+
+    plot_cfg = load_plot_config("configs/plots/overleaf_plots_settings.yaml")
+    output_dir = "outputs/paper/plots/fisher/combined"
+
+    plot_sensitivity_vs_basis_funcs_num_dual(
+        basis_funcs_nums_left=uni["basis_funcs_nums"],
+        estimates_left=uni["estimates"],
+        true_value_left=uni["true_sensitivity"],
+        basis_funcs_nums_right=multi["basis_funcs_nums"],
+        estimates_right=multi["estimates"],
+        true_value_right=multi["true_sensitivity"],
+        plot_cfg=plot_cfg,
+        output_dir=output_dir,
+        x_log_scale=x_log_scale,
     )
 
 
@@ -1326,7 +1416,8 @@ def _gamma_max_generalized_eig(A: np.ndarray, A_c: np.ndarray, nugget: float = 1
     return float(scipy_eigh(A, A_c, eigvals_only=True)[-1])
 
 
-@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="univariate_gaussian_nonparam")
+@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/",
+            config_name="univariate_gaussian_nonparam")
 def run_gaussian_priors_nonparametric_closed_form_convergence(
     cfg, radius: float = 5.0, n_repeats: int = 1000,
 ) -> None:
@@ -1340,13 +1431,24 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
     shrink as m+l grows.
 
     Since prior and posterior are both exactly Gaussian for this conjugate
-    toy model, S^FD(Q_r^K) = r * gamma_max can be computed exactly from
-    A, A_c via rbf_gaussian_gram_closed_form, with A_c built from
-    (mu_ref, Sigma_ref) and A from (mu_post, Sigma_post). The RBF centres
-    (a fixed grid spanning +/- 3 prior std) and lengthscale (the inter-centre
+    toy model, S^FD(Q_r^K) = r * gamma_max can be computed exactly from A,
+    A_c via rbf_gaussian_gram_closed_form, with A_c built from (mu_ref,
+    Sigma_ref) and A from (mu_post, Sigma_post). The RBF centres (a square
+    grid spanning +/- 3 prior std per axis, centred at mu_ref, with K =
+    n_side^d basis functions, n_side chosen from the config's
+    num_basis_functions -- see below) and lengthscale (the inter-centre
     spacing) are held fixed across all repeats/sample sizes, so the only
     source of discrepancy from the closed-form value is Monte-Carlo sample
-    noise in the plug-in A, A_c.
+    noise in the plug-in A, A_c. The Monte-Carlo side uses
+    FixedCentersRBFBasisFunctionMultidim, whose joint isotropic kernel
+    matches rbf_gaussian_gram_closed_form's exactly.
+
+    Dimension-agnostic: works for both the univariate (Gaussian prior) and
+    multivariate (MultivariateGaussian prior) configs -- d is inferred from
+    the model's prior, and the cache directory / plot filenames are tagged
+    "univariate_gaussian"/"gaussian_1d_location_model" or
+    "multivariate_gaussian"/"gaussian_2d_location_model" accordingly, so the
+    two configs' cached results and plots never collide.
 
     The sensitivity error is also decomposed into the part coming from
     estimating the objective A alone (posterior samples; A_c held at its
@@ -1362,55 +1464,63 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
     ||A_c - Achat||_F / ||A_c||_F (vs l).
 
     Per-repeat errors are cached to a JSON file at
-    data/univariate_gaussian/closed_form_convergence/closed_form_convergence_errors.json
-    and reused on subsequent runs if present -- delete the file to force a
-    recompute (e.g. after changing sample_sizes, n_repeats, radius or basis).
+    data/{univariate,multivariate}_gaussian/closed_form_convergence/closed_form_convergence_errors_K{K}.json
+    (K in the filename so a different config's num_basis_functions -- hence a
+    different actual K -- never silently reuses another K's stale cache) and
+    reused on subsequent runs if present -- delete the file to force a
+    recompute (e.g. after changing sample_sizes, n_repeats, or radius).
     """
     model = instantiate(cfg.model, data_config=cfg.data)
 
-    mu_ref = float(model.prior_init.mu)
-    sigma_ref = float(model.prior_init.sigma)
-    mu_post, sigma_n2_post = model.compute_posterior_params()
-    mu_post = float(np.asarray(mu_post).item())
-    sigma_n2_post = float(np.asarray(sigma_n2_post).item())
+    # Dimension-agnostic: works for both the univariate model (Gaussian prior,
+    # exposing scalar .mu/.var) and the multivariate one (MultivariateGaussian
+    # prior, exposing vector .mu/matrix .cov).
+    mu_ref = np.atleast_1d(np.asarray(model.prior_init.mu, dtype=float))
+    cov_ref = getattr(model.prior_init, "cov", model.prior_init.var)
+    Sigma_ref = np.atleast_2d(np.asarray(cov_ref, dtype=float))
+    mu_post, cov_post = model.compute_posterior_params()
+    mu_post = np.atleast_1d(np.asarray(mu_post, dtype=float))
+    Sigma_post = np.atleast_2d(np.asarray(cov_post, dtype=float))
+    d = mu_ref.shape[0]
+    dim_tag = "univariate_gaussian" if d == 1 else "multivariate_gaussian"
+    plot_tag = "gaussian_1d_location_model" if d == 1 else "gaussian_2d_location_model"
 
-    num_basis_functions = 30
+    # K from the config, laid out as a square grid: the closest n_side^d to
+    # the configured num_basis_functions (e.g. 1000 -> n_side=32 -> K=1024).
+    num_basis_functions_cfg = cfg.optimize.nonparametric.basis_funcs_kwargs.num_basis_functions
+    n_side = int(round(num_basis_functions_cfg ** (1.0 / d)))
     span = 3.0
-    centers = np.linspace(
-        mu_ref - span * sigma_ref, mu_ref + span * sigma_ref, num_basis_functions
-    ).reshape(-1, 1)
-    lengthscale = float(centers[1, 0] - centers[0, 0])
-
-    fixed_centers_cls = BASIS_FUNCTIONS_REGISTRY["FixedCentersRBFBasisFunction"]
-    basis_function = fixed_centers_cls(
-        loc=0.0,
-        scale=1.0,
-        center_multiples=centers.flatten(),
-        lengthscale=lengthscale,
+    half_width = span * float(np.sqrt(np.max(np.diag(Sigma_ref))))
+    axis = np.linspace(-half_width, half_width, n_side)
+    mesh = np.meshgrid(*([axis] * d))
+    centers = np.stack([m.ravel() for m in mesh], axis=1) + mu_ref  # (n_side**d, d)
+    lengthscale = float(axis[1] - axis[0])
+    print(
+        f"Config num_basis_functions={num_basis_functions_cfg}; using n_side={n_side} "
+        f"-> K={centers.shape[0]} basis functions."
     )
+
+    fixed_centers_cls = BASIS_FUNCTIONS_REGISTRY["FixedCentersRBFBasisFunctionMultidim"]
+    basis_function = fixed_centers_cls(centers=centers, lengthscale=lengthscale)
 
     # Closed-form A_c (theta ~ prior) and A (theta ~ posterior).
-    A_c_closed = rbf_gaussian_gram_closed_form(
-        centers, lengthscale, mu=np.array([mu_ref]), Sigma=np.array([[sigma_ref ** 2]]),
-    )
-    A_closed = rbf_gaussian_gram_closed_form(
-        centers, lengthscale, mu=np.array([mu_post]), Sigma=np.array([[sigma_n2_post]]),
-    )
+    A_c_closed = rbf_gaussian_gram_closed_form(centers, lengthscale, mu=mu_ref, Sigma=Sigma_ref)
+    A_closed = rbf_gaussian_gram_closed_form(centers, lengthscale, mu=mu_post, Sigma=Sigma_post)
     gamma_max_closed = _gamma_max_generalized_eig(A_closed, A_c_closed)
     S_closed = radius * gamma_max_closed
     A_closed_norm = float(np.linalg.norm(A_closed, ord="fro"))
     A_c_closed_norm = float(np.linalg.norm(A_c_closed, ord="fro"))
     print(f"Closed-form gamma_max: {gamma_max_closed:.6f}, S_closed: {S_closed:.6f}")
 
-    sample_size_start, sample_size_stop, sample_size_step = 1000, 15000, 1000
+    sample_size_start, sample_size_stop, sample_size_step = 1000, 15000, 2000
     sample_sizes = list(np.linspace(
         sample_size_start, sample_size_stop,
         num=int((sample_size_stop - sample_size_start) / sample_size_step) + 1,
         dtype=int,
     ))
 
-    errors_dir = os.path.join(get_original_cwd(), "data/univariate_gaussian/closed_form_convergence")
-    errors_path = os.path.join(errors_dir, "closed_form_convergence_errors.json")
+    errors_dir = os.path.join(get_original_cwd(), f"data/{dim_tag}/closed_form_convergence")
+    errors_path = os.path.join(errors_dir, f"closed_form_convergence_errors_K{centers.shape[0]}.json")
 
     if os.path.exists(errors_path):
         print(f"Found existing errors at {errors_path}, skipping computation.")
@@ -1492,7 +1602,7 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
         ]),
         plot_cfg=plot_cfg,
         output_dir=output_dir,
-        filename="gaussian_1d_location_model_closed_form_convergence.pdf",
+        filename=f"{plot_tag}_closed_form_convergence.pdf",
         xlabel=r"$m + l$",
     )
 
@@ -1501,7 +1611,7 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
         series=_series_for(errors_by_l, sample_sizes, [(r"$\|A - \widehat{A}\|_F$", "A_matrix")]),
         plot_cfg=plot_cfg,
         output_dir=output_dir,
-        filename="gaussian_1d_location_model_closed_form_A_error.pdf",
+        filename=f"{plot_tag}_closed_form_A_error.pdf",
         ylabel=r"$\|A - \widehat{A}\|_F / \|A\|_F$",
         xlabel=r"$m$",
     )
@@ -1511,7 +1621,7 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
         series=_series_for(errors_by_l, sample_sizes, [(r"$\|A_c - \widehat{A}_c\|_F$", "Ac_matrix")]),
         plot_cfg=plot_cfg,
         output_dir=output_dir,
-        filename="gaussian_1d_location_model_closed_form_Ac_error.pdf",
+        filename=f"{plot_tag}_closed_form_Ac_error.pdf",
         ylabel=r"$\|A_c - \widehat{A}_c\|_F / \|A_c\|_F$",
         xlabel=r"$l$",
     )
@@ -1528,6 +1638,7 @@ if __name__ == "__main__":
     run_gaussian_priors_nonparametric_diff_center_methods()
     # run_gaussian_priors_nonparametric_diff_kernels()
     # run_multivariate_gaussian_priors_nonparametric_diff_radii()
-    # run_multivariate_gaussian_priors_nonparametric_sensitivity_vs_K()
-    # run_multivariate_gaussian_diff_basis_funcs_num_runtimes()
+    # run_gaussian_priors_nonparametric_sensitivity_vs_K()
+    # run_gaussian_priors_nonparametric_sensitivity_vs_K_combined()
     # run_gaussian_priors_nonparametric_closed_form_convergence()
+    # run_multivariate_gaussian_diff_basis_funcs_num_runtimes()

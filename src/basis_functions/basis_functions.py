@@ -2045,3 +2045,56 @@ class FixedCentersRBFBasisFunction(BaseBasisFunction):
         ell = sp.Float(self.lengthscale)
         exprs = [sp.exp(-((xi - c0) ** 2) / (2 * ell ** 2)) for xi in x]
         return sp.Tuple(*exprs)
+
+
+class FixedCentersRBFBasisFunctionMultidim(BaseBasisFunction):
+    r"""
+    Joint (non-separable) isotropic Gaussian-RBF basis with explicit, shared
+    d-dimensional centres:
+
+        phi_b(theta) = exp( -||theta - c_b||^2 / (2 ell^2) ),   c_b in R^d,
+
+    matching exactly the kernel assumed by `rbf_gaussian_gram_closed_form`
+    (isotropic precision I / ell^2), unlike FixedCentersRBFBasisFunction
+    (which is separable per-column/1D) or RBFBasisFunctionMultidim (whose
+    centres are estimated from data via kmeans/farthest, not passed in
+    directly). Used to Monte-Carlo estimate A, A_c for a basis whose exact
+    closed-form Gram matrices under a Gaussian reference measure can be
+    computed independently via `rbf_gaussian_gram_closed_form` for the same
+    centres/lengthscale, so the two can be compared directly.
+
+    evaluate/gradient shapes match BaseBasisFunction: (m, d, K).
+    """
+
+    def __init__(self, centers: np.ndarray, lengthscale: float):
+        centers = np.atleast_2d(np.asarray(centers, dtype=float))
+        if lengthscale <= 0:
+            raise ValueError(f"lengthscale must be > 0; got {lengthscale}.")
+        self.centers = centers  # (K, d)
+        self.lengthscale = float(lengthscale)
+        self.num_basis, self.dim = self.centers.shape
+
+    def evaluate(self, samples: np.ndarray) -> np.ndarray:
+        """Returns phi(theta) with shape (m, d, K), scalar per centre repeated across d."""
+        X = np.asarray(samples, dtype=float)  # (m, d)
+        diff = X[:, None, :] - self.centers[None, :, :]  # (m, K, d)
+        r2 = np.sum(diff ** 2, axis=-1)  # (m, K)
+        phi = np.exp(-r2 / (2.0 * self.lengthscale ** 2))  # (m, K)
+        return np.repeat(phi[:, None, :], self.dim, axis=1)  # (m, d, K)
+
+    def gradient(self, samples: np.ndarray) -> np.ndarray:
+        """d/dtheta phi_b(theta) = -(theta - c_b) / ell^2 * phi_b(theta), shape (m, d, K)."""
+        X = np.asarray(samples, dtype=float)  # (m, d)
+        diff = X[:, None, :] - self.centers[None, :, :]  # (m, K, d)
+        r2 = np.sum(diff ** 2, axis=-1)  # (m, K)
+        phi = np.exp(-r2 / (2.0 * self.lengthscale ** 2))  # (m, K)
+        grad = (-diff / (self.lengthscale ** 2)) * phi[:, :, None]  # (m, K, d)
+        return np.transpose(grad, (0, 2, 1))  # (m, d, K)
+
+    def symbolic_expression(self, dim: int) -> sp.Expr:
+        x = sp.symbols(f"x0:{dim}")
+        c0 = [sp.Float(float(v)) for v in self.centers[0]]
+        ell = sp.Float(self.lengthscale)
+        quad = sum((xi - ci) ** 2 for xi, ci in zip(x, c0))
+        expr = sp.exp(-quad / (2 * ell ** 2))
+        return sp.Tuple(*[expr for _ in range(dim)])

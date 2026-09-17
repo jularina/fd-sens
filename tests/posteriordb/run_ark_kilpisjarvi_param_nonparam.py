@@ -433,27 +433,28 @@ def _draw_component_sensitivity_stack(ax, percentages: dict, title: str, ylabel:
     high = low + 0.75 * (np.array([1.0, 1.0, 1.0]) - low)  # same hue, lightened towards white
     color_map = {k: tuple(low + (i / max(n - 1, 1)) * (high - low)) for i, k in enumerate(ranked)}
 
-    bottom = 0.0
+    left = 0.0
     min_label_pct = 4.0
     for k in names:
         pct = percentages[k]
-        ax.bar(0, pct, bottom=bottom, color=color_map[k], alpha=0.5, edgecolor="white", linewidth=0.5, width=0.9)
+        ax.barh(0, pct, left=left, color=color_map[k], alpha=0.5, edgecolor="white", linewidth=0.5, height=1.0)
         if pct >= min_label_pct:
             label = LATEX_NAMES.get(k, k)
-            ax.text(0, bottom + pct / 2, f"{label} {pct:.1f}%", ha="center", va="center",
-                    fontsize="x-small", color="black")
-        bottom += pct
+            ax.text(left + pct / 2, 0, f"{label} {pct:.1f}%", ha="center", va="center",
+                    rotation=0, fontsize=8, color="black")
+        left += pct
 
-    ax.set_xlim(-0.5, 0.5)
-    ax.set_ylim(0, 100)
-    ax.set_yticks([0, 50, 100])
-    ax.set_yticklabels(["0%", "50%", "100%"])
-    ax.tick_params(axis="x", length=0, labelcolor="none")
+    ax.set_ylim(-0.5, 0.5)
+    ax.set_xlim(0, 100)
+    ax.set_xticks([0, 100])
+    ax.set_xticklabels(["0%", "100%"])
+    ax.set_yticks([])
+    ax.tick_params(axis="y", length=0)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.spines["bottom"].set_visible(False)
+    ax.spines["left"].set_visible(False)
     if ylabel is not None:
-        ax.set_ylabel(ylabel)
+        ax.set_xlabel(ylabel, labelpad=-8)
     ax.set_title(title, fontsize=plt.rcParams["font.size"] * 0.85)
 
 
@@ -466,7 +467,7 @@ def plot_component_sensitivity_bar_param_vs_nonparam(
     percentages_omega_max: dict | None = None,
 ) -> None:
     """
-    Side-by-side stacked-column sensitivity panels, each in the same style
+    Stacked-row sensitivity panels (one above another), each in the same style
     as plot_component_sensitivity_bar (see _draw_component_sensitivity_stack):
       1. Parametric -- own-box posterior-based sup, z-space.
       2. Nonparametric (KEF) -- r_j * omega_max, i.e. the realised worst-case
@@ -490,8 +491,8 @@ def plot_component_sensitivity_bar_param_vs_nonparam(
 
     n_panels = 3 if percentages_omega_max is not None else 2
     fig, axes = plt.subplots(
-        1, n_panels,
-        figsize=(plot_cfg.plot.figure.size.width * (n_panels * 0.55), plot_cfg.plot.figure.size.height),
+        n_panels, 1,
+        figsize=(plot_cfg.plot.figure.size.width*1.2, plot_cfg.plot.figure.size.height * (n_panels * 0.52)),
         dpi=plot_cfg.plot.figure.dpi,
     )
     ylabel_param = r"$\widehat{S}_m^{\FD}(\Gamma_j)$ \%"
@@ -503,7 +504,7 @@ def plot_component_sensitivity_bar_param_vs_nonparam(
             axes[2], percentages_omega_max, r"Nonparametric ($\omega_{\max}$, per unit radius)", ylabel=None,
         )
 
-    fig.tight_layout(w_pad=0.6, pad=0.3)
+    fig.tight_layout(h_pad=0.6, pad=0.3)
     _save_fig(fig, output_dir, filename, plot_cfg)
     plt.close(fig)
     print(f"Saved plot to {os.path.join(output_dir, filename)}")

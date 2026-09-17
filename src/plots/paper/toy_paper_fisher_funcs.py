@@ -1319,8 +1319,8 @@ def plot_sdp_density_with_centers_combined(
 
     fig, axes = plt.subplots(
         n + 1, 1,
-        figsize=(4.0,
-                 plot_cfg.plot.figure.size.height * (1 + 0.07 * n)),
+        figsize=(5.0,
+                 plot_cfg.plot.figure.size.height * 0.8 * (1 + 0.05 * n)),
         dpi=plot_cfg.plot.figure.dpi,
         gridspec_kw={"height_ratios": [6] + [0.5] * n, "hspace": 0.15},
         sharex=True,
@@ -1365,9 +1365,10 @@ def plot_sdp_density_with_centers_combined(
 
     for i, (ax_rug, basis_function, color) in enumerate(zip(rug_axes, basis_functions, colors)):
         centers_x = np.asarray(basis_function.centers).reshape(-1)
+        centers_x = centers_x[(centers_x >= domain[0]) & (centers_x <= domain[1])]
         ax_rug.plot(
             centers_x, np.zeros_like(centers_x),
-            marker='o', markersize=2, linestyle='None', color=color, clip_on=False,
+            marker='o', markersize=1.5, linestyle='None', color=color, clip_on=False,
         )
         ax_rug.set_ylim(-1, 1)
         ax_rug.set_yticks([])
@@ -4586,7 +4587,7 @@ def plot_closed_form_sensitivity_error(
     if y_log_scale:
         ax.set_yscale("log")
     ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel, fontsize=plt.rcParams["font.size"] * 0.85)
+    ax.set_ylabel(ylabel, fontsize=plt.rcParams["font.size"] * 0.85, y=0.4)
     ax.grid(True, which="both", alpha=0.3)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -4661,6 +4662,93 @@ def plot_sensitivity_vs_basis_funcs_num(
         ha="center", va="bottom",
         fontsize=plt.rcParams["font.size"] * 0.8,
     )
+
+    if getattr(plot_cfg.plot.figure, "tight_layout", False):
+        plt.tight_layout()
+
+    save_path = os.path.join(output_dir, filename)
+    fig.savefig(save_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {save_path}")
+
+
+def plot_sensitivity_vs_basis_funcs_num_dual(
+    basis_funcs_nums_left: list[int],
+    estimates_left: list[float],
+    true_value_left: float,
+    basis_funcs_nums_right: list[int],
+    estimates_right: list[float],
+    true_value_right: float,
+    plot_cfg,
+    output_dir: str,
+    filename: str = "gaussian_sensitivity_vs_K_univariate_vs_multivariate.pdf",
+    xlabel: str = r"$K$",
+    ylabel_left: str = r"$\widehat{S}^{\mathrm{FD}}_m(\widehat{\mathcal{Q}}_r^{K,l})$",
+    x_log_scale: bool = True,
+) -> None:
+    """
+    Overlay the univariate and multivariate sensitivity-vs-K sieve curves
+    (each with its own closed-form true-value reference line) in one figure
+    on a shared x-axis (K), with the univariate series on the left y-axis
+    and the multivariate series on the right y-axis -- the two live on very
+    different scales (see run_gaussian_priors_nonparametric_sensitivity_vs_K),
+    so sharing one y-axis would flatten one of them unreadably.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    plt.rcParams.update({
+        "font.size": plot_cfg.plot.font.size,
+        "font.family": plot_cfg.plot.font.family,
+        "text.usetex": plot_cfg.plot.font.use_tex,
+        "text.latex.preamble": r"\usepackage{amsmath}",
+    })
+
+    palette = list(getattr(plot_cfg.plot.color_palette, "colors", []))
+    if not palette:
+        palette = ["C0", "C1", "C2", "C3", "C4", "C5"]
+    color_left = palette[0]
+    color_right = palette[1 % len(palette)]
+
+    fig, ax_left = plt.subplots(
+        1, 1,
+        figsize=(plot_cfg.plot.figure.size.width,
+                 plot_cfg.plot.figure.size.height),
+        dpi=plot_cfg.plot.figure.dpi,
+    )
+    ax_right = ax_left.twinx()
+
+    ax_left.plot(
+        basis_funcs_nums_left, estimates_left, marker="o", markersize=2,
+        linewidth=1.0, color=color_left,
+    )
+    ax_left.axhline(true_value_left, linestyle="--", linewidth=1.0, color=color_left, alpha=0.7)
+
+    ax_right.plot(
+        basis_funcs_nums_right, estimates_right, marker="s", markersize=2,
+        linewidth=1.0, color=color_right,
+    )
+    ax_right.axhline(true_value_right, linestyle="--", linewidth=1.0, color=color_right, alpha=0.7)
+
+    if x_log_scale:
+        ax_left.set_xscale("log")
+        # Matplotlib only labels decade ticks (10^0, 10^1, ...) that fall
+        # strictly inside the data range; if the largest K (e.g. 6400) sits
+        # below the next power of ten (10^4), that next decade tick is never
+        # drawn, so labels appear to stop early. Extend the right xlim just
+        # past the next decade above the max K so its tick renders too.
+        max_K = max(max(basis_funcs_nums_left), max(basis_funcs_nums_right))
+        ax_left.set_xlim(right=10 ** np.ceil(np.log10(max_K)) * 1.2)
+    ax_left.set_xlabel(xlabel)
+    ax_left.set_ylabel(ylabel_left, fontsize=plt.rcParams["font.size"] * 0.85, color="black")
+    ax_left.spines["top"].set_visible(False)
+    ax_right.spines["top"].set_visible(False)
+
+    y_left_bottom, y_left_top = ax_left.get_ylim()
+    y_left_top = max(y_left_top, true_value_left * 1.15)
+    ax_left.set_ylim(y_left_bottom, y_left_top)
+
+    y_right_bottom, y_right_top = ax_right.get_ylim()
+    y_right_top = max(y_right_top, true_value_right * 1.15)
+    ax_right.set_ylim(y_right_bottom, y_right_top)
 
     if getattr(plot_cfg.plot.figure, "tight_layout", False):
         plt.tight_layout()

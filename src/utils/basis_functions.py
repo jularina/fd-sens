@@ -11,4 +11,5 @@ BASIS_FUNCTIONS_REGISTRY = {
     "PolynomialBasisFunctionMultidim": PolynomialBasisFunctionMultidim,
     "MaternBasisFunctionMultidim": MaternBasisFunctionMultidim,
     "FixedCentersRBFBasisFunction": FixedCentersRBFBasisFunction,
+    "FixedCentersRBFBasisFunctionMultidim": FixedCentersRBFBasisFunctionMultidim,
 }
