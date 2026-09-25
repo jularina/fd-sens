@@ -1146,11 +1146,11 @@ def plot_sdp_matern_nu_comparison(
             title=fd_label,
             loc="best",
             frameon=False,
-            fontsize=plt.rcParams["font.size"] * 0.75,
+            fontsize=plt.rcParams["font.size"] * 0.65,
         )
         leg.get_title().set_ha("right")
         leg._legend_box.align = "right"
-        plt.setp(leg.get_title(), fontsize=plt.rcParams["font.size"] * 0.75)
+        plt.setp(leg.get_title(), fontsize=plt.rcParams["font.size"] * 0.65)
 
     if getattr(plot_cfg.plot.figure, "tight_layout", False):
         plt.tight_layout()
@@ -1249,9 +1249,9 @@ def plot_sdp_density_with_centers(
     if show_legend:
         ax.legend(
             handles=[density_line],
-            loc="best",
+            loc="upper left",
             frameon=False,
-            fontsize=plt.rcParams["font.size"] * 0.9,
+            fontsize=plt.rcParams["font.size"] * 0.7,
             handlelength=0,
             handletextpad=0,
         )
@@ -1285,6 +1285,10 @@ def plot_sdp_density_with_centers_combined(
     domain: tuple = (-10, 12),
     resolution: int = 500,
     show_legend: bool = True,
+    colors: list = None,
+    legend_labels: bool = False,
+    upper_bound: float = None,
+    upper_bound_at: float = None,
 ) -> None:
     """
     Combined figure for several centre-selection methods: one main panel
@@ -1293,6 +1297,14 @@ def plot_sdp_density_with_centers_combined(
     plus the true prior (dashed black); below it, one very-low-height rug
     strip per method showing that method's basis-function centres, each
     coloured to match its density curve above.
+
+    colors: optional per-method colours, overriding the plot config palette
+    (e.g. when there are more methods than palette colours).
+    legend_labels: if True, legend entries read "{label}: {estimate}" instead
+    of the estimate alone.
+    upper_bound / upper_bound_at: optional known ceiling on the sensitivity
+    and the theta where it is attained -- drawn as a dotted vertical line at
+    upper_bound_at, with its value as an extra legend entry.
     """
     os.makedirs(output_dir, exist_ok=True)
     plt.rcParams.update({
@@ -1327,7 +1339,8 @@ def plot_sdp_density_with_centers_combined(
     )
     ax_density, rug_axes = axes[0], axes[1:]
 
-    colors = [palette[i % len(palette)] for i in range(n)]
+    if colors is None:
+        colors = [palette[i % len(palette)] for i in range(n)]
     density_lines = []
     for basis_function, lambda_star, estimate, label, color in zip(
         basis_functions, lambda_star_list, estimates, labels, colors
@@ -1339,25 +1352,35 @@ def plot_sdp_density_with_centers_combined(
         p_hat = np.exp(log_post - logZ)
         line, = ax_density.plot(
             x.flatten(), p_hat,
-            label=rf"{estimate:.1f}", linewidth=1.5, color=color,
+            label=rf"{label}: {estimate:.1f}" if legend_labels else rf"{estimate:.1f}",
+            linewidth=1.5, color=color,
         )
         density_lines.append(line)
 
     ax_density.plot(
         x.flatten(), prior_density_true, linestyle="--", linewidth=1.5, color="black",
     )
+    if upper_bound is not None:
+        bound_line = ax_density.axvline(
+            upper_bound_at, linestyle=":", linewidth=1.0, color="grey",
+            label=rf"Upper bound: {upper_bound:.1f}" if legend_labels else rf"{upper_bound:.1f}",
+        )
+        density_lines.append(bound_line)
     ax_density.set_ylabel(ylabel_density)
     ax_density.grid(True, alpha=0.3)
     ax_density.spines["top"].set_visible(False)
     ax_density.spines["right"].set_visible(False)
 
     if show_legend:
+        # Labelled entries are too wide to sit inside the axes without
+        # covering the curves, so they go outside, to the right.
+        legend_loc = dict(loc="upper left", bbox_to_anchor=(1.01, 1.0)) if legend_labels else dict(loc="best")
         leg = ax_density.legend(
             handles=density_lines,
             title=fd_label,
-            loc="best",
             frameon=False,
             fontsize=plt.rcParams["font.size"] * 0.75,
+            **legend_loc,
         )
         leg.get_title().set_ha("right")
         leg._legend_box.align = "right"
@@ -3364,10 +3387,10 @@ def plot_runtime_nonparametric_diff_basis_funcs_num_diff_samples_with_ci(
     ax.spines["right"].set_visible(False)
 
     legend_fs = float(_deep_get(plot_cfg, "plot.legend.fontsize",
-                                plt.rcParams["font.size"] * 0.8))
+                                plt.rcParams["font.size"] * 0.6))
     ax.legend(
         handles_ordered, labels_ordered,
-        loc="best",
+        loc="upper left",
         fontsize=legend_fs,
         frameon=True,
         fancybox=True,
@@ -4531,6 +4554,8 @@ def plot_closed_form_sensitivity_error(
     ylabel: str = r"$|S^{\mathrm{FD}}(\mathcal{Q}_r^K) - \widehat{S}_m^{\mathrm{FD}}(\widehat{\mathcal{Q}}_r^{K,l})|$",
     xlabel: str = r"$m = l$",
     y_log_scale: bool = False,
+    series_x: dict[str, list[int]] | None = None,
+    y_bottom: float | None = None,
 ) -> None:
     """
     Plot (x-axis linear, y-axis log10 if y_log_scale=True) of the absolute
@@ -4545,7 +4570,9 @@ def plot_closed_form_sensitivity_error(
     are expected to decay as the sample size grows. Each series' lower band
     edge is floored at 1% of that series' own smallest mean error (rather
     than at a raw near-zero value) so a single noisy repeat can't blow up a
-    log-scale y-axis.
+    log-scale y-axis. `series_x` optionally gives a per-series x-grid
+    (overriding `sample_sizes` for that label); `y_bottom` fixes the lower
+    y-limit (ignored on a log-scale y-axis).
     """
     os.makedirs(output_dir, exist_ok=True)
     plt.rcParams.update({
@@ -4559,7 +4586,7 @@ def plot_closed_form_sensitivity_error(
     if not palette:
         palette = ["C0", "C1", "C2", "C3", "C4", "C5"]
 
-    sample_sizes = np.asarray(sample_sizes, dtype=float)
+    series_x = series_x or {}
 
     fig, ax = plt.subplots(
         1, 1,
@@ -4570,13 +4597,14 @@ def plot_closed_form_sensitivity_error(
 
     for i, (label, (mean, band)) in enumerate(series.items()):
         color = palette[i % len(palette)]
+        x = np.asarray(series_x.get(label, sample_sizes), dtype=float)
         mean = np.asarray(mean, dtype=float)
         band = np.asarray(band, dtype=float)
         floor = float(mean.min()) * 1e-2
 
-        ax.plot(sample_sizes, mean, marker="o", markersize=4, linewidth=1.5, color=color, label=label)
+        ax.plot(x, mean, marker="o", markersize=4, linewidth=1.5, color=color, label=label)
         ax.fill_between(
-            sample_sizes,
+            x,
             np.maximum(mean - band, floor),
             mean + band,
             color=color,
@@ -4586,8 +4614,10 @@ def plot_closed_form_sensitivity_error(
 
     if y_log_scale:
         ax.set_yscale("log")
+    elif y_bottom is not None:
+        ax.set_ylim(bottom=y_bottom)
     ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel, fontsize=plt.rcParams["font.size"] * 0.85, y=0.4)
+    ax.set_ylabel(ylabel, fontsize=plt.rcParams["font.size"] * 0.8, y=0.4)
     ax.grid(True, which="both", alpha=0.3)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)

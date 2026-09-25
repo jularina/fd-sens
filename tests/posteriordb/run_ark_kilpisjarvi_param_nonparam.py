@@ -416,7 +416,9 @@ def run_nonparametric_with_own_radii(cfg_nonparam, r_j_by_component: dict, poste
     return kef_samples, node_records
 
 
-def _draw_component_sensitivity_stack(ax, percentages: dict, title: str, ylabel: str | None) -> None:
+def _draw_component_sensitivity_stack(
+    ax, percentages: dict, title: str, ylabel: str | None, title_left: bool = False,
+) -> None:
     """
     Single stacked-column sensitivity bar drawn onto a given axis, in the
     same visual style as src/plots/paper/posterior_db_paper_funcs.py's
@@ -425,6 +427,9 @@ def _draw_component_sensitivity_stack(ax, percentages: dict, title: str, ylabel:
     coloured by contribution rank (lowest "#4d7298", lightening towards
     white for higher-ranked/larger contributions), with an inline
     "{label} {pct:.1f}%" text for segments >= 4%.
+
+    title_left: if True, the title is drawn horizontally to the left of the
+    bar (as a y-label) instead of above it, which narrows the bar itself.
     """
     names = COMPONENT_ORDER
     ranked = sorted(names, key=lambda k: percentages[k])
@@ -455,7 +460,11 @@ def _draw_component_sensitivity_stack(ax, percentages: dict, title: str, ylabel:
     ax.spines["left"].set_visible(False)
     if ylabel is not None:
         ax.set_xlabel(ylabel, labelpad=-8)
-    ax.set_title(title, fontsize=plt.rcParams["font.size"] * 0.85)
+    if title_left:
+        ax.set_ylabel(title, rotation=0, ha="right", va="center", labelpad=4,
+                      fontsize=plt.rcParams["font.size"] * 0.85)
+    else:
+        ax.set_title(title, fontsize=plt.rcParams["font.size"] * 0.85)
 
 
 def plot_component_sensitivity_bar_param_vs_nonparam(
@@ -465,6 +474,7 @@ def plot_component_sensitivity_bar_param_vs_nonparam(
     percentages_nonparam: dict,
     filename: str,
     percentages_omega_max: dict | None = None,
+    compact: bool = False,
 ) -> None:
     """
     Stacked-row sensitivity panels (one above another), each in the same style
@@ -481,6 +491,10 @@ def plot_component_sensitivity_bar_param_vs_nonparam(
          e.g. under a single shared radius for every component -- there
          r_j cancels out of the normalised percentages exactly, so panel 3
          would just duplicate panel 2.
+
+    compact: if True, drops the sensitivity x-labels under each bar and puts
+    the FDsens/FDsens+ titles to the left of their bars rather than above
+    them, making the bars narrower.
     """
     _apply_plot_rc(plot_cfg)
     # \FD is not a standard LaTeX command -- _apply_plot_rc's preamble only
@@ -492,16 +506,23 @@ def plot_component_sensitivity_bar_param_vs_nonparam(
     n_panels = 3 if percentages_omega_max is not None else 2
     fig, axes = plt.subplots(
         n_panels, 1,
-        figsize=(plot_cfg.plot.figure.size.width*1.2, plot_cfg.plot.figure.size.height * (n_panels * 0.52)),
+        figsize=(plot_cfg.plot.figure.size.width*1.2, plot_cfg.plot.figure.size.height * (n_panels * 0.35)),
         dpi=plot_cfg.plot.figure.dpi,
     )
     ylabel_param = r"$\widehat{S}_m^{\FD}(\Gamma_j)$ \%"
     ylabel_nonparam = r"$\widehat{S}_m^{\FD}(\widehat{\mathcal{Q}}_{r_j}^{j, K,l})$ \%"
-    _draw_component_sensitivity_stack(axes[0], percentages_param, r"\texttt{FDsens}", ylabel=ylabel_param)
-    _draw_component_sensitivity_stack(axes[1], percentages_nonparam, r"\texttt{FDsens+}", ylabel=ylabel_nonparam)
+    if compact:
+        ylabel_param = ylabel_nonparam = None
+    _draw_component_sensitivity_stack(
+        axes[0], percentages_param, r"\texttt{FDsens}", ylabel=ylabel_param, title_left=compact,
+    )
+    _draw_component_sensitivity_stack(
+        axes[1], percentages_nonparam, r"\texttt{FDsens+}", ylabel=ylabel_nonparam, title_left=compact,
+    )
     if percentages_omega_max is not None:
         _draw_component_sensitivity_stack(
             axes[2], percentages_omega_max, r"Nonparametric ($\omega_{\max}$, per unit radius)", ylabel=None,
+            title_left=compact,
         )
 
     fig.tight_layout(h_pad=0.6, pad=0.3)
@@ -844,6 +865,7 @@ def main() -> None:
         percentages_param=percentages_param_z,
         percentages_nonparam=percentages_nonparam_z,
         filename="kilpisjarvi_param_vs_nonparam_sensitivity_percentages_both_in_z_scale.pdf",
+        compact=True,
     )
 
     plot_worst_case_priors_param_vs_nonparam(

@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
+from matplotlib.colors import LinearSegmentedColormap, to_rgb
 from scipy.special import logsumexp
 from scipy.stats import gaussian_kde, norm, t as student_t
 
@@ -24,12 +24,9 @@ def _alpha_fade_cmap(name: str, hex_color: str, alpha_low: float = 0.12, alpha_h
 # transparent rather than white, high sensitivity is fully opaque.
 BNN_HEATMAP_CMAP = _alpha_fade_cmap("bnn_heatmap_greyblue_alpha", "#4d7298")
 
-# Sequential grey-blue palette for the row/column marginal bars, built from
-# the two active grey-blue swatches in that same color_palette: light-grey
-# -blue ("#9dc3c2", low sensitivity) to dark-grey-blue ("#4d7298", high
-# sensitivity) -- no white/disabled colors mixed in.
-_BNN_BAR_COLORS = ["#9dc3c2", "#4d7298"]
-BNN_BAR_CMAP = LinearSegmentedColormap.from_list("bnn_bar_greyblue", _BNN_BAR_COLORS)
+# Flat fill for the column marginal (percentage) bars: the active blue-mint
+# swatch from that same color_palette ("#ADEBDC").
+BNN_BAR_COLOR = "#ADEBDC"
 
 
 def _deep_get(cfg, path, default=None):
@@ -58,7 +55,7 @@ def plot_bnn_weight_heatmaps(
     os.makedirs(output_dir, exist_ok=True)
 
     plt.rcParams.update({
-        "font.size": float(_deep_get(plot_cfg, "plot.font.size", 14)) * 1.2,
+        "font.size": float(_deep_get(plot_cfg, "plot.font.size", 14)) * 1.6,
         "font.family": _deep_get(plot_cfg, "plot.font.family", "serif"),
         "text.usetex": bool(_deep_get(plot_cfg, "plot.font.use_tex", False)),
         "text.latex.preamble": r"\usepackage{amsmath}\providecommand{\FD}{\mathrm{FD}}",
@@ -69,23 +66,21 @@ def plot_bnn_weight_heatmaps(
 
     n = len(tensors)
     fig = plt.figure(figsize=(n * fig_w * 1.0, fig_h * 1.3), dpi=fig_dpi)
-    gs_root = fig.add_gridspec(1, 2, width_ratios=[n, 0.08], wspace=0.08)
-    gs_outer = gs_root[0].subgridspec(1, n, wspace=0.2)
+    gs_outer = fig.add_gridspec(2, n, height_ratios=[4, 1], hspace=0.5, wspace=0.3)
 
     matrices = [np.asarray(t["matrix"], dtype=float) for t in tensors]
     vmin = min(M.min() for M in matrices)
     vmax = max(M.max() for M in matrices)
-    bar_norm = Normalize(vmin=vmin, vmax=vmax)
 
     im = None
+    no_marginal_idxs = []
     for i, t in enumerate(tensors):
         M = matrices[i]
         n_rows, n_cols = M.shape
         col_label = str(t.get("col_label", "column"))
         show_col_marginal = bool(t.get("show_col_marginal", True))
-        gs = gs_outer[i].subgridspec(2, 1, height_ratios=[4, 1], hspace=0.5)
-        ax_main = fig.add_subplot(gs[0, 0])
-        ax_col = fig.add_subplot(gs[1, 0], sharex=ax_main) if show_col_marginal else None
+        ax_main = fig.add_subplot(gs_outer[0, i])
+        ax_col = fig.add_subplot(gs_outer[1, i], sharex=ax_main) if show_col_marginal else None
 
         im = ax_main.imshow(M, aspect="auto", cmap=cmap, interpolation="nearest", vmin=vmin, vmax=vmax)
         ax_main.set_title(t.get("label", ""), fontsize=plt.rcParams["font.size"])
@@ -98,13 +93,15 @@ def plot_bnn_weight_heatmaps(
             ax_main.set_xticks(np.arange(-0.5, n_cols, 1), minor=True)
             ax_main.tick_params(axis="x", which="major", bottom=False, top=False, labelbottom=False)
             ax_main.tick_params(axis="x", which="minor", bottom=True, top=False, labelbottom=False)
-            col_means = M.mean(axis=0)
-            ax_col.bar(np.arange(n_cols), col_means, color=BNN_BAR_CMAP(bar_norm(col_means)), alpha=1.0)
-            ax_col.set_ylabel(r"avg. $\hat{S}_m^\mathrm{FD}(\widehat{\mathcal{Q}}_{r}^{K,l})$",
-                              fontsize=plt.rcParams["font.size"]*0.9)
+            # Share (%) of the tensor's total sensitivity attributable to each
+            # input column: 100 * sum_i S_ij / sum_{i,j'} S_ij'.
+            col_sums = M.sum(axis=0)
+            col_pct = 100.0 * col_sums / col_sums.sum()
+            ax_col.bar(np.arange(n_cols), col_pct, color=BNN_BAR_COLOR, alpha=1.0)
+            ax_col.set_ylabel(r"$\%$")
             if t.get("col_names"):
                 ax_col.set_xticks(np.arange(n_cols))
-                ax_col.set_xticklabels(t["col_names"], rotation=90, fontsize=plt.rcParams["font.size"] * 0.6)
+                ax_col.set_xticklabels(t["col_names"], rotation=90, fontsize=plt.rcParams["font.size"] * 0.7)
                 ax_col.set_xticks(np.arange(-0.5, n_cols, 1), minor=True)
                 ax_col.tick_params(axis="x", which="minor", length=3)
             else:
@@ -115,14 +112,22 @@ def plot_bnn_weight_heatmaps(
             ax_main.set_xticks(np.arange(-0.5, n_cols, 1))
             ax_main.set_xticklabels([])
             ax_main.set_xlabel(col_label)
+            no_marginal_idxs.append(i)
 
         for ax in (ax_main, ax_col):
             if ax is not None:
                 ax.spines["top"].set_visible(False)
                 ax.spines["right"].set_visible(False)
 
-    cax = fig.add_subplot(gs_root[0, 1])
-    fig.colorbar(im, cax=cax, label=value_label)
+    if no_marginal_idxs:
+        # One shared horizontal colorbar spanning all panels without their own
+        # marginal bar (e.g. L2, L4), at the same row as the L0 marginal bar.
+        cax = fig.add_subplot(gs_outer[1, no_marginal_idxs[0]:no_marginal_idxs[-1] + 1])
+        cb = fig.colorbar(im, cax=cax, orientation="horizontal")
+        cb.set_label(value_label, fontsize=plt.rcParams["font.size"] * 0.9)
+        cax.spines["top"].set_visible(False)
+        cax.spines["right"].set_visible(False)
+
     fig.savefig(os.path.join(output_dir, filename), bbox_inches="tight")
     plt.close(fig)
 

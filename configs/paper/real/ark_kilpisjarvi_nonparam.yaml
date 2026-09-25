@@ -85,8 +85,8 @@ optimize:
     basis_funcs_type: MaternBasisFunction
     basis_funcs_kwargs:
       num_basis_functions: 300
-      method: kmeans
-      nu: 2.5
+      method: random
+      nu: 3.5
       estimation_samples_source: prior
 
 sensitivity:

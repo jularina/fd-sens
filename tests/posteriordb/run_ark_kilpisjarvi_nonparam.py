@@ -555,6 +555,7 @@ def run_ark_kilpisjarvi_nonparametric_sensitivity(cfg: DictConfig) -> None:
 
     node_records = []
     prior_samples_z_by_group = {}
+    optimisation_time_by_group = {}
     start = time.perf_counter()
     for group_name in loader.param_groups:
         g = loader.groups[group_name]
@@ -571,6 +572,7 @@ def run_ark_kilpisjarvi_nonparametric_sensitivity(cfg: DictConfig) -> None:
         posterior_z = _to_z_space(prior_dist, g["posterior"])
         prior_samples_z_by_group[group_name] = prior_samples_z
 
+        group_start = time.perf_counter()
         omega_max = compute_group_omega_max(
             posterior_samples=posterior_z,
             loc=0.0,
@@ -580,6 +582,8 @@ def run_ark_kilpisjarvi_nonparametric_sensitivity(cfg: DictConfig) -> None:
             basis_kwargs=basis_kwargs,
             center_prior_samples=center_prior_samples_z,
         )
+        optimisation_time_by_group[group_name] = time.perf_counter() - group_start
+        print(f"  {group_name}: optimisation time={optimisation_time_by_group[group_name]:.3f}s")
         sensitivity = r_j * omega_max
 
         for local_idx, node_name in enumerate(g["node_names"]):
@@ -610,6 +614,8 @@ def run_ark_kilpisjarvi_nonparametric_sensitivity(cfg: DictConfig) -> None:
                 "ac_cond": diag["ac_cond"],
             })
     elapsed = time.perf_counter() - start
+    optimisation_time = float(sum(optimisation_time_by_group.values()))
+    print(f"Total optimisation time: {optimisation_time:.3f}s")
     print(f"Per-node nonparametric FD sensitivity computation time: {elapsed:.3f}s")
 
     node_by_name = {rec["name"]: rec for rec in node_records}
@@ -631,6 +637,8 @@ def run_ark_kilpisjarvi_nonparametric_sensitivity(cfg: DictConfig) -> None:
                 "J": J,
                 "r_j": r_j,
                 "total_sensitivity": total_sensitivity,
+                "optimisation_time_seconds": optimisation_time,
+                "optimisation_time_seconds_by_group": optimisation_time_by_group,
                 "components": {
                     rec["name"]: {
                         "group": rec["group"],

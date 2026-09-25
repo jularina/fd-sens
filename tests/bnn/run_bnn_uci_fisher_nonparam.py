@@ -121,7 +121,7 @@ def _build_tensor_axis_meta(feature_names):
             "show_col_marginal": False,
         },
         "net.module.4.weight_prior": {
-            "row_label": "output",
+            "row_label": "out",
             "col_label": "in",
             "col_names": None,
             "show_col_marginal": False,

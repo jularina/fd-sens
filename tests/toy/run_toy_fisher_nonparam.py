@@ -16,6 +16,7 @@ import hydra
 from hydra.utils import instantiate, get_original_cwd
 from omegaconf import OmegaConf
 import time
+import copy
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -203,14 +204,7 @@ def run_gaussian_priors_nonparametric(cfg, save_samples: bool = False) -> None:
         radius=5.0
     )
     start = time.perf_counter()
-    result_sdp = optimizer.optimize_through_sdp_relaxation()
-    elapsed = time.perf_counter() - start
-    print(f"SDP primal relaxation time: {elapsed}")
-    print(f"SDP primal value:           {result_sdp['primal_value']:.4f}")
-    print(f"SDP constraint value:       {result_sdp['constraint_value']:.4f}")
-
-    start = time.perf_counter()
-    result_eig = optimizer.optimize_through_generalized_eigenvalue()
+    result_eig = optimizer.optimize_through_generalized_eigenvalue(rel_tol=1e-8)
     elapsed = time.perf_counter() - start
     print(f"Eigenvalue time:            {elapsed}")
     print(f"Eigenvalue omega_star:      {result_eig['omega_star']:.4f}")
@@ -338,7 +332,7 @@ def run_gaussian_priors_nonparametric_diff_radii(cfg, save_samples: bool = False
         posterior_distribution=posterior_dist,
         plot_cfg=plot_cfg,
         output_dir=output_dir,
-        domain=(-2, 8),
+        domain=(1, 5),
         resolution=500,
         show_legend=False,
     )
@@ -368,13 +362,18 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
     The Fisher-divergence estimate always uses the saved/loaded prior and
     posterior samples. Centres are never chosen from those same samples;
     prior-based centres are instead drawn from a fresh, independent i.i.d.
-    draw of the reference prior (same size as the saved prior samples), from
-    which a subset is then selected via the chosen method:
+    draw of the reference prior (same size as the saved prior samples), and
+    posterior-based centres from a fresh, independent draw of the conjugate
+    posterior (same size as the saved posterior samples), from which a subset
+    is then selected via the chosen method:
       (a) Halton quantile-mapped centres from the fresh reference-prior draw.
       (b) K-means centres from the same fresh reference-prior draw.
-      (c) Halton quantile-mapped centres from the posterior samples.
+      (c) Halton quantile-mapped centres from the fresh posterior draw.
       (d) Random (i.i.d. subsample) centres from the fresh reference-prior draw.
-      (e) Random (i.i.d. subsample) centres from the posterior samples.
+      (e) Random (i.i.d. subsample) centres from the fresh posterior draw.
+      (f) K-means centres from a fresh draw of the normalised likelihood
+          N(theta_hat, sigma^2 / (n * lr)), i.e. centres placed around the
+          maximum-likelihood estimate theta_hat = x_bar.
     """
     radius = 5.0
     model = instantiate(cfg.model, data_config=cfg.data)
@@ -400,6 +399,10 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
     # to select centres from -- never the samples that feed the FD estimate.
     np.random.seed(27)
     centers_pool_samples = model.sample_from_base_prior(n_samples=len(original_prior_samples))
+    # Likewise, a fresh, independent draw from the (conjugate) posterior, used
+    # only as the pool for posterior-based centres and their lengthscale --
+    # never the posterior samples that feed the FD estimate.
+    centers_pool_posterior_samples = model.sample_posterior(n_samples=len(model.posterior_samples_init))
 
     basis_cls = BASIS_FUNCTIONS_REGISTRY[cfg.optimize.nonparametric.basis_funcs_type]
     base_basis_kwargs = OmegaConf.to_container(cfg.optimize.nonparametric.basis_funcs_kwargs, resolve=True)
@@ -417,8 +420,10 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
         )
         return kwargs
 
+    # Solved as a generalised eigenvalue problem on A_c's well-conditioned
+    # subspace (b = b_c = 0 here, g = pi_ref) -- not the SDP relaxation.
     def _run_and_plot(method_label, filename, optimizer):
-        result_sdp = optimizer.optimize_through_sdp_relaxation()
+        result_sdp = optimizer.optimize_through_generalized_eigenvalue(rel_tol=1e-8)
         print(f"[{method_label}] Nonparametric FD (primal value): {result_sdp['primal_value']:.4f}")
         plot_sdp_density_with_centers(
             basis_function=optimizer.basis_function,
@@ -472,7 +477,7 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
     # (c) Halton, centres selected from the posterior samples
     basis_kwargs = dict(base_basis_kwargs)
     basis_kwargs["prior_samples"] = None
-    basis_kwargs["posterior_samples"] = estimator_posterior.samples
+    basis_kwargs["posterior_samples"] = centers_pool_posterior_samples
     basis_kwargs["estimation_samples_source"] = "posterior"
     basis_kwargs["method"] = "halton"
     # Not scheduled: posterior samples are far more concentrated than the
@@ -513,7 +518,7 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
     # (e) Random, centres selected from the posterior samples
     basis_kwargs = dict(base_basis_kwargs)
     basis_kwargs["prior_samples"] = None
-    basis_kwargs["posterior_samples"] = estimator_posterior.samples
+    basis_kwargs["posterior_samples"] = centers_pool_posterior_samples
     basis_kwargs["estimation_samples_source"] = "posterior"
     basis_kwargs["method"] = "random"
     # Not scheduled: see the "Halton (posterior)" case above.
@@ -528,8 +533,37 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
         optimizer=optimizer,
     )
 
-    # Combined figure: K-means (fresh prior), Random (fresh prior), and
-    # Random (posterior) densities overlaid in one panel, with each method's
+    # (f) K-means, centres from a fresh draw of the normalised likelihood.
+    # For the Gaussian location model L(theta)^lr is proportional to
+    # N(theta; x_bar, sigma^2 / (n * lr)), so the pool concentrates around the
+    # MLE theta_hat = x_bar -- independent of both the prior and posterior
+    # samples used for the FD estimate.
+    theta_hat = float(np.asarray(model.x_bar).reshape(-1)[0])
+    likelihood_sd = float(np.sqrt(model.loss.var / (model.observations_num * model.loss_lr_init)))
+    likelihood_pool_samples = np.random.default_rng(27).normal(
+        theta_hat, likelihood_sd, size=(len(original_prior_samples), 1),
+    )
+    print(f"[Likelihood max] theta_hat={theta_hat:.4f}, likelihood sd={likelihood_sd:.4f}")
+    basis_kwargs = dict(base_basis_kwargs)
+    basis_kwargs["prior_samples"] = None
+    basis_kwargs["posterior_samples"] = likelihood_pool_samples
+    basis_kwargs["estimation_samples_source"] = "posterior"
+    basis_kwargs["method"] = "kmeans"
+    # Not scheduled: the likelihood pool is as concentrated as the posterior
+    # samples -- see the "Halton (posterior)" case above.
+    basis_function_likelihood = basis_cls(**basis_kwargs)
+    optimizer = OptimisationNonparametricBase(
+        estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
+        basis_function=basis_function_likelihood,
+    )
+    _run_and_plot(
+        method_label="K-means (likelihood maximum)",
+        filename="gaussian_1d_location_model_centers_kmeans_likelihood_max.pdf",
+        optimizer=optimizer,
+    )
+
+    # Combined figure: K-means (fresh prior), Random (fresh prior), Random
+    # (posterior) and K-means (likelihood maximum) densities overlaid in one panel, with each method's
     # basis centres shown in its own colour-matched rug strip underneath --
     # one such combined figure per number of basis functions K, so the effect
     # of K on the centre-selection comparison is also visible.
@@ -538,7 +572,7 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
             estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
             basis_function=basis_function,
         )
-        return optimizer.optimize_through_sdp_relaxation()
+        return optimizer.optimize_through_generalized_eigenvalue(rel_tol=1e-8)
 
     for K in [60, 70, 80, 90, 100]:
         k_basis_kwargs = dict(base_basis_kwargs)
@@ -557,30 +591,45 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
         result_random_prior_k = _compute(basis_function_random_prior_k)
 
         # Not scheduled: see the "Halton (posterior)" case above.
-        random_posterior_kwargs = dict(k_basis_kwargs, prior_samples=None, posterior_samples=estimator_posterior.samples,
+        random_posterior_kwargs = dict(k_basis_kwargs, prior_samples=None, posterior_samples=centers_pool_posterior_samples,
                                        estimation_samples_source="posterior", method="random")
         basis_function_random_posterior_k = basis_cls(**random_posterior_kwargs)
         result_random_posterior_k = _compute(basis_function_random_posterior_k)
 
+        # Not scheduled: see the "K-means (likelihood maximum)" case above.
+        likelihood_kwargs = dict(k_basis_kwargs, prior_samples=None, posterior_samples=likelihood_pool_samples,
+                                 estimation_samples_source="posterior", method="kmeans")
+        basis_function_likelihood_k = basis_cls(**likelihood_kwargs)
+        result_likelihood_k = _compute(basis_function_likelihood_k)
+
         print(
             f"[K={K}] K-means (fresh prior): {result_kmeans_k['primal_value']:.4f}, "
             f"Random (fresh prior): {result_random_prior_k['primal_value']:.4f}, "
-            f"Random (posterior): {result_random_posterior_k['primal_value']:.4f}"
+            f"Random (posterior): {result_random_posterior_k['primal_value']:.4f}, "
+            f"K-means (likelihood maximum): {result_likelihood_k['primal_value']:.4f}"
         )
 
         plot_sdp_density_with_centers_combined(
-            basis_functions=[basis_function_kmeans_k, basis_function_random_prior_k, basis_function_random_posterior_k],
+            basis_functions=[
+                basis_function_kmeans_k,
+                basis_function_random_prior_k,
+                basis_function_random_posterior_k,
+                basis_function_likelihood_k,
+            ],
             lambda_star_list=[
                 result_kmeans_k["lambda_star"],
                 result_random_prior_k["lambda_star"],
                 result_random_posterior_k["lambda_star"],
+                result_likelihood_k["lambda_star"],
             ],
             estimates=[
                 result_kmeans_k["primal_value"],
                 result_random_prior_k["primal_value"],
                 result_random_posterior_k["primal_value"],
+                result_likelihood_k["primal_value"],
             ],
-            labels=["K-means (fresh prior)", "Random (fresh prior)", "Random (posterior)"],
+            labels=["K-means (fresh prior)", "Random (fresh prior)", "Random (posterior)",
+                    "K-means (likelihood maximum)"],
             prior_distribution=model.prior_init,
             plot_cfg=plot_cfg,
             output_dir=plots_output_dir,
@@ -589,6 +638,106 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
             resolution=500,
         )
 
+    # Recommended centre selection (K=100): draw K_max >> K candidates from the
+    # mixture alpha * posterior + (1 - alpha) * prior -- each component a fresh
+    # draw, separate from the FD-estimation samples -- then select a
+    # well-spread subset of K via k-means. Compared, for several alphas,
+    # against candidates from the prior only, the posterior only, and the
+    # (in practice unknown) oracle likelihood around its maximiser theta_hat.
+    # All use k-means, so only the candidate pool differs.
+    #
+    # Unlike the figures above, A and A_c are estimated here from larger fresh
+    # prior/posterior draws (n_rec_mc each, separate from every centre pool):
+    # with 1000 prior samples, narrow bases clustered near theta_hat get too
+    # few prior samples under each bump, so A_c is underestimated and the
+    # sensitivity inflated far above the population value. Verified against
+    # exact quadrature: still ~10% too high at 50k, within ~4% at 200k, and
+    # within ~1% at 500k.
+    K = 100
+    K_max = 10 * K
+    mixture_alphas = [0.25, 0.5, 0.75]
+    rec_basis_kwargs = dict(base_basis_kwargs, num_basis_functions=K, method="kmeans")
+
+    def _mixture_pool(alpha):
+        n_post = int(round(alpha * K_max))
+        return np.concatenate([
+            centers_pool_posterior_samples[:n_post],
+            centers_pool_samples[:K_max - n_post],
+        ], axis=0)
+
+    rec_methods = []
+    for alpha in mixture_alphas:
+        pool = _mixture_pool(alpha)
+        kwargs = dict(rec_basis_kwargs, prior_samples=pool, posterior_samples=None, estimation_samples_source="prior")
+        kwargs = _apply_k_schedule(kwargs, pool)
+        rec_methods.append((rf"Mixture $\alpha={alpha:g}$", basis_cls(**kwargs)))
+
+    prior_only_pool = centers_pool_samples[:K_max]
+    kwargs = dict(rec_basis_kwargs, prior_samples=prior_only_pool, posterior_samples=None,
+                  estimation_samples_source="prior")
+    kwargs = _apply_k_schedule(kwargs, prior_only_pool)
+    rec_methods.append(("Prior only", basis_cls(**kwargs)))
+
+    # Not scheduled: see the "Halton (posterior)" case above.
+    kwargs = dict(rec_basis_kwargs, prior_samples=None, posterior_samples=centers_pool_posterior_samples[:K_max],
+                  estimation_samples_source="posterior")
+    rec_methods.append(("Posterior only", basis_cls(**kwargs)))
+
+    # Not scheduled: see the "K-means (likelihood maximum)" case above.
+    kwargs = dict(rec_basis_kwargs, prior_samples=None, posterior_samples=likelihood_pool_samples[:K_max],
+                  estimation_samples_source="posterior")
+    rec_methods.append(("Oracle likelihood", basis_cls(**kwargs)))
+
+    n_rec_mc = 50000
+    rec_model = copy.copy(model)
+    np.random.seed(2027)
+    rec_model.prior_samples_init = model.sample_from_base_prior(n_samples=n_rec_mc)
+    rec_model.posterior_samples_init = model.sample_posterior(n_samples=n_rec_mc)
+    rec_estimator_prior = PriorFDNonParametric(model=rec_model)
+    rec_estimator_posterior = PosteriorFDNonParametric(model=rec_model)
+
+    def _compute_rec(basis_function):
+        optimizer = OptimisationNonparametricBase(
+            rec_estimator_posterior, rec_estimator_prior, cfg.optimize.nonparametric, radius=radius,
+            basis_function=basis_function,
+        )
+        return optimizer.optimize_through_generalized_eigenvalue(rel_tol=1e-8)
+
+    rec_results = [_compute_rec(basis_function) for _, basis_function in rec_methods]
+    for (label, _), result in zip(rec_methods, rec_results):
+        print(f"[K={K}, recommended] {label}: {result['primal_value']:.4f}")
+
+    # Population ceiling over *all* smooth perturbations (b = b_c = 0):
+    # sup_f E_post|f'|^2 / E_prior|f'|^2 = sup_theta p_post / p_prior, which is
+    # proportional to the likelihood and so attained at theta_hat.
+    mu_n, sigma_n2 = model.compute_posterior_params()
+    theta_grid = np.linspace(-20, 25, 200001)[:, None]
+    log_ratio = (
+        -0.5 * (theta_grid[:, 0] - float(np.ravel(mu_n)[0])) ** 2 / float(sigma_n2)
+        - 0.5 * np.log(2 * np.pi * float(sigma_n2))
+        - np.asarray(model.prior_init.log_pdf(theta_grid)).reshape(-1)
+    )
+    ceiling = radius * float(np.exp(log_ratio.max()))
+    ceiling_at = float(theta_grid[np.argmax(log_ratio), 0])
+    print(f"[K={K}, recommended] Population ceiling r * sup p_post/p_prior: {ceiling:.4f} at theta={ceiling_at:.4f}")
+
+    plot_sdp_density_with_centers_combined(
+        basis_functions=[basis_function for _, basis_function in rec_methods],
+        lambda_star_list=[result["lambda_star"] for result in rec_results],
+        estimates=[result["primal_value"] for result in rec_results],
+        labels=[label for label, _ in rec_methods],
+        prior_distribution=model.prior_init,
+        plot_cfg=plot_cfg,
+        output_dir=plots_output_dir,
+        filename=f"gaussian_1d_location_model_centers_recommended_K{K}.pdf",
+        domain=(-6, 12),
+        resolution=500,
+        colors=["#1b4f72", "#2e86c1", "#85c1e9", "#6C936C", "#d68910", "#922b21"],
+        legend_labels=True,
+        upper_bound=ceiling,
+        upper_bound_at=ceiling_at,
+    )
+
 
 @hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="univariate_gaussian_nonparam")
 def run_gaussian_priors_nonparametric_diff_kernels(cfg, save_samples: bool = False) -> None:
@@ -596,9 +745,9 @@ def run_gaussian_priors_nonparametric_diff_kernels(cfg, save_samples: bool = Fal
     Compare basis-function kernel choices at a fixed radius, each as its own
     plot with the SDP worst-case candidate density, the true prior, and the
     resulting basis centres (rug of dots) along the x-axis:
-      (a) Matern kernel, nu=1.5
-      (b) Matern kernel, nu=3.0
-      (c) Matern kernel, nu=7.0
+      (a) Matern kernel, nu=2.5
+      (b) Matern kernel, nu=5.5
+      (c) Matern kernel, nu=7.5
       (d) RBF kernel
 
     Plus one combined plot overlaying all three Matern nu's worst-case
@@ -636,7 +785,7 @@ def run_gaussian_priors_nonparametric_diff_kernels(cfg, save_samples: bool = Fal
     np.random.seed(27)
     centers_pool_samples = model.sample_from_base_prior(n_samples=len(original_prior_samples))
 
-    num_basis_functions = 30
+    num_basis_functions = 100
 
     # Lengthscale shrinks with K (per basis function's own centre count) so
     # increasing num_basis_functions actually grows the achievable
@@ -651,7 +800,7 @@ def run_gaussian_priors_nonparametric_diff_kernels(cfg, save_samples: bool = Fal
             estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
             basis_function=basis_function,
         )
-        result_sdp = optimizer.optimize_through_sdp_relaxation()
+        result_sdp = optimizer.optimize_through_generalized_eigenvalue(rel_tol=1e-8)
         print(f"[{method_label}] Nonparametric FD (primal value): {result_sdp['primal_value']:.4f}")
         plot_sdp_density_with_centers(
             basis_function=optimizer.basis_function,
@@ -661,7 +810,7 @@ def run_gaussian_priors_nonparametric_diff_kernels(cfg, save_samples: bool = Fal
             plot_cfg=plot_cfg,
             output_dir=plots_output_dir,
             filename=filename,
-            domain=(-10, 12),
+            domain=(-8, 12),
             resolution=500,
             show_centers=show_centers,
             show_yaxis=show_yaxis,
@@ -671,7 +820,7 @@ def run_gaussian_priors_nonparametric_diff_kernels(cfg, save_samples: bool = Fal
     # (a)-(c) Matern, varying smoothness nu (nu must be > 1 for C^1 basis functions)
     matern_cls = BASIS_FUNCTIONS_REGISTRY["MaternBasisFunction"]
     matern_basis_functions, matern_lambda_list, matern_nu_labels, matern_estimates = [], [], [], []
-    for nu in [1.5, 3.0, 7.0]:
+    for nu in [2.5, 5.5, 7.5]:
         basis_function = matern_cls(
             posterior_samples=None,
             prior_samples=centers_pool_samples,
@@ -743,9 +892,9 @@ def run_multivariate_gaussian_priors_nonparametric(cfg, save_samples: bool = Fal
         radius=radius,
     )
     start = time.perf_counter()
-    result_sdp = optimizer.optimize_through_sdp_relaxation()
+    result_sdp = optimizer.optimize_through_generalized_eigenvalue(rel_tol=1e-8)
     elapsed = time.perf_counter() - start
-    print(f"SDP primal relaxation time: {elapsed:.3f}s")
+    print(f"Generalised eigenvalue time: {elapsed:.3f}s")
     print(f"Nonparametric FD (primal value): {result_sdp['primal_value']:.4f}")
 
     plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
@@ -927,7 +1076,7 @@ def run_gaussian_priors_nonparametric_sensitivity_vs_K(
     # infeasible -- so it keeps the original, more modest grid.
     if d == 1:
         grid_sides = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 150, 200,
-                       250, 300, 400, 500, 700, 1000, 1500, 2000]
+                      250, 300, 400, 500, 700, 1000, 1500, 2000]
     else:
         grid_sides = [3, 4, 5, 7, 10, 14, 20, 28, 40, 56, 64, 72, 80]
 
@@ -1020,7 +1169,7 @@ def run_gaussian_priors_nonparametric_sensitivity_vs_K_combined(
     """
     if grid_sides_univariate is None:
         grid_sides_univariate = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 150, 200,
-                                  250, 300, 400, 500, 700, 1000, 1500, 2000]
+                                 250, 300, 400, 500, 700, 1000, 1500, 2000]
     if grid_sides_multivariate is None:
         grid_sides_multivariate = [3, 4, 5, 7, 10, 14, 20, 28, 40, 56, 64, 72, 80]
 
@@ -1264,7 +1413,7 @@ def run_param_nonparam_comparison_kurtosis(cfg) -> None:
         cfg.optimize.nonparametric,
         radius=radius,
     )
-    result_sdp = nonparam_optimizer.optimize_through_sdp_relaxation()
+    result_sdp = nonparam_optimizer.optimize_through_generalized_eigenvalue(rel_tol=1e-8)
     print(f"Nonparametric FD (primal value): {result_sdp['primal_value']:.4f}")
 
     plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
@@ -1317,7 +1466,7 @@ def run_param_nonparam_multimodality_comparison(cfg) -> None:
         cfg.optimize.nonparametric,
         radius=radius,
     )
-    result_sdp = nonparam_optimizer.optimize_through_sdp_relaxation()
+    result_sdp = nonparam_optimizer.optimize_through_generalized_eigenvalue(rel_tol=1e-8)
     print(f"Nonparametric FD (primal value): {result_sdp['primal_value']:.4f}")
 
     plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
@@ -1425,10 +1574,9 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
     Validates the closed-form FDsens+ sensitivity for the RBF kernel with a
     Gaussian reference prior/posterior against its Monte-Carlo (plug-in)
     estimate, and plots the absolute error between the two as a function of
-    the total number of prior+posterior samples m+l (each point draws
-    m=l=l samples, so m+l=2l), averaged (with +/- 1 sem band) over
-    independent resamples at each sample size. The error is expected to
-    shrink as m+l grows.
+    the number of posterior samples m = number of prior samples l, averaged
+    (with +/- 1 sem band) over independent resamples at each sample size.
+    The error is expected to shrink as m = l grows.
 
     Since prior and posterior are both exactly Gaussian for this conjugate
     toy model, S^FD(Q_r^K) = r * gamma_max can be computed exactly from A,
@@ -1522,18 +1670,16 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
     errors_dir = os.path.join(get_original_cwd(), f"data/{dim_tag}/closed_form_convergence")
     errors_path = os.path.join(errors_dir, f"closed_form_convergence_errors_K{centers.shape[0]}.json")
 
-    if os.path.exists(errors_path):
-        print(f"Found existing errors at {errors_path}, skipping computation.")
-        errors_by_l = load_results_json(errors_path)
-    else:
-        errors_by_l = {}
-        for l in sample_sizes:
+    def _compute_errors(pairs: list[tuple[int, int]]) -> dict:
+        """Per-repeat errors for each (m, l) = (#posterior, #prior samples), keyed by str(m)."""
+        errors = {}
+        for m, l in pairs:
             errors_full, errors_obj, errors_constr = [], [], []
             errors_A, errors_Ac = [], []
             for _ in range(n_repeats):
                 model.prior_samples_init = model.sample_from_base_prior(n_samples=l)
-                model.posterior_samples_init = model.sample_posterior(n_samples=l)
-                model.m = l
+                model.posterior_samples_init = model.sample_posterior(n_samples=m)
+                model.m = m
                 model.m_prior = l
 
                 estimator_prior = PriorFDNonParametric(model=model)
@@ -1559,7 +1705,9 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
                 errors_A.append(float(np.linalg.norm(A_hat - A_closed, ord="fro")) / A_closed_norm)
                 errors_Ac.append(float(np.linalg.norm(A_c_hat - A_c_closed, ord="fro")) / A_c_closed_norm)
 
-            errors_by_l[str(l)] = {
+            errors[str(m)] = {
+                "m": int(m),
+                "l": int(l),
                 "full": errors_full,
                 "objective": errors_obj,
                 "constraint": errors_constr,
@@ -1567,13 +1715,22 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
                 "Ac_matrix": errors_Ac,
             }
             print(
-                f"l={l}: full={np.mean(errors_full):.4e}, "
+                f"m={m}, l={l}: full={np.mean(errors_full):.4e}, "
                 f"objective={np.mean(errors_obj):.4e}, constraint={np.mean(errors_constr):.4e}, "
                 f"||A-Ahat||_F/||A||_F={np.mean(errors_A):.4e}, "
                 f"||Ac-Achat||_F/||Ac||_F={np.mean(errors_Ac):.4e}"
             )
+        return errors
 
-        save_to_serializable_json(errors_by_l, errors_path)
+    def _load_or_compute(path: str, pairs: list[tuple[int, int]]) -> dict:
+        if os.path.exists(path):
+            print(f"Found existing errors at {path}, skipping computation.")
+            return load_results_json(path)
+        errors = _compute_errors(pairs)
+        save_to_serializable_json(errors, path)
+        return errors
+
+    errors_by_l = _load_or_compute(errors_path, [(int(l), int(l)) for l in sample_sizes])
 
     def _mean_sem(values: list) -> tuple[float, float]:
         arr = np.asarray(values, dtype=float)
@@ -1590,20 +1747,16 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
     output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
     plot_cfg = load_plot_config(plot_config_path)
 
-    # Each point uses m=l=l prior/posterior samples, so the total amount of
-    # data behind the full plug-in estimate is m+l=2l; plot against that
-    # total rather than the per-source count l (cache lookups still key on
-    # the per-source l via sample_sizes).
-    total_sizes = [int(2 * l) for l in sample_sizes]
     plot_closed_form_sensitivity_error(
-        sample_sizes=total_sizes,
+        sample_sizes=sample_sizes,
         series=_series_for(errors_by_l, sample_sizes, [
             (r"Full plug-in ($\widehat A$, $\widehat A_c$)", "full"),
         ]),
         plot_cfg=plot_cfg,
         output_dir=output_dir,
         filename=f"{plot_tag}_closed_form_convergence.pdf",
-        xlabel=r"$m + l$",
+        xlabel=r"$m = l$",
+        y_bottom=0.0,
     )
 
     plot_closed_form_sensitivity_error(
@@ -1614,6 +1767,7 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
         filename=f"{plot_tag}_closed_form_A_error.pdf",
         ylabel=r"$\|A - \widehat{A}\|_F / \|A\|_F$",
         xlabel=r"$m$",
+        y_bottom=0.0,
     )
 
     plot_closed_form_sensitivity_error(
@@ -1624,6 +1778,7 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
         filename=f"{plot_tag}_closed_form_Ac_error.pdf",
         ylabel=r"$\|A_c - \widehat{A}_c\|_F / \|A_c\|_F$",
         xlabel=r"$l$",
+        y_bottom=0.0,
     )
 
 

@@ -677,7 +677,7 @@ class OptimisationNonparametricBase:
             "omega_star": omega_star,
         }
 
-    def optimize_through_generalized_eigenvalue(self, nugget: float = 1e-10):
+    def optimize_through_generalized_eigenvalue(self, nugget: float = 1e-10, rel_tol: float | None = None):
         """
         Solve the QCQP via the generalised eigenvalue problem.
 
@@ -692,6 +692,14 @@ class OptimisationNonparametricBase:
 
         Args:
             nugget: regularisation added to A_c when it is not PD.
+            rel_tol: if given, instead of shifting A_c by a nugget and
+                Cholesky-factorising it, solve on A_c's numerically
+                well-conditioned eigen-subspace (eigenvalues above
+                max(rel_tol * max_eig(A_c), nugget)) -- see
+                src.optimization.bnn_node_sensitivity._ac_whitening_transform.
+                Use this when A_c is near-singular (e.g. centres clustered
+                where few prior samples fall), where the nugget shift
+                inflates the ratio along the near-null directions.
         """
         from scipy.linalg import eigh as scipy_eigh
         import warnings
@@ -706,18 +714,27 @@ class OptimisationNonparametricBase:
         A = self._sym(self.A)
         A_c = self._sym(self.A_c)
 
-        min_eig = float(np.linalg.eigvalsh(A_c).min())
-        if min_eig < nugget:
-            shift = nugget - min_eig
-            A_c = A_c + shift * np.eye(self.d)
-            print(f"A_c shifted by {shift:.2e} to ensure PD for generalised eigenvalue solver.")
+        if rel_tol is not None:
+            from src.optimization.bnn_node_sensitivity import _ac_whitening_transform
 
-        # scipy_eigh solves A v = ω A_c v and returns A_c-orthonormal eigenvectors
-        # in ascending eigenvalue order; the optimum is the last column.
-        omega_vals, V = scipy_eigh(A, A_c)
+            W, ac_diag = _ac_whitening_transform(A_c, rel_tol=rel_tol, nugget=nugget)  # W^T A_c W = I
+            print(f"A_c whitened onto its well-conditioned subspace: rank {ac_diag['ac_rank_kept']}/{self.d}.")
+            omega_vals, Y = np.linalg.eigh(self._sym(W.T @ A @ W))  # ascending
+            omega_star = float(omega_vals[-1])
+            lam_prime = W @ Y[:, -1]  # A_c-normalised: lam_prime.T @ A_c @ lam_prime = 1
+        else:
+            min_eig = float(np.linalg.eigvalsh(A_c).min())
+            if min_eig < nugget:
+                shift = nugget - min_eig
+                A_c = A_c + shift * np.eye(self.d)
+                print(f"A_c shifted by {shift:.2e} to ensure PD for generalised eigenvalue solver.")
 
-        omega_star = float(omega_vals[-1])
-        lam_prime = V[:, -1]  # A_c-normalised: lam_prime.T @ A_c @ lam_prime = 1
+            # scipy_eigh solves A v = ω A_c v and returns A_c-orthonormal eigenvectors
+            # in ascending eigenvalue order; the optimum is the last column.
+            omega_vals, V = scipy_eigh(A, A_c)
+
+            omega_star = float(omega_vals[-1])
+            lam_prime = V[:, -1]  # A_c-normalised: lam_prime.T @ A_c @ lam_prime = 1
 
         lam_star = np.sqrt(max(self.r, 0.0)) * lam_prime
         lam_star = self._canonical_sign(lam_star)

@@ -37,9 +37,9 @@ optimize:
   nonparametric:
     basis_funcs_type: MaternBasisFunction
     basis_funcs_kwargs:
-      num_basis_functions: 50
+      num_basis_functions: 100
       method: random
-      nu: 5.0
+      nu: 3.5
       estimation_samples_source: prior
 
 sensitivity:
