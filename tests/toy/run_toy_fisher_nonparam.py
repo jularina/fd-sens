@@ -351,9 +351,18 @@ def run_gaussian_priors_nonparametric_diff_radii(cfg, save_samples: bool = False
     # )
 
 
-@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="univariate_gaussian_nonparam")
-def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: bool = False) -> None:
+def _diff_center_methods(
+    cfg, basis_funcs_type: str, file_prefix: str, save_samples: bool = False, only_recommended: bool = False,
+) -> None:
     """
+    Shared body of run_gaussian_priors_nonparametric_diff_center_methods
+    (Matern basis) and run_gaussian_priors_nonparametric_diff_center_methods_rbf
+    (RBF basis); basis_funcs_type picks the basis class and file_prefix tags
+    every output plot. only_recommended skips everything but the two
+    recommended-centre figures (pooled and stratified mixtures). For the RBF basis the recommended-centre comparison also
+    reports each method's exact sensitivity, from the closed-form A, A_c of
+    rbf_gaussian_gram_closed_form, and the plug-in estimation error against it.
+
     Compare basis-function centre-selection strategies at a fixed radius, each
     as its own plot with the SDP worst-case candidate density, the true prior,
     and the underlying sample points (rug of dots) and resulting basis centres
@@ -404,10 +413,12 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
     # never the posterior samples that feed the FD estimate.
     centers_pool_posterior_samples = model.sample_posterior(n_samples=len(model.posterior_samples_init))
 
-    basis_cls = BASIS_FUNCTIONS_REGISTRY[cfg.optimize.nonparametric.basis_funcs_type]
+    basis_cls = BASIS_FUNCTIONS_REGISTRY[basis_funcs_type]
     base_basis_kwargs = OmegaConf.to_container(cfg.optimize.nonparametric.basis_funcs_kwargs, resolve=True)
     base_basis_kwargs["num_basis_functions"] = 30
-    base_basis_kwargs["nu"] = 5.0
+    # Matern smoothness nu comes from the config; RBF has no nu.
+    if basis_funcs_type != "MaternBasisFunction":
+        base_basis_kwargs.pop("nu", None)
 
     # Lengthscale shrinks with K (per basis function's own centre count) so
     # increasing num_basis_functions actually grows the achievable
@@ -438,213 +449,218 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
         )
         return result_sdp
 
-    # (a) Halton, centres from a fresh reference-prior draw
-    basis_kwargs = dict(base_basis_kwargs)
-    basis_kwargs["prior_samples"] = centers_pool_samples
-    basis_kwargs["posterior_samples"] = None
-    basis_kwargs["estimation_samples_source"] = "prior"
-    basis_kwargs["method"] = "halton"
-    basis_kwargs = _apply_k_schedule(basis_kwargs, centers_pool_samples)
-    basis_function_halton = basis_cls(**basis_kwargs)
-    optimizer = OptimisationNonparametricBase(
-        estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
-        basis_function=basis_function_halton,
-    )
-    _run_and_plot(
-        method_label="Halton (fresh prior draw)",
-        filename="gaussian_1d_location_model_centers_halton_prior_fresh.pdf",
-        optimizer=optimizer,
-    )
-
-    # (b) K-means, centres from the same fresh reference-prior draw
-    basis_kwargs = dict(base_basis_kwargs)
-    basis_kwargs["prior_samples"] = centers_pool_samples
-    basis_kwargs["posterior_samples"] = None
-    basis_kwargs["estimation_samples_source"] = "prior"
-    basis_kwargs["method"] = "kmeans"
-    basis_kwargs = _apply_k_schedule(basis_kwargs, centers_pool_samples)
-    basis_function_kmeans = basis_cls(**basis_kwargs)
-    optimizer = OptimisationNonparametricBase(
-        estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
-        basis_function=basis_function_kmeans,
-    )
-    _run_and_plot(
-        method_label="K-means (fresh prior draw)",
-        filename="gaussian_1d_location_model_centers_kmeans_prior_fresh.pdf",
-        optimizer=optimizer,
-    )
-
-    # (c) Halton, centres selected from the posterior samples
-    basis_kwargs = dict(base_basis_kwargs)
-    basis_kwargs["prior_samples"] = None
-    basis_kwargs["posterior_samples"] = centers_pool_posterior_samples
-    basis_kwargs["estimation_samples_source"] = "posterior"
-    basis_kwargs["method"] = "halton"
-    # Not scheduled: posterior samples are far more concentrated than the
-    # fresh prior draw, so the same K-dependent formula produces a
-    # disproportionately narrow (unstable) bandwidth here -- verified
-    # empirically (already inflated at K=30, SDP relaxation unbounded by
-    # K=70 in the loop below). Left on the class's own auto-estimated
-    # (K-independent) bandwidth.
-    basis_function_posterior = basis_cls(**basis_kwargs)
-    optimizer = OptimisationNonparametricBase(
-        estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
-        basis_function=basis_function_posterior,
-    )
-    _run_and_plot(
-        method_label="Halton (posterior)",
-        filename="gaussian_1d_location_model_centers_halton_posterior.pdf",
-        optimizer=optimizer,
-    )
-
-    # (d) Random, centres from the same fresh reference-prior draw
-    basis_kwargs = dict(base_basis_kwargs)
-    basis_kwargs["prior_samples"] = centers_pool_samples
-    basis_kwargs["posterior_samples"] = None
-    basis_kwargs["estimation_samples_source"] = "prior"
-    basis_kwargs["method"] = "random"
-    basis_kwargs = _apply_k_schedule(basis_kwargs, centers_pool_samples)
-    basis_function_random_prior = basis_cls(**basis_kwargs)
-    optimizer = OptimisationNonparametricBase(
-        estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
-        basis_function=basis_function_random_prior,
-    )
-    _run_and_plot(
-        method_label="Random (fresh prior draw)",
-        filename="gaussian_1d_location_model_centers_random_prior_fresh.pdf",
-        optimizer=optimizer,
-    )
-
-    # (e) Random, centres selected from the posterior samples
-    basis_kwargs = dict(base_basis_kwargs)
-    basis_kwargs["prior_samples"] = None
-    basis_kwargs["posterior_samples"] = centers_pool_posterior_samples
-    basis_kwargs["estimation_samples_source"] = "posterior"
-    basis_kwargs["method"] = "random"
-    # Not scheduled: see the "Halton (posterior)" case above.
-    basis_function_random_posterior = basis_cls(**basis_kwargs)
-    optimizer = OptimisationNonparametricBase(
-        estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
-        basis_function=basis_function_random_posterior,
-    )
-    _run_and_plot(
-        method_label="Random (posterior)",
-        filename="gaussian_1d_location_model_centers_random_posterior.pdf",
-        optimizer=optimizer,
-    )
-
-    # (f) K-means, centres from a fresh draw of the normalised likelihood.
-    # For the Gaussian location model L(theta)^lr is proportional to
-    # N(theta; x_bar, sigma^2 / (n * lr)), so the pool concentrates around the
-    # MLE theta_hat = x_bar -- independent of both the prior and posterior
-    # samples used for the FD estimate.
-    theta_hat = float(np.asarray(model.x_bar).reshape(-1)[0])
-    likelihood_sd = float(np.sqrt(model.loss.var / (model.observations_num * model.loss_lr_init)))
-    likelihood_pool_samples = np.random.default_rng(27).normal(
-        theta_hat, likelihood_sd, size=(len(original_prior_samples), 1),
-    )
-    print(f"[Likelihood max] theta_hat={theta_hat:.4f}, likelihood sd={likelihood_sd:.4f}")
-    basis_kwargs = dict(base_basis_kwargs)
-    basis_kwargs["prior_samples"] = None
-    basis_kwargs["posterior_samples"] = likelihood_pool_samples
-    basis_kwargs["estimation_samples_source"] = "posterior"
-    basis_kwargs["method"] = "kmeans"
-    # Not scheduled: the likelihood pool is as concentrated as the posterior
-    # samples -- see the "Halton (posterior)" case above.
-    basis_function_likelihood = basis_cls(**basis_kwargs)
-    optimizer = OptimisationNonparametricBase(
-        estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
-        basis_function=basis_function_likelihood,
-    )
-    _run_and_plot(
-        method_label="K-means (likelihood maximum)",
-        filename="gaussian_1d_location_model_centers_kmeans_likelihood_max.pdf",
-        optimizer=optimizer,
-    )
-
-    # Combined figure: K-means (fresh prior), Random (fresh prior), Random
-    # (posterior) and K-means (likelihood maximum) densities overlaid in one panel, with each method's
-    # basis centres shown in its own colour-matched rug strip underneath --
-    # one such combined figure per number of basis functions K, so the effect
-    # of K on the centre-selection comparison is also visible.
-    def _compute(basis_function):
+    # The per-method figures (a)-(f) and the combined figure are skipped when
+    # only_recommended is set; the recommended-centre figures below do not
+    # depend on them (they reseed and draw their own estimation samples).
+    if not only_recommended:
+        # (a) Halton, centres from a fresh reference-prior draw
+        basis_kwargs = dict(base_basis_kwargs)
+        basis_kwargs["prior_samples"] = centers_pool_samples
+        basis_kwargs["posterior_samples"] = None
+        basis_kwargs["estimation_samples_source"] = "prior"
+        basis_kwargs["method"] = "halton"
+        basis_kwargs = _apply_k_schedule(basis_kwargs, centers_pool_samples)
+        basis_function_halton = basis_cls(**basis_kwargs)
         optimizer = OptimisationNonparametricBase(
             estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
-            basis_function=basis_function,
+            basis_function=basis_function_halton,
         )
-        return optimizer.optimize_through_generalized_eigenvalue(rel_tol=1e-8)
+        _run_and_plot(
+            method_label="Halton (fresh prior draw)",
+            filename=f"{file_prefix}_halton_prior_fresh.pdf",
+            optimizer=optimizer,
+        )
 
-    for K in [60, 70, 80, 90, 100]:
-        k_basis_kwargs = dict(base_basis_kwargs)
-        k_basis_kwargs["num_basis_functions"] = K
+        # (b) K-means, centres from the same fresh reference-prior draw
+        basis_kwargs = dict(base_basis_kwargs)
+        basis_kwargs["prior_samples"] = centers_pool_samples
+        basis_kwargs["posterior_samples"] = None
+        basis_kwargs["estimation_samples_source"] = "prior"
+        basis_kwargs["method"] = "kmeans"
+        basis_kwargs = _apply_k_schedule(basis_kwargs, centers_pool_samples)
+        basis_function_kmeans = basis_cls(**basis_kwargs)
+        optimizer = OptimisationNonparametricBase(
+            estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
+            basis_function=basis_function_kmeans,
+        )
+        _run_and_plot(
+            method_label="K-means (fresh prior draw)",
+            filename=f"{file_prefix}_kmeans_prior_fresh.pdf",
+            optimizer=optimizer,
+        )
 
-        kmeans_kwargs = dict(k_basis_kwargs, prior_samples=centers_pool_samples, posterior_samples=None,
-                             estimation_samples_source="prior", method="kmeans")
-        kmeans_kwargs = _apply_k_schedule(kmeans_kwargs, centers_pool_samples)
-        basis_function_kmeans_k = basis_cls(**kmeans_kwargs)
-        result_kmeans_k = _compute(basis_function_kmeans_k)
+        # (c) Halton, centres selected from the posterior samples
+        basis_kwargs = dict(base_basis_kwargs)
+        basis_kwargs["prior_samples"] = None
+        basis_kwargs["posterior_samples"] = centers_pool_posterior_samples
+        basis_kwargs["estimation_samples_source"] = "posterior"
+        basis_kwargs["method"] = "halton"
+        # Not scheduled: posterior samples are far more concentrated than the
+        # fresh prior draw, so the same K-dependent formula produces a
+        # disproportionately narrow (unstable) bandwidth here -- verified
+        # empirically (already inflated at K=30, SDP relaxation unbounded by
+        # K=70 in the loop below). Left on the class's own auto-estimated
+        # (K-independent) bandwidth.
+        basis_function_posterior = basis_cls(**basis_kwargs)
+        optimizer = OptimisationNonparametricBase(
+            estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
+            basis_function=basis_function_posterior,
+        )
+        _run_and_plot(
+            method_label="Halton (posterior)",
+            filename=f"{file_prefix}_halton_posterior.pdf",
+            optimizer=optimizer,
+        )
 
-        random_prior_kwargs = dict(k_basis_kwargs, prior_samples=centers_pool_samples, posterior_samples=None,
-                                   estimation_samples_source="prior", method="random")
-        random_prior_kwargs = _apply_k_schedule(random_prior_kwargs, centers_pool_samples)
-        basis_function_random_prior_k = basis_cls(**random_prior_kwargs)
-        result_random_prior_k = _compute(basis_function_random_prior_k)
+        # (d) Random, centres from the same fresh reference-prior draw
+        basis_kwargs = dict(base_basis_kwargs)
+        basis_kwargs["prior_samples"] = centers_pool_samples
+        basis_kwargs["posterior_samples"] = None
+        basis_kwargs["estimation_samples_source"] = "prior"
+        basis_kwargs["method"] = "random"
+        basis_kwargs = _apply_k_schedule(basis_kwargs, centers_pool_samples)
+        basis_function_random_prior = basis_cls(**basis_kwargs)
+        optimizer = OptimisationNonparametricBase(
+            estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
+            basis_function=basis_function_random_prior,
+        )
+        _run_and_plot(
+            method_label="Random (fresh prior draw)",
+            filename=f"{file_prefix}_random_prior_fresh.pdf",
+            optimizer=optimizer,
+        )
 
+        # (e) Random, centres selected from the posterior samples
+        basis_kwargs = dict(base_basis_kwargs)
+        basis_kwargs["prior_samples"] = None
+        basis_kwargs["posterior_samples"] = centers_pool_posterior_samples
+        basis_kwargs["estimation_samples_source"] = "posterior"
+        basis_kwargs["method"] = "random"
         # Not scheduled: see the "Halton (posterior)" case above.
-        random_posterior_kwargs = dict(k_basis_kwargs, prior_samples=None, posterior_samples=centers_pool_posterior_samples,
-                                       estimation_samples_source="posterior", method="random")
-        basis_function_random_posterior_k = basis_cls(**random_posterior_kwargs)
-        result_random_posterior_k = _compute(basis_function_random_posterior_k)
-
-        # Not scheduled: see the "K-means (likelihood maximum)" case above.
-        likelihood_kwargs = dict(k_basis_kwargs, prior_samples=None, posterior_samples=likelihood_pool_samples,
-                                 estimation_samples_source="posterior", method="kmeans")
-        basis_function_likelihood_k = basis_cls(**likelihood_kwargs)
-        result_likelihood_k = _compute(basis_function_likelihood_k)
-
-        print(
-            f"[K={K}] K-means (fresh prior): {result_kmeans_k['primal_value']:.4f}, "
-            f"Random (fresh prior): {result_random_prior_k['primal_value']:.4f}, "
-            f"Random (posterior): {result_random_posterior_k['primal_value']:.4f}, "
-            f"K-means (likelihood maximum): {result_likelihood_k['primal_value']:.4f}"
+        basis_function_random_posterior = basis_cls(**basis_kwargs)
+        optimizer = OptimisationNonparametricBase(
+            estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
+            basis_function=basis_function_random_posterior,
+        )
+        _run_and_plot(
+            method_label="Random (posterior)",
+            filename=f"{file_prefix}_random_posterior.pdf",
+            optimizer=optimizer,
         )
 
-        plot_sdp_density_with_centers_combined(
-            basis_functions=[
-                basis_function_kmeans_k,
-                basis_function_random_prior_k,
-                basis_function_random_posterior_k,
-                basis_function_likelihood_k,
-            ],
-            lambda_star_list=[
-                result_kmeans_k["lambda_star"],
-                result_random_prior_k["lambda_star"],
-                result_random_posterior_k["lambda_star"],
-                result_likelihood_k["lambda_star"],
-            ],
-            estimates=[
-                result_kmeans_k["primal_value"],
-                result_random_prior_k["primal_value"],
-                result_random_posterior_k["primal_value"],
-                result_likelihood_k["primal_value"],
-            ],
-            labels=["K-means (fresh prior)", "Random (fresh prior)", "Random (posterior)",
-                    "K-means (likelihood maximum)"],
-            prior_distribution=model.prior_init,
-            plot_cfg=plot_cfg,
-            output_dir=plots_output_dir,
-            filename=f"gaussian_1d_location_model_centers_combined_K{K}.pdf",
-            domain=(-6, 12),
-            resolution=500,
+        # (f) K-means, centres from a fresh draw of the normalised likelihood.
+        # For the Gaussian location model L(theta)^lr is proportional to
+        # N(theta; x_bar, sigma^2 / (n * lr)), so the pool concentrates around the
+        # MLE theta_hat = x_bar -- independent of both the prior and posterior
+        # samples used for the FD estimate.
+        theta_hat = float(np.asarray(model.x_bar).reshape(-1)[0])
+        likelihood_sd = float(np.sqrt(model.loss.var / (model.observations_num * model.loss_lr_init)))
+        likelihood_pool_samples = np.random.default_rng(27).normal(
+            theta_hat, likelihood_sd, size=(len(original_prior_samples), 1),
         )
+        print(f"[Likelihood max] theta_hat={theta_hat:.4f}, likelihood sd={likelihood_sd:.4f}")
+        basis_kwargs = dict(base_basis_kwargs)
+        basis_kwargs["prior_samples"] = None
+        basis_kwargs["posterior_samples"] = likelihood_pool_samples
+        basis_kwargs["estimation_samples_source"] = "posterior"
+        basis_kwargs["method"] = "kmeans"
+        # Not scheduled: the likelihood pool is as concentrated as the posterior
+        # samples -- see the "Halton (posterior)" case above.
+        basis_function_likelihood = basis_cls(**basis_kwargs)
+        optimizer = OptimisationNonparametricBase(
+            estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
+            basis_function=basis_function_likelihood,
+        )
+        _run_and_plot(
+            method_label="K-means (likelihood maximum)",
+            filename=f"{file_prefix}_kmeans_likelihood_max.pdf",
+            optimizer=optimizer,
+        )
+
+        # Combined figure: K-means (fresh prior), Random (fresh prior), Random
+        # (posterior) and K-means (likelihood maximum) densities overlaid in one panel, with each method's
+        # basis centres shown in its own colour-matched rug strip underneath --
+        # one such combined figure per number of basis functions K, so the effect
+        # of K on the centre-selection comparison is also visible.
+        def _compute(basis_function):
+            optimizer = OptimisationNonparametricBase(
+                estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
+                basis_function=basis_function,
+            )
+            return optimizer.optimize_through_generalized_eigenvalue(rel_tol=1e-8)
+
+        for K in [100]:
+            k_basis_kwargs = dict(base_basis_kwargs)
+            k_basis_kwargs["num_basis_functions"] = K
+
+            kmeans_kwargs = dict(k_basis_kwargs, prior_samples=centers_pool_samples, posterior_samples=None,
+                                 estimation_samples_source="prior", method="kmeans")
+            kmeans_kwargs = _apply_k_schedule(kmeans_kwargs, centers_pool_samples)
+            basis_function_kmeans_k = basis_cls(**kmeans_kwargs)
+            result_kmeans_k = _compute(basis_function_kmeans_k)
+
+            random_prior_kwargs = dict(k_basis_kwargs, prior_samples=centers_pool_samples, posterior_samples=None,
+                                       estimation_samples_source="prior", method="random")
+            random_prior_kwargs = _apply_k_schedule(random_prior_kwargs, centers_pool_samples)
+            basis_function_random_prior_k = basis_cls(**random_prior_kwargs)
+            result_random_prior_k = _compute(basis_function_random_prior_k)
+
+            # Not scheduled: see the "Halton (posterior)" case above.
+            random_posterior_kwargs = dict(k_basis_kwargs, prior_samples=None, posterior_samples=centers_pool_posterior_samples,
+                                           estimation_samples_source="posterior", method="random")
+            basis_function_random_posterior_k = basis_cls(**random_posterior_kwargs)
+            result_random_posterior_k = _compute(basis_function_random_posterior_k)
+
+            # Not scheduled: see the "K-means (likelihood maximum)" case above.
+            likelihood_kwargs = dict(k_basis_kwargs, prior_samples=None, posterior_samples=likelihood_pool_samples,
+                                     estimation_samples_source="posterior", method="kmeans")
+            basis_function_likelihood_k = basis_cls(**likelihood_kwargs)
+            result_likelihood_k = _compute(basis_function_likelihood_k)
+
+            print(
+                f"[K={K}] K-means (fresh prior): {result_kmeans_k['primal_value']:.4f}, "
+                f"Random (fresh prior): {result_random_prior_k['primal_value']:.4f}, "
+                f"Random (posterior): {result_random_posterior_k['primal_value']:.4f}, "
+                f"K-means (likelihood maximum): {result_likelihood_k['primal_value']:.4f}"
+            )
+
+            plot_sdp_density_with_centers_combined(
+                basis_functions=[
+                    basis_function_kmeans_k,
+                    basis_function_random_prior_k,
+                    basis_function_random_posterior_k,
+                    basis_function_likelihood_k,
+                ],
+                lambda_star_list=[
+                    result_kmeans_k["lambda_star"],
+                    result_random_prior_k["lambda_star"],
+                    result_random_posterior_k["lambda_star"],
+                    result_likelihood_k["lambda_star"],
+                ],
+                estimates=[
+                    result_kmeans_k["primal_value"],
+                    result_random_prior_k["primal_value"],
+                    result_random_posterior_k["primal_value"],
+                    result_likelihood_k["primal_value"],
+                ],
+                labels=["K-means (fresh prior)", "Random (fresh prior)", "Random (posterior)",
+                        "K-means (likelihood maximum)"],
+                prior_distribution=model.prior_init,
+                plot_cfg=plot_cfg,
+                output_dir=plots_output_dir,
+                filename=f"{file_prefix}_combined_K{K}.pdf",
+                domain=(-6, 12),
+                resolution=500,
+            )
 
     # Recommended centre selection (K=100): draw K_max >> K candidates from the
     # mixture alpha * posterior + (1 - alpha) * prior -- each component a fresh
     # draw, separate from the FD-estimation samples -- then select a
-    # well-spread subset of K via k-means. Compared, for several alphas,
-    # against candidates from the prior only, the posterior only, and the
-    # (in practice unknown) oracle likelihood around its maximiser theta_hat.
-    # All use k-means, so only the candidate pool differs.
+    # well-spread subset of K via k-means -- either on the pooled candidates,
+    # or stratified so that round(alpha * K) centres come from the posterior
+    # part and the rest from the prior part (see _stratified_mixture_centers;
+    # plotted separately). Compared, for several alphas, against k-means
+    # candidates from the prior only.
     #
     # Unlike the figures above, A and A_c are estimated here from larger fresh
     # prior/posterior draws (n_rec_mc each, separate from every centre pool):
@@ -655,7 +671,7 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
     # within ~1% at 500k.
     K = 100
     K_max = 10 * K
-    mixture_alphas = [0.25, 0.5, 0.75]
+    mixture_alphas = [0.25, 0.5]
     rec_basis_kwargs = dict(base_basis_kwargs, num_basis_functions=K, method="kmeans")
 
     def _mixture_pool(alpha):
@@ -665,28 +681,67 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
             centers_pool_samples[:K_max - n_post],
         ], axis=0)
 
-    rec_methods = []
+    def _stratified_mixture_centers(alpha, n_centers, min_sep, seed=27):
+        # Stratified alternative to k-means on the pooled candidates: round(alpha * K)
+        # centres by k-means on the posterior part of the pool and the rest by
+        # k-means on the prior part, so alpha is exactly the fraction of centres
+        # from the posterior. Prior centres within min_sep of a posterior centre
+        # are near-duplicates (ill-conditioning A_c); each is dropped and
+        # replaced by a random prior candidate at least min_sep from every
+        # centre kept so far.
+        from sklearn.cluster import KMeans
+
+        n_post = int(round(alpha * K_max))
+        post_part = centers_pool_posterior_samples[:n_post]
+        prior_part = centers_pool_samples[:K_max - n_post]
+        n_post_centers = int(round(alpha * n_centers))
+        n_prior_centers = n_centers - n_post_centers
+
+        post_centers = KMeans(n_clusters=n_post_centers, random_state=0).fit(post_part).cluster_centers_
+        prior_centers = KMeans(n_clusters=n_prior_centers, random_state=0).fit(prior_part).cluster_centers_
+
+        dist_to_post = np.min(np.abs(prior_centers[:, None, 0] - post_centers[None, :, 0]), axis=1)
+        keep = dist_to_post >= min_sep
+        centers = np.concatenate([post_centers, prior_centers[keep]], axis=0)
+
+        rng = np.random.default_rng(seed)
+        n_replace = int((~keep).sum())
+        for _ in range(n_replace):
+            dist_to_centers = np.min(np.abs(prior_part[:, None, 0] - centers[None, :, 0]), axis=1)
+            candidates = np.flatnonzero(dist_to_centers >= min_sep)
+            if candidates.size == 0:
+                print(f"[alpha={alpha:g}] No prior candidate at least {min_sep:.4f} from all centres; "
+                      f"using {len(centers)} centres instead of {n_centers}.")
+                break
+            centers = np.concatenate([centers, prior_part[rng.choice(candidates)][None, :]], axis=0)
+
+        print(f"[alpha={alpha:g}] Stratified centres: {n_post_centers} posterior, {n_prior_centers} prior, "
+              f"{n_replace} prior centres within {min_sep:.4f} of a posterior centre replaced.")
+        return centers
+
+    pooled_mixture_methods = []
+    stratified_mixture_methods = []
     for alpha in mixture_alphas:
         pool = _mixture_pool(alpha)
         kwargs = dict(rec_basis_kwargs, prior_samples=pool, posterior_samples=None, estimation_samples_source="prior")
         kwargs = _apply_k_schedule(kwargs, pool)
-        rec_methods.append((rf"Mixture $\alpha={alpha:g}$", basis_cls(**kwargs)))
+        pooled_mixture_methods.append((rf"$\alpha={alpha:g}$", basis_cls(**kwargs)))
 
+        basis_function = basis_cls(**kwargs)
+        # Overwrite the pooled k-means centres with the stratified ones; the
+        # (scheduled) lengthscale is kept, and centres closer than half of it
+        # count as coinciding.
+        basis_function.centers = _stratified_mixture_centers(
+            alpha, kwargs["num_basis_functions"], min_sep=0.5 * kwargs["lengthscale"],
+        )
+        stratified_mixture_methods.append((rf"$\alpha={alpha:g}$", basis_function))
+
+    baseline_methods = []
     prior_only_pool = centers_pool_samples[:K_max]
     kwargs = dict(rec_basis_kwargs, prior_samples=prior_only_pool, posterior_samples=None,
                   estimation_samples_source="prior")
     kwargs = _apply_k_schedule(kwargs, prior_only_pool)
-    rec_methods.append(("Prior only", basis_cls(**kwargs)))
-
-    # Not scheduled: see the "Halton (posterior)" case above.
-    kwargs = dict(rec_basis_kwargs, prior_samples=None, posterior_samples=centers_pool_posterior_samples[:K_max],
-                  estimation_samples_source="posterior")
-    rec_methods.append(("Posterior only", basis_cls(**kwargs)))
-
-    # Not scheduled: see the "K-means (likelihood maximum)" case above.
-    kwargs = dict(rec_basis_kwargs, prior_samples=None, posterior_samples=likelihood_pool_samples[:K_max],
-                  estimation_samples_source="posterior")
-    rec_methods.append(("Oracle likelihood", basis_cls(**kwargs)))
+    baseline_methods.append((plot_cfg.plot.param_latex_names.baseprior, basis_cls(**kwargs)))
 
     n_rec_mc = 50000
     rec_model = copy.copy(model)
@@ -703,39 +758,124 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
         )
         return optimizer.optimize_through_generalized_eigenvalue(rel_tol=1e-8)
 
-    rec_results = [_compute_rec(basis_function) for _, basis_function in rec_methods]
-    for (label, _), result in zip(rec_methods, rec_results):
+    pooled_mixture_results = [_compute_rec(basis_function) for _, basis_function in pooled_mixture_methods]
+    stratified_mixture_results = [_compute_rec(basis_function) for _, basis_function in stratified_mixture_methods]
+    baseline_results = [_compute_rec(basis_function) for _, basis_function in baseline_methods]
+    for (label, _), result in zip(
+        pooled_mixture_methods + stratified_mixture_methods + baseline_methods,
+        pooled_mixture_results + stratified_mixture_results + baseline_results,
+    ):
         print(f"[K={K}, recommended] {label}: {result['primal_value']:.4f}")
+
+    # RBF only: given the centres, the exact sensitivity S^FD(Q_r^K) =
+    # r * omega_max follows from the closed-form A (posterior) and A_c (prior)
+    # -- as in run_gaussian_priors_nonparametric_closed_form_convergence -- so
+    # the remaining gap to the plug-in value is pure Monte-Carlo error in A,
+    # A_c. Solved on A_c's well-conditioned subspace with the same rel_tol as
+    # the plug-in solve, so both sides use the same eigenproblem. The figures
+    # then show the exact value and worst-case density, not the plug-in ones.
+    sensitivity_label_key = "estimatedSensitivityMeasure"
+    if basis_funcs_type == "RBFBasisFunction":
+        from src.optimization.bnn_node_sensitivity import _ac_whitening_transform
+
+        mu_post, sigma_post2 = model.compute_posterior_params()
+
+        def _exact_rbf_result(basis_function):
+            A_exact = rbf_gaussian_gram_closed_form(
+                basis_function.centers, basis_function.lengthscale, mu=mu_post, Sigma=sigma_post2,
+            )
+            A_c_exact = rbf_gaussian_gram_closed_form(
+                basis_function.centers, basis_function.lengthscale, mu=model.prior_init.mu, Sigma=model.prior_init.var,
+            )
+            W, _ = _ac_whitening_transform(A_c_exact, rel_tol=1e-8, nugget=1e-10)
+            omega_vals, Y = np.linalg.eigh(0.5 * (W.T @ A_exact @ W + (W.T @ A_exact @ W).T))  # ascending
+            lambda_star = np.sqrt(radius) * (W @ Y[:, -1])  # A_c-normalised, scaled to the radius
+            lambda_star = OptimisationNonparametricBase._canonical_sign(lambda_star)
+            return {"primal_value": radius * float(omega_vals[-1]), "lambda_star": lambda_star}
+
+        def _exact_results(methods, plug_in_results):
+            exact_results = []
+            for (label, basis_function), result in zip(methods, plug_in_results):
+                exact = _exact_rbf_result(basis_function)
+                S_exact, S_hat = exact["primal_value"], result["primal_value"]
+                print(
+                    f"[K={K}, recommended] {label}: exact {S_exact:.4f}, plug-in {S_hat:.4f}, "
+                    f"error {abs(S_hat - S_exact):.4f} ({abs(S_hat - S_exact) / S_exact:.2%})"
+                )
+                exact_results.append(exact)
+            return exact_results
+
+        pooled_mixture_results = _exact_results(pooled_mixture_methods, pooled_mixture_results)
+        stratified_mixture_results = _exact_results(stratified_mixture_methods, stratified_mixture_results)
+        baseline_results = _exact_results(baseline_methods, baseline_results)
+        sensitivity_label_key = "sensitivityMeasure"
 
     # Population ceiling over *all* smooth perturbations (b = b_c = 0):
     # sup_f E_post|f'|^2 / E_prior|f'|^2 = sup_theta p_post / p_prior, which is
-    # proportional to the likelihood and so attained at theta_hat.
-    mu_n, sigma_n2 = model.compute_posterior_params()
-    theta_grid = np.linspace(-20, 25, 200001)[:, None]
-    log_ratio = (
-        -0.5 * (theta_grid[:, 0] - float(np.ravel(mu_n)[0])) ** 2 / float(sigma_n2)
-        - 0.5 * np.log(2 * np.pi * float(sigma_n2))
-        - np.asarray(model.prior_init.log_pdf(theta_grid)).reshape(-1)
+    # proportional to the likelihood and so attained at theta_hat. In closed
+    # form this is r * M (Thm. exact-fd-sensitivity).
+    M_closed = _closed_form_conjugate_gaussian_M(
+        mu_ref=model.prior_init.mu,
+        Sigma_ref=model.prior_init.var,
+        x_bar=model.x_bar,
+        Sigma_over_n=model.loss.var / (model.observations_num * model.loss_lr_init),
     )
-    ceiling = radius * float(np.exp(log_ratio.max()))
-    ceiling_at = float(theta_grid[np.argmax(log_ratio), 0])
+    ceiling = radius * M_closed
+    ceiling_at = float(np.asarray(model.x_bar).reshape(-1)[0])
     print(f"[K={K}, recommended] Population ceiling r * sup p_post/p_prior: {ceiling:.4f} at theta={ceiling_at:.4f}")
 
-    plot_sdp_density_with_centers_combined(
-        basis_functions=[basis_function for _, basis_function in rec_methods],
-        lambda_star_list=[result["lambda_star"] for result in rec_results],
-        estimates=[result["primal_value"] for result in rec_results],
-        labels=[label for label, _ in rec_methods],
-        prior_distribution=model.prior_init,
-        plot_cfg=plot_cfg,
-        output_dir=plots_output_dir,
-        filename=f"gaussian_1d_location_model_centers_recommended_K{K}.pdf",
-        domain=(-6, 12),
-        resolution=500,
-        colors=["#1b4f72", "#2e86c1", "#85c1e9", "#6C936C", "#d68910", "#922b21"],
-        legend_labels=True,
-        upper_bound=ceiling,
-        upper_bound_at=ceiling_at,
+    # One figure with the pooled k-means mixtures, one with the stratified
+    # mixtures; both against the same prior-only baseline.
+    for mixture_methods, mixture_results, filename in [
+        (pooled_mixture_methods, pooled_mixture_results,
+         f"{file_prefix}_recommended_K{K}.pdf"),
+        (stratified_mixture_methods, stratified_mixture_results,
+         f"{file_prefix}_recommended_stratified_K{K}.pdf"),
+    ]:
+        # Pi_ref baseline first, so it heads the legend (and the rug strips).
+        rec_methods = baseline_methods + mixture_methods
+        rec_results = baseline_results + mixture_results
+        plot_sdp_density_with_centers_combined(
+            basis_functions=[basis_function for _, basis_function in rec_methods],
+            lambda_star_list=[result["lambda_star"] for result in rec_results],
+            estimates=[result["primal_value"] for result in rec_results],
+            labels=[label for label, _ in rec_methods],
+            prior_distribution=model.prior_init,
+            plot_cfg=plot_cfg,
+            output_dir=plots_output_dir,
+            filename=filename,
+            domain=(-6, 12),
+            resolution=500,
+            colors=["#6C936C", "#ADEBDC", "#4d7298"],  # Pi_ref: palette's blue mint
+            legend_labels=True,
+            upper_bound=ceiling,
+            upper_bound_at=ceiling_at,
+            sensitivity_label_key=sensitivity_label_key,
+        )
+
+
+@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="univariate_gaussian_nonparam")
+def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: bool = False) -> None:
+    """Centre-selection comparison with the Matern basis (nu from the config) -- see _diff_center_methods."""
+    _diff_center_methods(
+        cfg, basis_funcs_type="MaternBasisFunction", file_prefix="gaussian_1d_location_model_centers",
+        save_samples=save_samples,
+    )
+
+
+@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="univariate_gaussian_nonparam")
+def run_gaussian_priors_nonparametric_diff_center_methods_rbf(cfg, save_samples: bool = False) -> None:
+    """
+    Centre-selection comparison with the RBF basis -- see _diff_center_methods.
+    Only the two recommended-centre figures (pooled and stratified mixtures)
+    are produced.
+    Since the RBF gradient Gram matrices are available in closed form under
+    the Gaussian prior/posterior, this also prints each recommended method's
+    exact sensitivity and the plug-in estimation error against it.
+    """
+    _diff_center_methods(
+        cfg, basis_funcs_type="RBFBasisFunction", file_prefix="gaussian_1d_location_model_centers_rbf",
+        save_samples=save_samples, only_recommended=True,
     )
 
 
@@ -1157,7 +1297,8 @@ def run_gaussian_priors_nonparametric_sensitivity_vs_K_combined(
     """
     Overlay the univariate and multivariate sensitivity-vs-K results (each
     produced beforehand by run_gaussian_priors_nonparametric_sensitivity_vs_K
-    for its own config) in one figure: univariate on the left y-axis,
+    for its own config) in one figure, plotted as the sieve approximation
+    error (S^FD(Q_r) - S^FD(Q_r^K)) / r: univariate on the left y-axis,
     multivariate on the right -- see plot_sensitivity_vs_basis_funcs_num_dual.
     This reads each config's cached JSON directly and does not recompute or
     instantiate any model; raises FileNotFoundError if either config's
@@ -1204,6 +1345,7 @@ def run_gaussian_priors_nonparametric_sensitivity_vs_K_combined(
         basis_funcs_nums_right=multi["basis_funcs_nums"],
         estimates_right=multi["estimates"],
         true_value_right=multi["true_sensitivity"],
+        radius=radius,
         plot_cfg=plot_cfg,
         output_dir=output_dir,
         x_log_scale=x_log_scale,
@@ -1483,23 +1625,61 @@ def run_param_nonparam_multimodality_comparison(cfg) -> None:
     )
 
 
-@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="multivariate_gaussian_nonparam")
-def run_multivariate_gaussian_diff_basis_funcs_num_runtimes(cfg, save_samples: bool = False) -> None:
+def _diff_basis_funcs_num_runtimes(
+    cfg,
+    dim_tag: str,
+    plot_tag: str,
+    seed_basis_funcs_num: list[int] | None = None,
+    basis_kwargs_overrides: dict | None = None,
+    save_samples: bool = False,
+) -> None:
     """
-    Main function to compute FD and time nonparametric optimisation for a grid of
-    basis-function counts K=[50, 100, 200], one line per total number of
-    prior+posterior samples m+l (500, 5000, 10000; m=l=(m+l)/2 each).
-    """
-    runtimes_dir = os.path.join(get_original_cwd(), "data/multivariate_gaussian/runtimes/nonparam")
-    runtimes_path = os.path.join(
-        runtimes_dir, "nonparametric_optimisation_times_diff_basis_funcs_K50_100_200_400_mplusl_500_1000_5000_10000.json"
-    )
+    Compute FD and time nonparametric optimisation for a grid of basis-function
+    counts K=[50, 100, 200, 400, 600], one line per total number of
+    prior+posterior samples m+l (500, 1000, 5000, 10000; m=l=(m+l)/2 each).
 
-    if os.path.exists(runtimes_path):
-        print(f"Found existing runtimes at {runtimes_path}, skipping computation.")
-        times_list = _json_keys_to_int(load_results_json(runtimes_path))
+    Runtimes are cached per (m+l, K) under data/{dim_tag}/runtimes/nonparam:
+    results are loaded from this grid's cache file if present, otherwise
+    seeded from the cache of the smaller K grid seed_basis_funcs_num (if
+    given and present), and only the (m+l, K) combinations still missing are
+    computed (e.g. adding a new K only times that K). basis_kwargs_overrides
+    (e.g. {"method": "random"}) is applied on top of the config's
+    basis_funcs_kwargs.
+    """
+    total_samples_list = [500, 1000, 5000, 10000]
+    basis_funcs_num = [50, 100, 200, 400, 600]
+    iters = 500
+
+    def _runtimes_filename(ks, totals):
+        return (f"nonparametric_optimisation_times_diff_basis_funcs_K{'_'.join(map(str, ks))}"
+                f"_mplusl_{'_'.join(map(str, totals))}.json")
+
+    runtimes_dir = os.path.join(get_original_cwd(), f"data/{dim_tag}/runtimes/nonparam")
+    runtimes_path = os.path.join(runtimes_dir, _runtimes_filename(basis_funcs_num, total_samples_list))
+    candidate_paths = [runtimes_path]
+    if seed_basis_funcs_num is not None:
+        candidate_paths.append(
+            os.path.join(runtimes_dir, _runtimes_filename(seed_basis_funcs_num, total_samples_list))
+        )
+
+    times_list = defaultdict(lambda: defaultdict(dict))
+    for path in candidate_paths:
+        if os.path.exists(path):
+            print(f"Loading existing runtimes from {path}.")
+            for total_m, by_k in _json_keys_to_int(load_results_json(path)).items():
+                for k, steps in by_k.items():
+                    times_list[total_m][k] = steps
+            break
+
+    missing = [
+        (total_m, k) for total_m in total_samples_list for k in basis_funcs_num
+        if len(times_list[total_m].get(k, {})) < iters
+    ]
+
+    if not missing:
+        print("All (m+l, K) runtimes already computed, skipping computation.")
     else:
-        output_dir = os.path.join(get_original_cwd(), "data/multivariate_gaussian")
+        output_dir = os.path.join(get_original_cwd(), f"data/{dim_tag}")
 
         if save_samples:
             model = instantiate(cfg.model, data_config=cfg.data)
@@ -1508,41 +1688,38 @@ def run_multivariate_gaussian_diff_basis_funcs_num_runtimes(cfg, save_samples: b
             np.save(output_dir + "/observations.npy", model.observations)
             np.save(output_dir + "/prior_samples.npy", model.prior_samples_init)
 
-        total_samples_list = [500, 1000, 5000, 10000]
-        basis_funcs_num = [50, 100, 200, 400]
-        iters = 500
-        times_list = defaultdict(lambda: defaultdict(dict))
-
         cfg.data.posterior_samples_path = None
         cfg.data.prior_samples_path = None
+        for key, value in (basis_kwargs_overrides or {}).items():
+            cfg.optimize.nonparametric.basis_funcs_kwargs[key] = value
 
-        for total_m in total_samples_list:
+        for total_m, k in missing:
             m = total_m // 2
             cfg.data.posterior_samples_num = m
             cfg.data.prior_samples_num = m
-            for k in basis_funcs_num:
-                cfg.optimize.nonparametric.basis_funcs_kwargs["num_basis_functions"] = k
-                for step in range(iters):
-                    print(f"Total samples (m+l) = {total_m}, basis funcs = {k}, step={step}.")
-                    model = instantiate(cfg.model, data_config=cfg.data)
-                    model.posterior_samples_init = model.sample_posterior(n_samples=m)
-                    model.prior_samples_init = model.sample_from_base_prior(n_samples=m)
-                    model.m = m
-                    model.m_prior = m
-                    estimator_prior = PriorFDNonParametric(model=model)
-                    estimator_posterior = PosteriorFDNonParametric(model=model)
-                    start = time.perf_counter()
-                    optimizer = OptimisationNonparametricBase(
-                        estimator_posterior,
-                        estimator_prior,
-                        cfg.optimize.nonparametric,
-                        radius=5.0
-                    )
-                    _ = optimizer.optimize_through_generalized_eigenvalue()
-                    elapsed = time.perf_counter() - start
-                    times_list[total_m][k][step] = elapsed
-
-        save_to_serializable_json(times_list, runtimes_path)
+            cfg.optimize.nonparametric.basis_funcs_kwargs["num_basis_functions"] = k
+            times_list[total_m][k] = {}
+            for step in range(iters):
+                print(f"Total samples (m+l) = {total_m}, basis funcs = {k}, step={step}.")
+                model = instantiate(cfg.model, data_config=cfg.data)
+                model.posterior_samples_init = model.sample_posterior(n_samples=m)
+                model.prior_samples_init = model.sample_from_base_prior(n_samples=m)
+                model.m = m
+                model.m_prior = m
+                estimator_prior = PriorFDNonParametric(model=model)
+                estimator_posterior = PosteriorFDNonParametric(model=model)
+                start = time.perf_counter()
+                optimizer = OptimisationNonparametricBase(
+                    estimator_posterior,
+                    estimator_prior,
+                    cfg.optimize.nonparametric,
+                    radius=5.0
+                )
+                _ = optimizer.optimize_through_generalized_eigenvalue()
+                elapsed = time.perf_counter() - start
+                times_list[total_m][k][step] = elapsed
+            # Save after each (m+l, K) so an interrupted run keeps finished combinations.
+            save_to_serializable_json(times_list, runtimes_path)
 
     plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
     output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
@@ -1551,7 +1728,34 @@ def run_multivariate_gaussian_diff_basis_funcs_num_runtimes(cfg, save_samples: b
         times_list,
         plot_cfg,
         output_dir,
-        filename="gaussian_2d_location_model_runtime_diff_basis_funcs_nums_diff_samples.pdf",
+        filename=f"{plot_tag}_runtime_diff_basis_funcs_nums_diff_samples.pdf",
+    )
+
+
+@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="multivariate_gaussian_nonparam")
+def run_multivariate_gaussian_diff_basis_funcs_num_runtimes(cfg, save_samples: bool = False) -> None:
+    """
+    Runtime of nonparametric optimisation vs K for the multivariate Gaussian
+    model -- see _diff_basis_funcs_num_runtimes. Seeded from the earlier
+    K<=400 cache, so only K=600 needed computing on top of it.
+    """
+    _diff_basis_funcs_num_runtimes(
+        cfg, dim_tag="multivariate_gaussian", plot_tag="gaussian_2d_location_model",
+        seed_basis_funcs_num=[50, 100, 200, 400], save_samples=save_samples,
+    )
+
+
+@hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="univariate_gaussian_nonparam")
+def run_univariate_gaussian_diff_basis_funcs_num_runtimes(cfg, save_samples: bool = False) -> None:
+    """
+    Runtime of nonparametric optimisation vs K for the univariate Gaussian
+    model -- see _diff_basis_funcs_num_runtimes. Centres are selected at
+    random (i.i.d. subsample) rather than via the config's k-means, so the
+    timed optimisation doesn't include k-means clustering cost.
+    """
+    _diff_basis_funcs_num_runtimes(
+        cfg, dim_tag="univariate_gaussian", plot_tag="gaussian_1d_location_model",
+        basis_kwargs_overrides={"method": "random"}, save_samples=save_samples,
     )
 
 
@@ -1574,9 +1778,10 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
     Validates the closed-form FDsens+ sensitivity for the RBF kernel with a
     Gaussian reference prior/posterior against its Monte-Carlo (plug-in)
     estimate, and plots the absolute error between the two as a function of
-    the number of posterior samples m = number of prior samples l, averaged
-    (with +/- 1 sem band) over independent resamples at each sample size.
-    The error is expected to shrink as m = l grows.
+    the number of posterior samples m (from m = 3000), averaged (with +/- 1
+    sem band) over independent resamples at each sample size, with one line
+    per allocation of prior samples l: m = l, m = l^(3/2) and m = 3l.
+    The error is expected to shrink as m grows.
 
     Since prior and posterior are both exactly Gaussian for this conjugate
     toy model, S^FD(Q_r^K) = r * gamma_max can be computed exactly from A,
@@ -1732,6 +1937,23 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
 
     errors_by_l = _load_or_compute(errors_path, [(int(l), int(l)) for l in sample_sizes])
 
+    # Other allocations of posterior (m) vs prior (l) samples, all indexed by
+    # m on the x-axis: m = l^(3/2) (l = m^(2/3)) and m = 3l (l = m/3). Each
+    # is cached to its own file next to the m = l one.
+    m_grid = [int(m) for m in sample_sizes if m >= 3000]
+    relations = [
+        (r"$m = l$", None, lambda m: m),
+        (r"$m = l^{3/2}$", "m_eq_l_pow_3_2", lambda m: int(round(m ** (2.0 / 3.0)))),
+        (r"$m = 3l$", "m_eq_3l", lambda m: int(round(m / 3.0))),
+    ]
+    errors_by_relation = {}
+    for label, suffix, l_of_m in relations:
+        if suffix is None:
+            errors_by_relation[label] = errors_by_l
+            continue
+        path = os.path.join(errors_dir, f"closed_form_convergence_errors_K{centers.shape[0]}_{suffix}.json")
+        errors_by_relation[label] = _load_or_compute(path, [(m, l_of_m(m)) for m in m_grid])
+
     def _mean_sem(values: list) -> tuple[float, float]:
         arr = np.asarray(values, dtype=float)
         return float(arr.mean()), float(arr.std() / np.sqrt(len(arr)))
@@ -1747,16 +1969,22 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
     output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
     plot_cfg = load_plot_config(plot_config_path)
 
+    # Sensitivity errors divided by r, so the plotted error is independent of the radius.
+    sensitivity_series = {}
+    for label, errors in errors_by_relation.items():
+        means, sems = _series_for(errors, m_grid, [(label, "full")])[label]
+        sensitivity_series[label] = ([v / radius for v in means], [v / radius for v in sems])
+
     plot_closed_form_sensitivity_error(
-        sample_sizes=sample_sizes,
-        series=_series_for(errors_by_l, sample_sizes, [
-            (r"Full plug-in ($\widehat A$, $\widehat A_c$)", "full"),
-        ]),
+        sample_sizes=m_grid,
+        series=sensitivity_series,
         plot_cfg=plot_cfg,
         output_dir=output_dir,
         filename=f"{plot_tag}_closed_form_convergence.pdf",
-        xlabel=r"$m = l$",
+        ylabel=r"$|S^{\mathrm{FD}}(\mathcal{Q}_r^K) - \widehat{S}_m^{\mathrm{FD}}(\widehat{\mathcal{Q}}_r^{K,l})| / r$",
+        xlabel=r"$m$",
         y_bottom=0.0,
+        ylabel_fontsize_scale=0.7,
     )
 
     plot_closed_form_sensitivity_error(
@@ -1790,10 +2018,12 @@ if __name__ == "__main__":
     # run_gaussian_priors_nonparametric()
     # run_multivariate_gaussian_priors_nonparametric()
     # run_gaussian_priors_nonparametric_diff_radii()
-    run_gaussian_priors_nonparametric_diff_center_methods()
+    # run_gaussian_priors_nonparametric_diff_center_methods()
+    # run_gaussian_priors_nonparametric_diff_center_methods_rbf()
     # run_gaussian_priors_nonparametric_diff_kernels()
     # run_multivariate_gaussian_priors_nonparametric_diff_radii()
     # run_gaussian_priors_nonparametric_sensitivity_vs_K()
     # run_gaussian_priors_nonparametric_sensitivity_vs_K_combined()
     # run_gaussian_priors_nonparametric_closed_form_convergence()
     # run_multivariate_gaussian_diff_basis_funcs_num_runtimes()
+    run_univariate_gaussian_diff_basis_funcs_num_runtimes()

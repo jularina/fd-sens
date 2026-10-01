@@ -93,11 +93,14 @@ plot:
     r: "r"
     numPosteriorSamples: "m"
     numPriorPosteriorSamples: "m+l"
+    numPriorPosteriorSamplesEach: "n=m"
     estimatedFDposteriorsShort: "$\\mathrm{FD}_{\\mathrm{post}}$"
     estimatedFDposteriorsQuadraticForm: "$\\hat{\\rho}_m^{FD}(\\tilde{\\Pi}^{\\lambda_L})$"
     fDposteriorsQuadraticForm: "$\\rho^{FD}(\\tilde{\\Pi})$"
     estimatedFDposteriorsQuadraticFormWithK: "$\\hat{\\rho}_m^{FD}(\\tilde{\\Pi}_K)$"
     estimatedSensitivityMeasure: "$\\widehat{S}_m^{\\mathrm{FD}}(\\widehat{\\mathcal{Q}}_{r}^{K,l})$"
+    sensitivityMeasure: "$S^{\\mathrm{FD}}(\\mathcal{Q}_{r}^{K})$"
+    sensitivityMeasureFull: "$S^{\\mathrm{FD}}(\\mathcal{Q}_{r})$"
 
   y_axis:
     log_scale: false

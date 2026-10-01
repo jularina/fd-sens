@@ -1289,6 +1289,7 @@ def plot_sdp_density_with_centers_combined(
     legend_labels: bool = False,
     upper_bound: float = None,
     upper_bound_at: float = None,
+    sensitivity_label_key: str = "estimatedSensitivityMeasure",
 ) -> None:
     """
     Combined figure for several centre-selection methods: one main panel
@@ -1304,11 +1305,15 @@ def plot_sdp_density_with_centers_combined(
     of the estimate alone.
     upper_bound / upper_bound_at: optional known ceiling on the sensitivity
     and the theta where it is attained -- drawn as a dotted vertical line at
-    upper_bound_at, with its value as an extra legend entry.
+    upper_bound_at, with its value as an extra legend entry labelled
+    with sensitivityMeasureFull, S^FD(Q_r).
+    sensitivity_label_key: key in plot_cfg.plot.param_latex_names for the
+    legend title -- the plug-in estimate by default, "sensitivityMeasure"
+    when the estimates passed in are exact values.
     """
     os.makedirs(output_dir, exist_ok=True)
     plt.rcParams.update({
-        "font.size": plot_cfg.plot.font.size,
+        "font.size": plot_cfg.plot.font.size*1.2,
         "font.family": plot_cfg.plot.font.family,
         "text.usetex": plot_cfg.plot.font.use_tex,
         "text.latex.preamble": r"\usepackage{amsmath}",
@@ -1325,13 +1330,14 @@ def plot_sdp_density_with_centers_combined(
         palette = ["C0", "C1", "C2", "C3", "C4", "C5"]
 
     names = plot_cfg.plot.param_latex_names
-    fd_label = names.get("estimatedSensitivityMeasure")
+    fd_label = names.get(sensitivity_label_key)
+    upper_bound_label = names.get("sensitivityMeasureFull", "Upper bound")
     xlabel = names.get("theta")
     ylabel_density = names.get("nonparametric_prior", "Density")
 
     fig, axes = plt.subplots(
         n + 1, 1,
-        figsize=(5.0,
+        figsize=(4.0,
                  plot_cfg.plot.figure.size.height * 0.8 * (1 + 0.05 * n)),
         dpi=plot_cfg.plot.figure.dpi,
         gridspec_kw={"height_ratios": [6] + [0.5] * n, "hspace": 0.15},
@@ -1363,7 +1369,7 @@ def plot_sdp_density_with_centers_combined(
     if upper_bound is not None:
         bound_line = ax_density.axvline(
             upper_bound_at, linestyle=":", linewidth=1.0, color="grey",
-            label=rf"Upper bound: {upper_bound:.1f}" if legend_labels else rf"{upper_bound:.1f}",
+            label=rf"{upper_bound_label}: {upper_bound:.1f}" if legend_labels else rf"{upper_bound:.1f}",
         )
         density_lines.append(bound_line)
     ax_density.set_ylabel(ylabel_density)
@@ -3292,7 +3298,7 @@ def plot_runtime_nonparametric_diff_basis_funcs_num_diff_samples_with_ci(
         return default if cur is None else cur
 
     plt.rcParams.update({
-        "font.size": _deep_get(plot_cfg, "plot.font.size", 12),
+        "font.size": _deep_get(plot_cfg, "plot.font.size", 12)*1.0,
         "font.family": _deep_get(plot_cfg, "plot.font.family", "serif"),
         "text.usetex": bool(_deep_get(plot_cfg, "plot.font.use_tex", False)),
         "text.latex.preamble": r"\usepackage{amsmath}",
@@ -3308,9 +3314,11 @@ def plot_runtime_nonparametric_diff_basis_funcs_num_diff_samples_with_ci(
     tight = bool(_deep_get(plot_cfg, "plot.figure.tight_layout", True))
 
     names = _deep_get(plot_cfg, "plot.param_latex_names", {}) or {}
-    x_label = names.get("K")
+    x_label = r"$K$"
     y_label = names.get("runtimeSeconds", "Time (sec.)")
-    legend_prefix = names.get("numPriorPosteriorSamples", "m+l")
+    # Keys of times_nonparametric are the total m+l; the legend shows the
+    # per-set count n=m=(m+l)/2 instead.
+    legend_prefix = names.get("numPriorPosteriorSamplesEach", "n=m")
 
     # Colors
     palette = list(getattr(_deep_get(plot_cfg, "plot.color_palette", {}), "colors", []))
@@ -3360,7 +3368,7 @@ def plot_runtime_nonparametric_diff_basis_funcs_num_diff_samples_with_ci(
             basis_funcs_nums = xs
 
         color = palette[i % len(palette)]
-        label = rf"{legend_prefix}={m}"
+        label = rf"{legend_prefix}={_to_int(m) // 2}"
         h_line = ax.plot(
             xs, means,
             marker=marker, markersize=ms, linewidth=lw,
@@ -4556,6 +4564,7 @@ def plot_closed_form_sensitivity_error(
     y_log_scale: bool = False,
     series_x: dict[str, list[int]] | None = None,
     y_bottom: float | None = None,
+    ylabel_fontsize_scale: float = 0.8,
 ) -> None:
     """
     Plot (x-axis linear, y-axis log10 if y_log_scale=True) of the absolute
@@ -4617,7 +4626,7 @@ def plot_closed_form_sensitivity_error(
     elif y_bottom is not None:
         ax.set_ylim(bottom=y_bottom)
     ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel, fontsize=plt.rcParams["font.size"] * 0.8, y=0.4)
+    ax.set_ylabel(ylabel, fontsize=plt.rcParams["font.size"] * ylabel_fontsize_scale, y=0.4)
     ax.grid(True, which="both", alpha=0.3)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -4709,20 +4718,24 @@ def plot_sensitivity_vs_basis_funcs_num_dual(
     basis_funcs_nums_right: list[int],
     estimates_right: list[float],
     true_value_right: float,
+    radius: float,
     plot_cfg,
     output_dir: str,
     filename: str = "gaussian_sensitivity_vs_K_univariate_vs_multivariate.pdf",
     xlabel: str = r"$K$",
-    ylabel_left: str = r"$\widehat{S}^{\mathrm{FD}}_m(\widehat{\mathcal{Q}}_r^{K,l})$",
+    ylabel_left: str = r"$(S^{\mathrm{FD}}(\mathcal{Q}_r) - S^{\mathrm{FD}}(\mathcal{Q}_r^{K})) / r$",
     x_log_scale: bool = True,
 ) -> None:
     """
-    Overlay the univariate and multivariate sensitivity-vs-K sieve curves
-    (each with its own closed-form true-value reference line) in one figure
-    on a shared x-axis (K), with the univariate series on the left y-axis
-    and the multivariate series on the right y-axis -- the two live on very
-    different scales (see run_gaussian_priors_nonparametric_sensitivity_vs_K),
-    so sharing one y-axis would flatten one of them unreadably.
+    Overlay the univariate and multivariate sieve approximation errors
+    S^FD(Q_r) - S^FD(Q_r^K) (closed-form true value minus the closed-form
+    sieve sensitivity; non-negative, since the sieve sensitivity
+    lower-bounds the true one) against K in one figure on a shared x-axis,
+    with the univariate series on the left y-axis and the multivariate
+    series on the right y-axis -- the two live on very different scales
+    (see run_gaussian_priors_nonparametric_sensitivity_vs_K), so sharing one
+    y-axis would flatten one of them unreadably. Both errors are divided by
+    the radius r, so the plotted quantity is independent of the FD budget.
     """
     os.makedirs(output_dir, exist_ok=True)
     plt.rcParams.update({
@@ -4746,17 +4759,18 @@ def plot_sensitivity_vs_basis_funcs_num_dual(
     )
     ax_right = ax_left.twinx()
 
+    errors_left = (true_value_left - np.asarray(estimates_left, dtype=float)) / radius
+    errors_right = (true_value_right - np.asarray(estimates_right, dtype=float)) / radius
+
     ax_left.plot(
-        basis_funcs_nums_left, estimates_left, marker="o", markersize=2,
+        basis_funcs_nums_left, errors_left, marker="o", markersize=2,
         linewidth=1.0, color=color_left,
     )
-    ax_left.axhline(true_value_left, linestyle="--", linewidth=1.0, color=color_left, alpha=0.7)
 
     ax_right.plot(
-        basis_funcs_nums_right, estimates_right, marker="s", markersize=2,
+        basis_funcs_nums_right, errors_right, marker="s", markersize=2,
         linewidth=1.0, color=color_right,
     )
-    ax_right.axhline(true_value_right, linestyle="--", linewidth=1.0, color=color_right, alpha=0.7)
 
     if x_log_scale:
         ax_left.set_xscale("log")
@@ -4768,17 +4782,9 @@ def plot_sensitivity_vs_basis_funcs_num_dual(
         max_K = max(max(basis_funcs_nums_left), max(basis_funcs_nums_right))
         ax_left.set_xlim(right=10 ** np.ceil(np.log10(max_K)) * 1.2)
     ax_left.set_xlabel(xlabel)
-    ax_left.set_ylabel(ylabel_left, fontsize=plt.rcParams["font.size"] * 0.85, color="black")
+    ax_left.set_ylabel(ylabel_left, fontsize=plt.rcParams["font.size"] * 0.7, color="black")
     ax_left.spines["top"].set_visible(False)
     ax_right.spines["top"].set_visible(False)
-
-    y_left_bottom, y_left_top = ax_left.get_ylim()
-    y_left_top = max(y_left_top, true_value_left * 1.15)
-    ax_left.set_ylim(y_left_bottom, y_left_top)
-
-    y_right_bottom, y_right_top = ax_right.get_ylim()
-    y_right_top = max(y_right_top, true_value_right * 1.15)
-    ax_right.set_ylim(y_right_bottom, y_right_top)
 
     if getattr(plot_cfg.plot.figure, "tight_layout", False):
         plt.tight_layout()

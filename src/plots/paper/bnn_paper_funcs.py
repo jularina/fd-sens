@@ -47,7 +47,7 @@ def plot_bnn_weight_heatmaps(
     output_dir: str,
     filename: str = "bnn_weight_heatmaps.pdf",
     cmap: Any = BNN_HEATMAP_CMAP,
-    value_label: str = r"$\widehat{S}_m^{\FD}(\widehat{\mathcal{Q}}_{r_j}^{j, K,l})$",
+    value_label: str = "Estimated per-parameter sensitivity",
 ) -> None:
     """
     One heatmap per 2D weight tensor (output units x input units/features).
@@ -65,8 +65,11 @@ def plot_bnn_weight_heatmaps(
     fig_dpi = int(_deep_get(plot_cfg, "plot.figure.dpi", 150))
 
     n = len(tensors)
-    fig = plt.figure(figsize=(n * fig_w * 1.0, fig_h * 1.3), dpi=fig_dpi)
-    gs_outer = fig.add_gridspec(2, n, height_ratios=[4, 1], hspace=0.5, wspace=0.3)
+    # Marginal-bar row is 1.5x the colorbar's original thickness; the
+    # colorbar keeps that original thickness via a sub-gridspec (see below).
+    marginal_ratio = 1.5
+    fig = plt.figure(figsize=(n * fig_w * 1.0, fig_h * 1.4), dpi=fig_dpi)
+    gs_outer = fig.add_gridspec(2, n, height_ratios=[4, marginal_ratio], hspace=0.5, wspace=0.3)
 
     matrices = [np.asarray(t["matrix"], dtype=float) for t in tensors]
     vmin = min(M.min() for M in matrices)
@@ -101,7 +104,19 @@ def plot_bnn_weight_heatmaps(
             ax_col.set_ylabel(r"$\%$")
             if t.get("col_names"):
                 ax_col.set_xticks(np.arange(n_cols))
-                ax_col.set_xticklabels(t["col_names"], rotation=90, fontsize=plt.rcParams["font.size"] * 0.7)
+                # Bold the name of the largest-share column. Baked into the
+                # label string (\textbf under usetex, where fontweight is
+                # ignored) since tick Text objects are regenerated at draw time.
+                top_col = int(np.argmax(col_pct))
+                usetex = plt.rcParams["text.usetex"]
+                col_tick_names = [
+                    rf"\textbf{{{name}}}" if (usetex and c == top_col) else str(name)
+                    for c, name in enumerate(t["col_names"])
+                ]
+                col_tick_labels = ax_col.set_xticklabels(
+                    col_tick_names, rotation=90, fontsize=plt.rcParams["font.size"] * 0.7
+                )
+                col_tick_labels[top_col].set_fontweight("bold")
                 ax_col.set_xticks(np.arange(-0.5, n_cols, 1), minor=True)
                 ax_col.tick_params(axis="x", which="minor", length=3)
             else:
@@ -122,7 +137,10 @@ def plot_bnn_weight_heatmaps(
     if no_marginal_idxs:
         # One shared horizontal colorbar spanning all panels without their own
         # marginal bar (e.g. L2, L4), at the same row as the L0 marginal bar.
-        cax = fig.add_subplot(gs_outer[1, no_marginal_idxs[0]:no_marginal_idxs[-1] + 1])
+        gs_cbar = gs_outer[1, no_marginal_idxs[0]:no_marginal_idxs[-1] + 1].subgridspec(
+            2, 1, height_ratios=[1, marginal_ratio - 1], hspace=0
+        )
+        cax = fig.add_subplot(gs_cbar[0])
         cb = fig.colorbar(im, cax=cax, orientation="horizontal")
         cb.set_label(value_label, fontsize=plt.rcParams["font.size"] * 0.9)
         cax.spines["top"].set_visible(False)

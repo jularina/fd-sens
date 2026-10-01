@@ -17,29 +17,55 @@ from src.utils.basis_functions import BASIS_FUNCTIONS_REGISTRY
 from src.utils.files_operations import load_plot_config
 from src.distributions.gaussian import Gaussian
 from src.distributions.cauchy import HalfCauchy
-from src.plots.paper.posterior_db_paper_funcs import _apply_plot_rc, _save_fig
+from src.plots.paper.posterior_db_paper_funcs import (
+    _apply_plot_rc,
+    _save_fig,
+    plot_posterior_predictive_with_data,
+)
 
 from tests.posteriordb.run_ark_kilpisjarvi import (
     x_years,
     y,
     y_centered,
     _gaussian_from_eta,
-    _param_reweight_posterior,
     _ar_posterior_predictive,
     _summarise_bands,
+    _load_corner_draws_json,
+    _stack_corner_chains,
     print_predictive_variance_decomposition,
 )
 from tests.posteriordb.run_ark_kilpisjarvi_nonparam import (
     _to_z_space,
     _log_kef_density_ratio,
+    _fd_z_posterior_gaussian_in_z,
+    _export_kef_stan_data,
+    _PIT_EPS,
     COMPONENT_ORDER,
     LATEX_NAMES,
     compute_uniform_z_neighbourhood_parametric_sensitivity,
     compute_uniform_z_neighbourhood_prior_fd,
     compute_nonparametric_sensitivity_at_radii,
 )
+from src.utils.files_operations import save_to_serializable_json
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Shared z-space parametric neighbourhood Gamma_{z,j} (identical for every
+# component) and where the Stan data / draws for the "both in z-scale"
+# posterior-predictive comparison live -- see
+# tests/posteriordb/run_kilpisjarvi_param_vs_nonparam_predictive.sh.
+Z_MU_RANGE = (-0.4, 0.4)
+Z_SIGMA_RANGE = (0.8, 1.25)
+Z_SCALE_STAN_DIR = os.path.join(REPO_ROOT, "outputs/paper/results/kilpisjarvi/param_vs_nonparam/stan")
+
+
+def _z_box_tag(mu_z_range=Z_MU_RANGE, sigma_z_range=Z_SIGMA_RANGE) -> str:
+    """Filename suffix for a z-space box: "" for the paper's default box, so
+    its outputs keep their names; otherwise e.g. "_mu1_sig0.5-2"."""
+    if tuple(mu_z_range) == Z_MU_RANGE and tuple(sigma_z_range) == Z_SIGMA_RANGE:
+        return ""
+    return f"_mu{mu_z_range[1]:g}_sig{sigma_z_range[0]:g}-{sigma_z_range[1]:g}"
+
 
 # Box for sigma's black-box corner search (see _find_sigma_corner_black_box):
 # candidate Half-Cauchy scale gamma_cand can shrink to 1/5 or grow to 5x the
@@ -334,6 +360,54 @@ def run_parametric_optimisation(cfg_param):
     return model, alpha_cand, beta_cands, sigma_cand, fd_z, total_radius, param_dists, posterior_sup
 
 
+def _uniform_z_worst_case_corners(loader, mu_z_range=Z_MU_RANGE, sigma_z_range=Z_SIGMA_RANGE) -> dict:
+    """
+    Per component, the Gaussian-in-z corner (mu_z, sigma_z) of the shared
+    z-space box attaining the posterior-based FD_z sup -- i.e. the argmax
+    behind compute_uniform_z_neighbourhood_parametric_sensitivity's values
+    (same 4 vertices, same objective). Returns {name: (mu_z, sigma_z, fd_z)}.
+    """
+    corners = [(mu, sig) for mu in mu_z_range for sig in sigma_z_range]
+    worst = {}
+    for group_name in loader.param_groups:
+        g = loader.groups[group_name]
+        posterior = np.asarray(g["posterior"], dtype=float)
+        for local_idx, node_name in enumerate(g["node_names"]):
+            z_post = _to_z_space(g["prior_dist"], posterior[:, local_idx])
+            z_mean, z_meansq = float(np.mean(z_post)), float(np.mean(z_post ** 2))
+            vals = [_fd_z_posterior_gaussian_in_z(mu, sig, z_mean, z_meansq) for mu, sig in corners]
+            best = int(np.argmax(vals))
+            worst[node_name] = (corners[best][0], corners[best][1], float(vals[best]))
+    return worst
+
+
+def _export_param_z_stan_data(worst_corners: dict, loader, y_full: np.ndarray, K: int, path: str) -> None:
+    """
+    Stan data (see tests/posteriordb/stan/kilpisjarvi_ark_param_z.stan) for
+    sampling the posterior under the parametric worst-case prior of the
+    shared z-space box: per component, z_j ~ N(mu_z_j, sigma_z_j^2) pushed
+    back through the reference PIT.
+    """
+    ref = {name: loader.groups[g]["prior_dist"] for g in loader.param_groups
+           for name in loader.groups[g]["node_names"]}
+    y_full = np.asarray(y_full, dtype=float).reshape(-1)
+    save_to_serializable_json(
+        {
+            "K": int(K),
+            "T": int(len(y_full)),
+            "y": y_full,
+            "mu_ref": [float(ref[n].mu) for n in COMPONENT_ORDER[:-1]],
+            "sigma_ref": [float(ref[n].sigma) for n in COMPONENT_ORDER[:-1]],
+            "gamma_sigma": float(ref["sigma"].gamma),
+            "pit_eps": _PIT_EPS,
+            "mu_z": [float(worst_corners[n][0]) for n in COMPONENT_ORDER],
+            "sigma_z": [float(worst_corners[n][1]) for n in COMPONENT_ORDER],
+        },
+        path,
+    )
+    print(f"Saved Stan data for parametric z-space worst-case prior to {path}")
+
+
 def _kef_reweight_posterior_own_radii(node_records, loader, posterior_full, prior_samples_z_by_group, rng):
     """
     Like run_ark_kilpisjarvi_nonparam.py's _kef_reweight_posterior, but each
@@ -494,7 +568,8 @@ def plot_component_sensitivity_bar_param_vs_nonparam(
 
     compact: if True, drops the sensitivity x-labels under each bar and puts
     the FDsens/FDsens+ titles to the left of their bars rather than above
-    them, making the bars narrower.
+    them, making the bars narrower; x tick labels appear only under the bottom
+    bar and the vertical gap between bars is minimised.
     """
     _apply_plot_rc(plot_cfg)
     # \FD is not a standard LaTeX command -- _apply_plot_rc's preamble only
@@ -506,7 +581,7 @@ def plot_component_sensitivity_bar_param_vs_nonparam(
     n_panels = 3 if percentages_omega_max is not None else 2
     fig, axes = plt.subplots(
         n_panels, 1,
-        figsize=(plot_cfg.plot.figure.size.width*1.2, plot_cfg.plot.figure.size.height * (n_panels * 0.35)),
+        figsize=(plot_cfg.plot.figure.size.width*1.2, plot_cfg.plot.figure.size.height * (n_panels * 0.3)),
         dpi=plot_cfg.plot.figure.dpi,
     )
     ylabel_param = r"$\widehat{S}_m^{\FD}(\Gamma_j)$ \%"
@@ -525,7 +600,11 @@ def plot_component_sensitivity_bar_param_vs_nonparam(
             title_left=compact,
         )
 
-    fig.tight_layout(h_pad=0.6, pad=0.3)
+    if compact:
+        # 0%/100% tick labels only under the bottom bar; upper bars keep bare tick marks.
+        for ax in axes[:-1]:
+            ax.tick_params(axis="x", labelbottom=False)
+    fig.tight_layout(h_pad=0.0 if compact else 0.6, pad=0.3)
     _save_fig(fig, output_dir, filename, plot_cfg)
     plt.close(fig)
     print(f"Saved plot to {os.path.join(output_dir, filename)}")
@@ -640,49 +719,33 @@ def plot_worst_case_priors_param_vs_nonparam(
     print(f"Saved plot to {os.path.join(output_dir, filename)}")
 
 
-def plot_posterior_predictive_three_way(
+def plot_posterior_predictive_means(
     plot_cfg,
     output_dir: str,
     x_years: np.ndarray,
     y_uncentered: np.ndarray,
     x_pred_years: np.ndarray,
-    ref_mean, ref_lo, ref_hi,
-    param_mean, param_lo, param_hi,
-    kef_mean, kef_lo, kef_hi,
+    means: dict,
     filename: str,
 ) -> None:
-    """One figure overlaying reference, parametric-corner and nonparametric
-    KEF-worst-case posterior predictives (means + 95% bands) against the
-    observed data."""
+    """One figure overlaying posterior-predictive means only (no credible
+    bands) against the observed data; `means` maps legend label -> mean,
+    the first entry (the reference) drawn dashed. Colours follow the plot
+    config palette in order."""
     _apply_plot_rc(plot_cfg)
     os.makedirs(output_dir, exist_ok=True)
+    palette = list(plot_cfg.plot.color_palette.colors)
 
     fig, ax = plt.subplots(
         figsize=(plot_cfg.plot.figure.size.width * 1.4, plot_cfg.plot.figure.size.height),
         dpi=plot_cfg.plot.figure.dpi,
     )
-
     ax.scatter(x_years, y_uncentered, color="black", marker="x", s=14, zorder=5, label=r"$x$")
-
-    ref_color, param_color, kef_color = "#7c397d", "#5b9bd5", "#e08214"
-
-    ax.fill_between(x_pred_years, ref_lo, ref_hi, color=ref_color, alpha=0.15, zorder=1)
-    ax.plot(
-        x_pred_years, ref_mean, color=ref_color, linewidth=1.2, linestyle="--", zorder=4,
-        label=r"$\tilde{x}_{\mathrm{ref}}$",
-    )
-
-    ax.fill_between(x_pred_years, param_lo, param_hi, color=param_color, alpha=0.20, zorder=2)
-    ax.plot(
-        x_pred_years, param_mean, color=param_color, linewidth=1.3, zorder=4,
-        label=r"$\tilde{x}_{\mathrm{param}}$",
-    )
-
-    ax.fill_between(x_pred_years, kef_lo, kef_hi, color=kef_color, alpha=0.20, zorder=3)
-    ax.plot(
-        x_pred_years, kef_mean, color=kef_color, linewidth=1.3, zorder=4,
-        label=r"$\tilde{x}_{\mathrm{KEF}}$",
-    )
+    for i, (label, mean) in enumerate(means.items()):
+        ax.plot(
+            x_pred_years, mean, color=palette[i % len(palette)], linewidth=1.3,
+            linestyle="--" if i == 0 else "-", zorder=4, label=label,
+        )
 
     ax.set_xlabel("Year")
     ax.set_ylabel("Temperature (°C)")
@@ -695,10 +758,12 @@ def plot_posterior_predictive_three_way(
     )
 
     _save_fig(fig, output_dir, filename, plot_cfg)
+    plt.close(fig)
     print(f"Saved plot to {os.path.join(output_dir, filename)}")
 
 
-def main() -> None:
+def main(mu_z_range=Z_MU_RANGE, sigma_z_range=Z_SIGMA_RANGE) -> None:
+    tag = _z_box_tag(mu_z_range, sigma_z_range)
     cfg_param, cfg_nonparam = _load_configs()
 
     print("=== Parametric worst-case corner (per-component radii) ===")
@@ -708,20 +773,6 @@ def main() -> None:
     K = sum(1 for name in model.prior_init.names if name.startswith("beta"))
     posterior_full = model.posterior_samples_init  # (N, 2+K): alpha, beta[1..K], sigma
     seed = int(cfg_param.data.get("seed", 0))
-
-    print("\n=== Parametric worst-case posterior (SNIS-reweighted) ===")
-    base_prior = instantiate(cfg_param.data.base_prior)
-    base_prior_dists = dict(zip(base_prior.names, base_prior.components))
-    candidate_prior_dists = {"alpha": alpha_cand, **beta_cands, "sigma": sigma_cand}
-    rng = np.random.default_rng(seed)
-    param_samples, ess, ess_frac = _param_reweight_posterior(
-        base_prior_dists, candidate_prior_dists, posterior_full, K, rng,
-    )
-    print(
-        f"SNIS reweighting to parametric corner posterior: ESS={ess:.1f}/{len(posterior_full)} "
-        f"({100.0 * ess_frac:.1f}%)"
-        + ("  [LOW ESS -- reweighting unreliable]" if ess_frac < 0.05 else "")
-    )
 
     print("\n=== Nonparametric KEF worst-case at each component's own parametric-implied radius ===")
     kef_samples, node_records = run_nonparametric_with_own_radii(cfg_nonparam, fd_z, posterior_full, seed)
@@ -753,39 +804,9 @@ def main() -> None:
             f"omega_max={percentages_omega_max[name]:.1f}% (omega_max={omega_max_by_name[name]:.6g})"
         )
 
-    y_full = y_centered
-    y_mean_offset = float(np.mean(y))
-    x_pred_years = x_years[K:]
-    mode = "one_step"
-
-    print_predictive_variance_decomposition(y_full, posterior_full, K, name="reference posterior")
-    print_predictive_variance_decomposition(y_full, param_samples, K, name="parametric worst-case posterior")
-    print_predictive_variance_decomposition(y_full, kef_samples, K, name="nonparametric KEF worst-case posterior")
-
-    y_rep_ref = _ar_posterior_predictive(y_full=y_full, samples=posterior_full, K=K, mode=mode, seed=seed)
-    ref_mean, ref_lo, ref_hi = _summarise_bands(y_rep_ref)
-
-    y_rep_param = _ar_posterior_predictive(y_full=y_full, samples=param_samples, K=K, mode=mode, seed=seed)
-    param_mean, param_lo, param_hi = _summarise_bands(y_rep_param)
-
-    y_rep_kef = _ar_posterior_predictive(y_full=y_full, samples=kef_samples, K=K, mode=mode, seed=seed)
-    kef_mean, kef_lo, kef_hi = _summarise_bands(y_rep_kef)
-
     plot_config_path = os.path.join(REPO_ROOT, "configs/plots/overleaf_plots_settings.yaml")
     plot_cfg = load_plot_config(plot_config_path)
     output_dir = os.path.join(REPO_ROOT, "outputs/paper/plots/fisher/kilpisjarvi/param_vs_nonparam")
-
-    plot_posterior_predictive_three_way(
-        plot_cfg=plot_cfg,
-        output_dir=output_dir,
-        x_years=x_years,
-        y_uncentered=y,
-        x_pred_years=x_pred_years,
-        ref_mean=ref_mean + y_mean_offset, ref_lo=ref_lo + y_mean_offset, ref_hi=ref_hi + y_mean_offset,
-        param_mean=param_mean + y_mean_offset, param_lo=param_lo + y_mean_offset, param_hi=param_hi + y_mean_offset,
-        kef_mean=kef_mean + y_mean_offset, kef_lo=kef_lo + y_mean_offset, kef_hi=kef_hi + y_mean_offset,
-        filename="kilpisjarvi_param_vs_nonparam_posterior_predictive.pdf",
-    )
 
     plot_component_sensitivity_bar_param_vs_nonparam(
         plot_cfg=plot_cfg,
@@ -812,33 +833,47 @@ def main() -> None:
     # compute_uniform_z_neighbourhood_parametric_sensitivity's docstring.
     # That's why it differs across alpha/beta1..5 even under the identical
     # shared box: different components have different actual posteriors.
-    uniform_fd_z_sup = compute_uniform_z_neighbourhood_parametric_sensitivity(loader_uniform)
+    uniform_fd_z_sup = compute_uniform_z_neighbourhood_parametric_sensitivity(
+        loader_uniform, mu_z_range, sigma_z_range,
+    )
 
     # The genuinely PRIOR-based FD_z sup under the same shared box (data-
     # independent -- identical for every component, since the z-space
-    # reference is always N(0,1) regardless of family). Printed here only
-    # for comparison; the radius below still uses the posterior-based sup
-    # above, per the max-of-(posterior-based)-sups already in place.
-    prior_fd_z_sup = compute_uniform_z_neighbourhood_prior_fd()
+    # reference is always N(0,1) regardless of family).
+    prior_fd_z_sup = compute_uniform_z_neighbourhood_prior_fd(mu_z_range, sigma_z_range)
     print("\nPrior-based FD_z sup under the shared z-space box (data-independent, identical for "
-          "every component -- shown for comparison against the posterior-based sup above):")
+          "every component):")
     for name in COMPONENT_ORDER:
         print(f"  {name}: {prior_fd_z_sup[name]:.4f}")
 
-    # Instead of feeding each component its OWN posterior-based sup as its
-    # own radius (as compute_nonparametric_sensitivity_at_radii would do by
-    # default if given uniform_fd_z_sup directly), use a SINGLE shared
-    # radius for every component -- the max over the per-component
-    # posterior-based sups above -- so the nonparametric side is evaluated
-    # at one common worst-case-implied radius rather than 7 different ones.
-    r_j_shared_max = max(uniform_fd_z_sup.values())
-    print(f"\nShared nonparametric radius (= max over per-component posterior-based FD_z sup above): "
-          f"{r_j_shared_max:.4f}")
-    r_j_by_component_max = {name: r_j_shared_max for name in COMPONENT_ORDER}
+    # Shared nonparametric radius r_j = sup_{Gamma_{z,j}} FD(N(0,1) || N(mu_z, sigma_z^2))
+    # (~0.71) for every component, so every prior in Gamma_{z,j} lies in Q_{r_j}.
+    # With one shared radius, r_j cancels out of the normalised percentages.
+    r_j_shared = prior_fd_z_sup[COMPONENT_ORDER[0]]
+    print(f"\nShared nonparametric radius (= prior-based FD_z sup above): {r_j_shared:.4f}")
+    r_j_by_component_shared = {name: r_j_shared for name in COMPONENT_ORDER}
 
     uniform_nonparam = compute_nonparametric_sensitivity_at_radii(
-        loader_uniform, basis_cls_uniform, basis_kwargs_uniform, r_j_by_component_max,
+        loader_uniform, basis_cls_uniform, basis_kwargs_uniform, r_j_by_component_shared,
         center_samples_num=int(cfg_nonparam.data.get("center_prior_samples_num", 5000)),
+    )
+
+    # Stan data for sampling the posterior under each method's worst-case
+    # prior in the shared z-scale neighbourhood (see
+    # run_kilpisjarvi_param_vs_nonparam_predictive.sh).
+    worst_corners_z = _uniform_z_worst_case_corners(loader_uniform, mu_z_range, sigma_z_range)
+    print("\nParametric worst-case Gaussian-in-z corner per component (posterior-based FD_z sup):")
+    for name in COMPONENT_ORDER:
+        mu_z, sig_z, fd = worst_corners_z[name]
+        print(f"  {name}: mu_z={mu_z:+.2f}, sigma_z={sig_z:.2f}, FD_z={fd:.4f}")
+    os.makedirs(Z_SCALE_STAN_DIR, exist_ok=True)
+    _export_param_z_stan_data(
+        worst_corners_z, loader_uniform, y_centered, K,
+        os.path.join(Z_SCALE_STAN_DIR, f"stan_data_param_z{tag}.json"),
+    )
+    _export_kef_stan_data(
+        uniform_nonparam["node_records"], loader_uniform, y_centered, K, r_j_shared,
+        os.path.join(Z_SCALE_STAN_DIR, f"stan_data_kef_z{tag}.json"),
     )
 
     total_uniform_param = sum(uniform_fd_z_sup.values())
@@ -864,7 +899,7 @@ def main() -> None:
         output_dir=output_dir,
         percentages_param=percentages_param_z,
         percentages_nonparam=percentages_nonparam_z,
-        filename="kilpisjarvi_param_vs_nonparam_sensitivity_percentages_both_in_z_scale.pdf",
+        filename=f"kilpisjarvi_param_vs_nonparam_sensitivity_percentages_both_in_z_scale{tag}.pdf",
         compact=True,
     )
 
@@ -877,5 +912,109 @@ def main() -> None:
     )
 
 
+def plot_posterior_predictive_z_scale(mu_z_range=Z_MU_RANGE, sigma_z_range=Z_SIGMA_RANGE) -> None:
+    """
+    Three posterior-predictive plots (reference, parametric and
+    nonparametric worst-case prior, r_j = prior-based FD_z sup) for the
+    shared z-scale neighbourhood, with shared y-limits. The two worst-case posteriors are Stan
+    draws produced by run_kilpisjarvi_param_vs_nonparam_predictive.sh from
+    the Stan data main() exports -- not SNIS reweights of the reference
+    posterior.
+    """
+    tag = _z_box_tag(mu_z_range, sigma_z_range)
+    cfg_param, _ = _load_configs()
+    model = instantiate(cfg_param.model, data_config=cfg_param.data)
+    K = sum(1 for name in model.prior_init.names if name.startswith("beta"))
+    seed = int(cfg_param.data.get("seed", 0))
+
+    # The R sampler saves post-warmup draws only, hence warmup=0 here.
+    samples = {
+        "ref": model.posterior_samples_init,  # (N, 2+K): alpha, beta[1..K], sigma
+        "param": _stack_corner_chains(
+            _load_corner_draws_json(os.path.join(Z_SCALE_STAN_DIR, f"draws_param_z{tag}.json")), K=K, warmup=0,
+        ),
+        "nonparam": _stack_corner_chains(
+            _load_corner_draws_json(os.path.join(Z_SCALE_STAN_DIR, f"draws_kef_z{tag}.json")), K=K, warmup=0,
+        ),
+    }
+    descriptions = {
+        "ref": "reference posterior",
+        "param": "parametric worst-case posterior",
+        "nonparam": "nonparametric worst-case posterior",
+    }
+    labels = {
+        "ref": r"$\tilde{x}_{\mathrm{ref}}$",
+        "param": r"$\tilde{x}_{\mathrm{param}}$",
+        "nonparam": r"$\tilde{x}_{\mathrm{nonparam}}$",
+    }
+
+    y_full = y_centered
+    y_mean_offset = float(np.mean(y))
+    x_pred_years = x_years[K:]
+    mode = "one_step"
+
+    bands = {}
+    for key, s in samples.items():
+        print_predictive_variance_decomposition(y_full, s, K, name=descriptions[key])
+        mean, lo, hi = _summarise_bands(_ar_posterior_predictive(y_full=y_full, samples=s, K=K, mode=mode, seed=seed))
+        bands[key] = (mean + y_mean_offset, lo + y_mean_offset, hi + y_mean_offset)
+
+    # Shared y-limits so the three panels are directly comparable.
+    all_values = np.concatenate([y] + [np.concatenate(b) for b in bands.values()])
+    ylim = (float(all_values.min()), float(all_values.max()))
+
+    plot_cfg = load_plot_config(os.path.join(REPO_ROOT, "configs/plots/overleaf_plots_settings.yaml"))
+    output_dir = os.path.join(REPO_ROOT, "outputs/paper/plots/fisher/kilpisjarvi/param_vs_nonparam")
+    palette = list(plot_cfg.plot.color_palette.colors)
+
+    for i, (key, (mean, lo, hi)) in enumerate(bands.items()):
+        plot_posterior_predictive_with_data(
+            plot_cfg=plot_cfg,
+            output_dir=output_dir,
+            x_years=x_years,
+            y_uncentered=y,
+            x_pred_years=x_pred_years,
+            pred_mean=mean,
+            pred_lo=lo,
+            pred_hi=hi,
+            pred_label=labels[key],
+            filename=f"kilpisjarvi_param_vs_nonparam_posterior_predictive_{key}_both_in_z_scale{tag}.pdf",
+            pred_color=palette[i % len(palette)],
+            ylim=ylim,
+            show_ylabel=(i == 0),
+        )
+
+    plot_posterior_predictive_means(
+        plot_cfg=plot_cfg,
+        output_dir=output_dir,
+        x_years=x_years,
+        y_uncentered=y,
+        x_pred_years=x_pred_years,
+        means={labels[key]: mean for key, (mean, _lo, _hi) in bands.items()},
+        filename=f"kilpisjarvi_param_vs_nonparam_posterior_predictive_both_in_z_scale{tag}.pdf",
+    )
+
+
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--stage", choices=["optimise", "plot_predictive", "print_tag"], default="optimise",
+        help="optimise: sensitivity analysis, plots and Stan-data export; "
+             "plot_predictive: posterior predictives from the Stan draws; "
+             "print_tag: print the output filename suffix for this z-box.",
+    )
+    parser.add_argument("--mu-z-max", type=float, default=Z_MU_RANGE[1],
+                        help="z-box mean range is [-mu_z_max, mu_z_max].")
+    parser.add_argument("--sigma-z-min", type=float, default=Z_SIGMA_RANGE[0])
+    parser.add_argument("--sigma-z-max", type=float, default=Z_SIGMA_RANGE[1])
+    args = parser.parse_args()
+    mu_z_range = (-args.mu_z_max, args.mu_z_max)
+    sigma_z_range = (args.sigma_z_min, args.sigma_z_max)
+    if args.stage == "optimise":
+        main(mu_z_range, sigma_z_range)
+    elif args.stage == "plot_predictive":
+        plot_posterior_predictive_z_scale(mu_z_range, sigma_z_range)
+    else:
+        print(_z_box_tag(mu_z_range, sigma_z_range))

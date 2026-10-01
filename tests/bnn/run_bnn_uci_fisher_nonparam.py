@@ -355,7 +355,8 @@ def _run_bnn_uci_node_sensitivity_core(cfg, use_cache: bool = True) -> None:
         }
         heatmap_tensors.append({
             "label": f"{short_name}",
-            "matrix": sensitivity_matrix,
+            # Divided by the per-node radius r_j, so the heatmap is radius independent.
+            "matrix": sensitivity_matrix / r_j,
             "row_label": meta["row_label"],
             "col_label": meta["col_label"],
             "col_names": col_names,
@@ -417,6 +418,7 @@ def _run_bnn_uci_node_sensitivity_core(cfg, use_cache: bool = True) -> None:
             plot_cfg=plot_cfg,
             output_dir=output_dir,
             filename=f"bnn_weight_heatmaps_{tag}.pdf",
+            value_label=r"Estimated per-parameter sensitivity / $r_j$",
         )
 
     top_k_plot = int(cfg.sensitivity.get("top_k_plot", 6))

@@ -142,6 +142,74 @@ def _kef_reweight_posterior(
     return posterior_full[resample_idx], ess, ess_frac
 
 
+def _matern72_closed_form(r: np.ndarray, lengthscale: float, variance: float) -> np.ndarray:
+    """Matern nu=7/2 kernel in closed form -- the exact expression the Stan model uses."""
+    x = np.sqrt(7.0) * np.abs(r) / lengthscale
+    return variance * (1.0 + x + 0.4 * x ** 2 + x ** 3 / 15.0) * np.exp(-x)
+
+
+def _export_kef_stan_data(
+    node_records: list,
+    loader,
+    y_full: np.ndarray,
+    K: int,
+    r_pred: float,
+    path: str,
+) -> None:
+    """
+    Write the Stan data (see tests/posteriordb/stan/kilpisjarvi_ark_kef.stan)
+    for sampling the posterior under the worst-case KEF prior at radius
+    r_pred directly with MCMC, instead of SNIS-reweighting the reference
+    posterior (_kef_reweight_posterior). Per component j, in z-space:
+    centres c_j, lengthscale ell_j, kernel variance and lambda_star_j
+    rescaled to r_pred (same rescaling as _kef_reweight_posterior). Also
+    checks the Stan closed-form Matern-7/2 kernel reproduces basis.evaluate.
+    """
+    node_by_name = {rec["name"]: rec for rec in node_records}
+    centres, lambdas, ells, variances = [], [], [], []
+    for name in COMPONENT_ORDER:
+        rec = node_by_name[name]
+        basis = rec["basis"]
+        if not np.isclose(basis.nu, 3.5):
+            raise ValueError(f"Stan model hard-codes Matern nu=3.5; got nu={basis.nu} for {name}.")
+        c = np.asarray(basis.centers, dtype=float).reshape(-1)
+        z_check = np.linspace(-4.0, 4.0, 101)
+        phi_python = basis.evaluate(z_check.reshape(-1, 1))[:, 0, :]
+        phi_stan = _matern72_closed_form(z_check[:, None] - c[None, :], basis.lengthscale, basis.variance)
+        if not np.allclose(phi_python, phi_stan, rtol=1e-6, atol=1e-10):
+            raise ValueError(f"Closed-form Matern-7/2 does not match basis.evaluate for {name}.")
+        centres.append(c)
+        lambdas.append(np.asarray(rec["lambda_star"], dtype=float).reshape(-1) * np.sqrt(r_pred / rec["r_j"]))
+        ells.append(float(basis.lengthscale))
+        variances.append(float(basis.variance))
+
+    M = {len(c) for c in centres}
+    if len(M) != 1:
+        raise ValueError(f"Components have different numbers of centres: {sorted(M)}.")
+
+    ref = {name: loader.groups[node_by_name[name]["group"]]["prior_dist"] for name in COMPONENT_ORDER}
+    y_full = np.asarray(y_full, dtype=float).reshape(-1)
+    save_to_serializable_json(
+        {
+            "K": int(K),
+            "T": int(len(y_full)),
+            "y": y_full,
+            "M": int(M.pop()),
+            "mu_ref": [float(ref[n].mu) for n in COMPONENT_ORDER[:-1]],
+            "sigma_ref": [float(ref[n].sigma) for n in COMPONENT_ORDER[:-1]],
+            "gamma_sigma": float(ref["sigma"].gamma),
+            "pit_eps": _PIT_EPS,
+            "centres": np.stack(centres),
+            "lambda": np.stack(lambdas),
+            "ell": ells,
+            "var_k": variances,
+            "r_pred": float(r_pred),
+        },
+        path,
+    )
+    print(f"Saved Stan data for KEF prior at r={r_pred:g} to {path}")
+
+
 # ---------------------------------------------------------------------------
 # Parametric-style worst-case corner search performed entirely in z-space,
 # using ONE shared neighbourhood for every component -- unlike
@@ -766,6 +834,18 @@ def run_ark_kilpisjarvi_nonparametric_sensitivity(cfg: DictConfig) -> None:
     )
 
     pred_radii = [float(r) for r in cfg.sensitivity.get("posterior_predictive_radii", [r_j])]
+
+    # Stan data for sampling each r_pred's KEF posterior directly (see
+    # tests/posteriordb/stan/sample_kilpisjarvi_ark_kef.R), from the same
+    # fitted (basis, lambda_star) the SNIS reweighting below uses.
+    stan_data_dir = os.path.join(results_dir, "stan")
+    os.makedirs(stan_data_dir, exist_ok=True)
+    for r_pred in pred_radii:
+        _export_kef_stan_data(
+            node_records, loader, y_full, K, r_pred,
+            os.path.join(stan_data_dir, f"kilpisjarvi_kef_stan_data_r{r_pred:g}.json"),
+        )
+
     rng = np.random.default_rng(int(cfg.data.get("seed", 0)))
     kef_results = []
     print("Posterior-predictive radius sweep (reference vs. KEF worst-case, SNIS-reweighted):")
