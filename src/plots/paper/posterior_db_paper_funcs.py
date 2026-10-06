@@ -689,6 +689,76 @@ def plot_three_panel_priors_all_betas_one_plot_explicit(
     save_fig(fig, output_dir, filename, plot_cfg)
 
 
+def plot_priors_z_scale_one_panel(
+    worst_corners_z: Dict[str, Tuple[float, float]],
+    mu_z_range: Tuple[float, float],
+    sigma_z_range: Tuple[float, float],
+    plot_cfg=None,
+    output_dir: str = ".",
+    filename: str = "priors_z_scale.pdf",
+    title: str = r"$\alpha, \beta_{1\cdots 5}, \sigma$",
+    sample_n: int = 50,
+    seed: int = 27,
+    cloud_color: str = "#7c397d",
+    x_range: Tuple[float, float] = (-4.0, 4.0),
+):
+    """
+    Single-panel z-scale analogue of plot_three_panel_priors_all_betas_one_plot_explicit:
+    after the PIT z = Phi^{-1}(F_ref(x)) every component (Gaussian alpha/beta1..5
+    and Half-Cauchy sigma alike) has the reference N(0, 1) and shares the same
+    Gaussian-in-z box (mu_z, sigma_z), so all components fit on one axis.
+
+    Curves:
+      - reference N(0, 1): black dashed
+      - box neighbourhood cloud: faint cloud_color
+      - per-component worst-case corners: red, components sharing a corner grouped
+        under one linestyle
+    """
+    if plot_cfg is not None:
+        _apply_plot_rc(plot_cfg)
+    os.makedirs(output_dir, exist_ok=True)
+    rng = np.random.default_rng(seed)
+
+    col_ref = "black"
+    col_red = "red"
+    alpha_cloud = 0.08
+    group_styles = ["-.", "-", ":", "--"]
+
+    if plot_cfg is not None and hasattr(plot_cfg.plot.figure, "size"):
+        figsize = (plot_cfg.plot.figure.size.width, plot_cfg.plot.figure.size.height)
+        dpi = plot_cfg.plot.figure.dpi
+    else:
+        figsize = (6.0, 3.2)
+        dpi = 200
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+    lo, hi = x_range
+    z = np.linspace(lo, hi, 500)
+    pdf_gauss = lambda m, s: _make_pdf("Gaussian", {"mu": m, "sigma": s})(z)
+
+    box = {"mu": mu_z_range, "sigma": sigma_z_range}
+    for p in _sample_param_sets(box, sample_n, rng):
+        ax.plot(z, pdf_gauss(p["mu"], p["sigma"]), linewidth=0.9, alpha=alpha_cloud, color=cloud_color)
+    ax.plot(z, pdf_gauss(0.0, 1.0), linestyle="--", color=col_ref, linewidth=1.0)
+
+    groups: Dict[Tuple[float, float], List[str]] = {}
+    for name, (mu_z, sig_z) in worst_corners_z.items():
+        groups.setdefault((round(float(mu_z), 10), round(float(sig_z), 10)), []).append(name)
+    for gi, ((mu_z, sig_z), _names) in enumerate(sorted(groups.items(), key=lambda kv: -len(kv[1]))):
+        ax.plot(z, pdf_gauss(mu_z, sig_z), color=col_red,
+                linestyle=group_styles[gi % len(group_styles)], linewidth=1.0)
+
+    ax.set_title(title)
+    ax.set_xlabel(r"$z$")
+    ax.set_ylabel(r"$\pi$")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    if plot_cfg is not None and getattr(plot_cfg.plot.figure, "tight_layout", True):
+        plt.tight_layout()
+    _save_fig(fig, output_dir, filename, plot_cfg)
+
+
 def _prepare_inputs(y, posterior_samples_init, K):
     y = np.asarray(y).squeeze()
     if y.ndim != 1:
@@ -938,6 +1008,7 @@ def plot_component_sensitivity_bar(
     filename: str | None = None,
     prefix: str = "kilpisjarvi",
     ylabel: str | None = None,
+    width_scale: float = 1.0,
 ):
     try:
         _apply_plot_rc(plot_cfg)
@@ -981,7 +1052,7 @@ def plot_component_sensitivity_bar(
     }
 
     fig = plt.figure(
-        figsize=(plot_cfg.plot.figure.size.width, plot_cfg.plot.figure.size.height)
+        figsize=(plot_cfg.plot.figure.size.width * width_scale, plot_cfg.plot.figure.size.height)
         if hasattr(plot_cfg, "plot") else (3, 6),
         dpi=plot_cfg.plot.figure.dpi if hasattr(plot_cfg, "plot") else 120,
     )

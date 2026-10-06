@@ -140,68 +140,119 @@ def plot_time_series(output_dir: str, plot_cfg, prefix: str = "kilpisjarvi") -> 
     print(f"Saved plot to {os.path.join(output_dir, prefix + '_time_series.pdf')}")
 
 
+# Shared z-space parametric neighbourhood (identical for every component), as
+# in run_ark_kilpisjarvi_param_nonparam.py: after the PIT z = Phi^{-1}(F_ref(x))
+# every reference prior is N(0, 1), and candidates are N(mu_z, sigma_z^2) with
+# mu_z in [-z_mu_max, z_mu_max], sigma_z in [z_sigma_min, z_sigma_max]. The box
+# is set by cfg.playground (overridable from the command line, see
+# run_kilpisjarvi_param_predictive.sh); these are the fallback defaults.
+Z_MU_RANGE = (-1.0, 1.0)
+Z_SIGMA_RANGE = (0.5, 2.0)
+PARAM_Z_STAN_DIR = "outputs/paper/results/kilpisjarvi/param/stan"
+
+
+def _z_box_from_cfg(cfg) -> tuple[tuple[float, float], tuple[float, float]]:
+    mu_max = float(cfg.playground.get("z_mu_max", Z_MU_RANGE[1]))
+    sig_min = float(cfg.playground.get("z_sigma_min", Z_SIGMA_RANGE[0]))
+    sig_max = float(cfg.playground.get("z_sigma_max", Z_SIGMA_RANGE[1]))
+    return (-mu_max, mu_max), (sig_min, sig_max)
+
+
+def _z_box_tag(mu_z_range, sigma_z_range) -> str:
+    return f"_mu{mu_z_range[1]:g}_sig{sigma_z_range[0]:g}-{sigma_z_range[1]:g}"
+
+
+def _run_stage(cfg, stage: str) -> bool:
+    return cfg.playground.get("stage", "all") in ("all", stage)
+
+
+def _export_param_z_stan_data(worst: dict, base_prior, y_full: np.ndarray, K: int, path: str) -> None:
+    """
+    Stan data for tests/posteriordb/stan/kilpisjarvi_ark_param_z.stan (same
+    layout as run_ark_kilpisjarvi_param_nonparam._export_param_z_stan_data):
+    per component, z_j ~ N(mu_z_j, sigma_z_j^2) pushed back through the
+    reference PIT.
+    """
+    from src.utils.files_operations import save_to_serializable_json
+    from tests.posteriordb.run_ark_kilpisjarvi_nonparam import _PIT_EPS
+
+    ref = dict(zip(base_prior.names, base_prior.components))
+    names = list(base_prior.names)
+    y_full = np.asarray(y_full, dtype=float).reshape(-1)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    save_to_serializable_json(
+        {
+            "K": int(K),
+            "T": int(len(y_full)),
+            "y": y_full,
+            "mu_ref": [float(ref[n].mu) for n in names[:-1]],
+            "sigma_ref": [float(ref[n].sigma) for n in names[:-1]],
+            "gamma_sigma": float(ref["sigma"].gamma),
+            "pit_eps": _PIT_EPS,
+            "mu_z": [float(worst[n][0]) for n in names],
+            "sigma_z": [float(worst[n][1]) for n in names],
+        },
+        path,
+    )
+    print(f"Saved Stan data for parametric z-space worst-case prior to {path}")
+
+
+def compute_z_scale_parametric_sensitivity(
+    model, base_prior, mu_z_range=Z_MU_RANGE, sigma_z_range=Z_SIGMA_RANGE,
+) -> dict:
+    """
+    Per component, the posterior-based FD_z sup over the shared Gaussian-in-z
+    box (attained at one of its 4 vertices) -- same quantity as
+    run_ark_kilpisjarvi_nonparam.compute_uniform_z_neighbourhood_parametric_sensitivity,
+    computed from the parametric model's own posterior draws (columns alpha,
+    beta1..K, sigma, matching base_prior's component order).
+
+    Returns {name: (mu_z, sigma_z, fd_z_sup)}.
+    """
+    # Local import: run_ark_kilpisjarvi_nonparam imports from this module.
+    from tests.posteriordb.run_ark_kilpisjarvi_nonparam import _to_z_space, _fd_z_posterior_gaussian_in_z
+
+    corners = [(mu, sig) for mu in mu_z_range for sig in sigma_z_range]
+    worst = {}
+    for idx, (name, ref) in enumerate(zip(base_prior.names, base_prior.components)):
+        z_post = _to_z_space(ref, model.posterior_samples_init[:, idx])
+        z_mean, z_meansq = float(np.mean(z_post)), float(np.mean(z_post ** 2))
+        vals = [_fd_z_posterior_gaussian_in_z(mu, sig, z_mean, z_meansq) for mu, sig in corners]
+        best = int(np.argmax(vals))
+        worst[name] = (corners[best][0], corners[best][1], float(vals[best]))
+    return worst
+
+
 @hydra.main(version_base="1.1", config_path="../../configs/paper/real/", config_name="ark_kilpisjarvi")
 def main(cfg: DictConfig) -> None:
-    print("=== FD for PosteriorDB model ===")
+    if not _run_stage(cfg, "optimise"):
+        return
+    print("=== FD for PosteriorDB model (parametric, z-scale) ===")
     model = instantiate(cfg.model, data_config=cfg.data)
-    fisher_estimator = PosteriorFDBase(model=model)
-    print(f"Initial Fisher for prior: {fisher_estimator.estimate_fisher_prior_only():.4f}")
-    print(f"Initial Fisher for lr: {fisher_estimator.estimate_fisher_lr_only():.4f}")
+    base_prior = instantiate(cfg.data.base_prior)
+    names = list(base_prior.names)
+    K = sum(1 for n in names if n.startswith("beta"))
 
-    print("Starting optimisation of all parameters at once.")
-    optimizer = OptimizationCornerPointsCompositePrior(
-        fisher_estimator,
-        cfg.fd.optimize.prior.Composite,
-        cfg.fd.optimize.loss.GaussianARLogLikelihood,
-    )
-    names = ["beta1", "beta2", "beta3", "beta4", "beta5", "alpha", "sigma"]
-    qf_corners, eta_star = optimizer.evaluate_all_prior_corners()
-    eta_inf, val_inf = optimizer.minimize_prior_full_qp()
-
-    print("Starting per component optimisation.")
-    sup_res, eta_sup_blocks = optimizer.evaluate_all_prior_corners_per_component(component_names=names)
-    eta_inf_blocks, values_inf = optimizer.minimize_prior_per_component_qp(names)
-    print("Per-component argmax corners:")
+    mu_z_range, sigma_z_range = _z_box_from_cfg(cfg)
+    print(f"Shared z-space box: mu_z in {mu_z_range}, sigma_z in {sigma_z_range}")
+    worst = compute_z_scale_parametric_sensitivity(model, base_prior, mu_z_range, sigma_z_range)
+    total = sum(v[2] for v in worst.values())
+    percentages = {k: worst[k][2] / total * 100.0 for k in names}
+    print("Per-component worst-case Gaussian-in-z corner (posterior-based FD_z sup):")
     for k in names:
-        print(k, eta_sup_blocks[k], sup_res[k][0][1])
+        mu_z, sig_z, fd = worst[k]
+        print(f"  {k}: mu_z={mu_z:+.2f}, sigma_z={sig_z:.2f}, FD_z={fd:.4f} ({percentages[k]:.1f}%)")
 
-    print("Per-component infimum:")
-    for n in names:
-        print(n, eta_inf_blocks[n], values_inf[n])
-
-    contributions = {k: sup_res[k][0][1] - values_inf[k] for k in names}
-    total = sum(contributions[k] for k in names)
-    percentages = {k: contributions[k] / total * 100.0 for k in names}
-
-    # print(f"Starting black-box optimisation.")
-    # bb = optimizer.black_box_optimize_prior_box_global(
-    #     method="dual_annealing",
-    #     seed=27,
-    #     maxiter=150,
-    #     n_restarts=5,
-    # )
-    # print(bb)
+    _export_param_z_stan_data(
+        worst, base_prior, y_centered, K,
+        os.path.join(get_original_cwd(), PARAM_Z_STAN_DIR,
+                     f"stan_data_param_z{_z_box_tag(mu_z_range, sigma_z_range)}.json"),
+    )
 
     prefix = cfg.playground.get("output_prefix", "kilpisjarvi_param")
     plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
     output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
     plot_cfg = load_plot_config(plot_config_path)
-
-    alpha_ms = {"family": "Gaussian",     "params": _gaussian_from_eta(*eta_star[0:2])}
-    betas_ms = {
-        f"beta{k+1}": {"family": "Gaussian", "params": _gaussian_from_eta(*eta_star[2*(k+1):2*(k+1)+2])}
-        for k in range(5)
-    }
-    sigma_ms = {"family": "InverseGamma", "params": _inv_gamma_from_eta(*eta_star[12:14])}
-    sigma_inf_prior = {"family": "InverseGamma", "params": _inv_gamma_from_eta(*eta_inf[12:14])}
-
-    alpha_ref = {"family": "Gaussian",   "params": {"mu": 0.0, "sigma": 5.0}}
-    betas_ref = {"family": "Gaussian",   "params": {"mu": 0.0, "sigma": 5.0}}
-    sigma_ref = {"family": "HalfCauchy", "params": {"gamma": 1.0}}
-
-    alpha_box_ranges = {"mu": (-2.0, 2.0), "sigma": (0.25, 1.0)}
-    betas_box_ranges = {f"beta{k+1}": {"mu": (-2.0, 2.0), "sigma": (0.25, 1.0)} for k in range(5)}
-    sigma_box_ranges = {"alpha": (2.5, 7.0), "beta": (0.1667, 2.0)}
 
     latex_names = {
         "alpha":  r"$\alpha$",
@@ -212,8 +263,6 @@ def main(cfg: DictConfig) -> None:
         "beta5":  r"$\beta_5$",
         "sigma":  r"$\sigma$",
     }
-    percentages = {'alpha': 11.1, 'beta1': 21.9, 'beta2': 18.1,
-                   'beta3': 15.6, 'beta4': 14.1, 'beta5': 13.8, 'sigma': 5.4}
     plot_component_sensitivity_bar(
         plot_cfg=plot_cfg,
         output_dir=output_dir,
@@ -224,28 +273,18 @@ def main(cfg: DictConfig) -> None:
         group_tail_betas=False,
         tail_beta_keys=["beta3", "beta4", "beta5"],
         filename=f"{prefix}_component_sensitivity.pdf",
+        width_scale=0.8,
     )
 
-    plot_three_panel_priors_all_betas_one_plot_explicit(
-        alpha_ref=alpha_ref,
-        betas_ref=betas_ref,
-        sigma_ref=sigma_ref,
-        alpha_ms=alpha_ms,
-        betas_ms=betas_ms,
-        sigma_ms=sigma_ms,
-        sigma_inf=sigma_inf_prior,
-        alpha_box_ranges=alpha_box_ranges,
-        betas_box_ranges=betas_box_ranges,
-        sigma_box_ranges=sigma_box_ranges,
-        sigma_cand_family="InverseGamma",
+    plot_priors_z_scale_one_panel(
+        worst_corners_z={k: worst[k][:2] for k in names},
+        mu_z_range=mu_z_range,
+        sigma_z_range=sigma_z_range,
         plot_cfg=plot_cfg,
         output_dir=output_dir,
-        prefix=prefix,
-        sample_n_alpha=50,
-        sample_n_sigma=30,
-        sample_n_beta_total=150,
+        sample_n=50,
         seed=27,
-        filename="kilpisjarvi_param_three_panel_priors.pdf",
+        filename=f"{prefix}_three_panel_priors.pdf",
     )
 
 
@@ -436,6 +475,8 @@ def print_predictive_variance_decomposition(
 
 @hydra.main(version_base="1.1", config_path="../../configs/paper/real/", config_name="ark_kilpisjarvi")
 def plot_posterior_predictive(cfg: DictConfig) -> None:
+    if not _run_stage(cfg, "plot_predictive"):
+        return
     prefix = cfg.playground.get("output_prefix", "kilpisjarvi_param")
     plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
     output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
@@ -449,10 +490,16 @@ def plot_posterior_predictive(cfg: DictConfig) -> None:
     # Reconstruct y_full from the module-level y_centered
     y_full = y_centered
 
-    warmup = getattr(cfg.data, "warmup", 1000)
-    corner_draws_path = cfg.data.posterior_draws_corner_prior
+    # Posterior under the z-scale parametric worst-case prior, sampled with
+    # Stan by run_kilpisjarvi_param_predictive.sh from the Stan data main()
+    # exports. The R sampler saves post-warmup draws only, hence warmup=0.
+    mu_z_range, sigma_z_range = _z_box_from_cfg(cfg)
+    corner_draws_path = os.path.join(
+        get_original_cwd(), PARAM_Z_STAN_DIR, f"draws_param_z{_z_box_tag(mu_z_range, sigma_z_range)}.json"
+    )
+    print(f"Corner posterior draws: {corner_draws_path}")
     chains = _load_corner_draws_json(corner_draws_path)
-    corner_samples = _stack_corner_chains(chains=chains, K=K, warmup=warmup, max_draws=None)
+    corner_samples = _stack_corner_chains(chains=chains, K=K, warmup=0, max_draws=None)
 
     ref_samples = model.posterior_samples_init
     _summarise_samples(ref_samples, K, "reference posterior")

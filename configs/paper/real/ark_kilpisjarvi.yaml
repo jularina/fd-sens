@@ -194,6 +194,12 @@ flags:
 
 playground:
   output_prefix: kilpisjarvi_param
+  # stage: all | optimise | plot_predictive (see run_kilpisjarvi_param_predictive.sh)
+  stage: all
+  # Shared z-space parametric box: mu_z in [-z_mu_max, z_mu_max], sigma_z in [z_sigma_min, z_sigma_max]
+  z_mu_max: 1.0
+  z_sigma_min: 0.5
+  z_sigma_max: 2.0
   save_json: true
   save_csv: true
   n_timing_runs: 500
