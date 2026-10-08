@@ -11,6 +11,17 @@ from src.common.utils.typing import ArrayLike
 from src.common.utils.files_operations import load_numpy_array
 
 
+def _resolve_path(path: str) -> str:
+    """Resolve a relative path against the launch directory, inside or outside a Hydra run."""
+    if os.path.isabs(path):
+        return path
+    try:
+        root = get_original_cwd()
+    except ValueError:
+        root = os.getcwd()
+    return os.path.join(root, path)
+
+
 class BayesianModel(ABC):
     def __init__(self, data_config: Any):
         """
@@ -97,10 +108,7 @@ class BayesianModelExtended(BayesianModel):
 
         # Load from path if given
         if obs is None and obs_path is not None:
-            path = obs_path
-            if not os.path.isabs(path):
-                path = os.path.join(get_original_cwd(), path)
-            obs = load_numpy_array(path)
+            obs = load_numpy_array(_resolve_path(obs_path))
 
         # Sample from true_dgp if no data provided
         if obs is None:
@@ -133,8 +141,7 @@ class BayesianModelExtended(BayesianModel):
             except:
                 raise Exception("Was not able to sample from prior.")
 
-        if not os.path.isabs(path):
-            path = os.path.join(get_original_cwd(), path)
+        path = _resolve_path(path)
         if not os.path.exists(path):
             raise FileNotFoundError(f"{name.capitalize()} samples file not found: {path}")
 

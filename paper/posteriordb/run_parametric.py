@@ -20,6 +20,7 @@ from paper.posteriordb.plots_parametric import (
 from src.common.distributions.gaussian import Gaussian
 from src.common.distributions.cauchy import HalfCauchy
 from src.common.distributions.composite import CompositeProduct
+from src.common.bayesian_model.samples import PosteriorSamplesModel
 
 # ---------------------------------------------------------------------------
 # Kilpisjarvi dataset
@@ -204,20 +205,6 @@ def main(cfg: DictConfig) -> None:
     )
 
 
-class _ZScalePriorFDModel:
-    """Prior-only z-space FD problem with N(0, 1) references used for the optimiser runtime comparison."""
-
-    def __init__(self, posterior_z: np.ndarray, names: list[str]):
-        self.posterior_samples_init = posterior_z
-        self.prior_init = CompositeProduct(distributions={n: Gaussian(mu=0.0, sigma=1.0) for n in names})
-        self.prior_candidate = CompositeProduct(distributions={n: Gaussian(mu=0.0, sigma=1.0) for n in names})
-        self.loss_lr_init = 1.0
-        self.loss_lr = 1.0
-
-    def loss_score(self, x: np.ndarray, multiply_by_lr: bool = True) -> np.ndarray:
-        return np.zeros_like(np.asarray(x, dtype=float))
-
-
 def _z_box_eta_components(names: list[str], mu_z_range, sigma_z_range) -> list[dict]:
     """Return the natural-parameter box spanned by the z-box, identical for every component."""
     mu_max = max(abs(mu_z_range[0]), abs(mu_z_range[1]))
@@ -250,12 +237,19 @@ def time_optimisers(cfg: DictConfig) -> None:
     ])
     mu_z_range, sigma_z_range = _z_box_from_cfg(cfg)
 
-    fisher_estimator = PosteriorFDParametric(model=_ZScalePriorFDModel(posterior_z, names))
+    # Prior-only problem in z-space: N(0, 1) reference per component, Gaussian-in-z candidates.
+    z_model = PosteriorSamplesModel(
+        posterior_z,
+        base_prior=CompositeProduct(distributions={n: Gaussian(mu=0.0, sigma=1.0) for n in names}),
+        candidate_prior=CompositeProduct(distributions={n: Gaussian(mu=0.0, sigma=1.0) for n in names}),
+    )
+    fisher_estimator = PosteriorFDParametric(model=z_model)
     optimizer = OptimizationCornerPointsCompositePrior(
         fisher_estimator,
         {"eta_components": _z_box_eta_components(names, mu_z_range, sigma_z_range)},
         loss_config={},
     )
+    _ = optimizer.eta_corners  # build the corner list once, outside the timed runs
 
     print(f"Starting optimisation of all parameters at once ({n_runs} runs).")
     times_full = np.empty(n_runs)

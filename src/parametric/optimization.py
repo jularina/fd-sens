@@ -248,8 +248,8 @@ class OptimizationCornerPointsCompositePrior:
         # Prior
         self.A_prior, self.b_prior, self.c_prior = self.posterior_estimator.compute_fisher_quadratic_form_prior_only()
 
-        # Eta grid
-        self.eta_corners = self._create_eta_corners()
+        # Eta grid (4^d corners), built on first use
+        self._eta_corners = None
 
         # Per-component QFs (for composite prior)
         self.component_names = [cfg.get("name", f"comp{j}") for j, cfg in enumerate(self.eta_components_cfg)]
@@ -263,6 +263,12 @@ class OptimizationCornerPointsCompositePrior:
 
     def _evaluate_prior_qf(self, eta_tilde: np.ndarray) -> float:
         return float(eta_tilde @ self.A_prior @ eta_tilde + self.b_prior @ eta_tilde + self.c_prior)
+
+    @property
+    def eta_corners(self):
+        if self._eta_corners is None:
+            self._eta_corners = self._create_eta_corners()
+        return self._eta_corners
 
     def _create_eta_corners(self):
         """
