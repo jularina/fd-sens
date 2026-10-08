@@ -1946,12 +1946,12 @@ def compute_gaussian_complexity_results(
     divergence: str = None,
 ) -> Dict[str, Any]:
     """
-    Compute both finite-sample estimation errors and runtimes
-    for FD / mean / WIM / KL in one shared Monte Carlo loop.
+    Compute finite-sample estimation errors and runtimes in one shared Monte Carlo loop.
+    Only the requested divergence ("fd", "mean", "wim" or "kl") is estimated; None estimates all four.
     """
     rng = np.random.default_rng(seed)
 
-    methods = ["fd", "mean", "wim", "kl"]
+    methods = ["fd", "mean", "wim", "kl"] if divergence is None else [divergence]
 
     error_mean = {method: {d: [] for d in dims} for method in methods}
     error_ci = {method: {d: [] for d in dims} for method in methods}
@@ -2002,8 +2002,6 @@ def compute_gaussian_complexity_results(
         dist = make_experiment_distributions(d)
         mu_ref, Sigma_ref = dist["ref"]
         mu_cand, Sigma_cand = dist["cand"]
-        mu_1, Sigma_1 = dist["wim1"]
-        mu_2, Sigma_2 = dist["wim2"]
 
         # exact targets
         fd_true = fisher_divergence_gaussians_ref_expectation(
@@ -2016,81 +2014,56 @@ def compute_gaussian_complexity_results(
         for m in ms:
             print(f"Computing statistics for dim={d}, m={m}.")
 
-            fd_err_rep = np.empty(n_rep, dtype=float)
-            mean_err_rep = np.empty(n_rep, dtype=float)
-            wim_err_rep = np.empty(n_rep, dtype=float)
-            kl_err_rep = np.empty(n_rep, dtype=float)
-
-            fd_time_rep = np.empty(n_rep, dtype=float)
-            mean_time_rep = np.empty(n_rep, dtype=float)
-            wim_time_rep = np.empty(n_rep, dtype=float)
-            kl_time_rep = np.empty(n_rep, dtype=float)
+            err_rep = {method: np.empty(n_rep, dtype=float) for method in methods}
+            time_rep = {method: np.empty(n_rep, dtype=float) for method in methods}
 
             for r in range(n_rep):
                 # shared samples
                 X_ref = sample_gaussian(rng, mu_ref, Sigma_ref, m)
                 X_cand = sample_gaussian(rng, mu_cand, Sigma_cand, m)
-                # X1 = sample_gaussian(rng, mu_1, Sigma_1, m)
-                # X2 = sample_gaussian(rng, mu_2, Sigma_2, m)
 
-                # FD
-                t0 = time.perf_counter()
-                fd_hat = estimate_fd_from_ref_samples(
-                    X_ref, mu_ref, Sigma_ref, mu_cand, Sigma_cand
-                )
-                fd_time_rep[r] = time.perf_counter() - t0
-                fd_err_rep[r] = abs(fd_true - fd_hat)
+                if "fd" in methods:
+                    t0 = time.perf_counter()
+                    fd_hat = estimate_fd_from_ref_samples(
+                        X_ref, mu_ref, Sigma_ref, mu_cand, Sigma_cand
+                    )
+                    time_rep["fd"][r] = time.perf_counter() - t0
+                    err_rep["fd"][r] = abs(fd_true - fd_hat)
 
-                # KL
-                t0 = time.perf_counter()
-                # kl_hat = estimate_kl_from_ref_samples(
-                #     X_ref, mu_ref, Sigma_ref, mu_cand, Sigma_cand
-                # )
-                n = X_ref.shape[0]
-                perm = rng.permutation(n)
-                n_train = n // 2
-                X_ref_train = X_ref[perm[:n_train]]
-                X_ref_test = X_ref[perm[n_train:]]
-                kl_hat = estimate_kl_from_ref_samples_kde(
-                    X_ref_eval=X_ref_test,
-                    X_ref_fit=X_ref_train,
-                    X_cand_fit=X_cand,
-                    bw_method="scott",
-                )
-                kl_time_rep[r] = time.perf_counter() - t0
-                kl_err_rep[r] = abs(kl_true - kl_hat)
+                if "kl" in methods:
+                    t0 = time.perf_counter()
+                    n = X_ref.shape[0]
+                    perm = rng.permutation(n)
+                    n_train = n // 2
+                    X_ref_train = X_ref[perm[:n_train]]
+                    X_ref_test = X_ref[perm[n_train:]]
+                    kl_hat = estimate_kl_from_ref_samples_kde(
+                        X_ref_eval=X_ref_test,
+                        X_ref_fit=X_ref_train,
+                        X_cand_fit=X_cand,
+                        bw_method="scott",
+                    )
+                    time_rep["kl"][r] = time.perf_counter() - t0
+                    err_rep["kl"][r] = abs(kl_true - kl_hat)
 
-                # mean
-                t0 = time.perf_counter()
-                mu_hat = np.mean(X_cand, axis=0)
-                mean_time_rep[r] = time.perf_counter() - t0
-                mean_err_rep[r] = float(np.linalg.norm(mu_cand_true - mu_hat, ord=2))
+                if "mean" in methods:
+                    t0 = time.perf_counter()
+                    mu_hat = np.mean(X_cand, axis=0)
+                    time_rep["mean"][r] = time.perf_counter() - t0
+                    err_rep["mean"][r] = float(np.linalg.norm(mu_cand_true - mu_hat, ord=2))
 
-                # WIM
-                t0 = time.perf_counter()
-                w2_hat = estimate_w2_from_samples(X_ref, X_cand)
-                wim_time_rep[r] = time.perf_counter() - t0
-                wim_err_rep[r] = abs(w2_true - w2_hat)
+                if "wim" in methods:
+                    t0 = time.perf_counter()
+                    w2_hat = estimate_w2_from_samples(X_ref, X_cand)
+                    time_rep["wim"][r] = time.perf_counter() - t0
+                    err_rep["wim"][r] = abs(w2_true - w2_hat)
 
-            # store error summaries
-            for method, arr in {
-                "fd": fd_err_rep,
-                "mean": mean_err_rep,
-                "wim": wim_err_rep,
-                "kl": kl_err_rep,
-            }.items():
-                m_, h_ = mean_and_ci(arr, rng=rng)
+            for method in methods:
+                m_, h_ = mean_and_ci(err_rep[method], rng=rng)
                 error_mean[method][d].append(m_)
                 error_ci[method][d].append(h_)
 
-            # store time summaries
-            for method, arr in {
-                "fd": fd_time_rep,
-                "mean": mean_time_rep,
-                "wim": wim_time_rep,
-                "kl": kl_time_rep,
-            }.items():
-                m_, h_ = mean_and_ci(arr)
+                m_, h_ = mean_and_ci(time_rep[method])
                 time_mean[method][d].append(m_)
                 time_ci[method][d].append(h_)
 
