@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from src.parametric.fisher_divergence import PosteriorFDParametric
-from src.parametric.sensitivity import lr_sensitivity, prior_sensitivity
+from src.parametric.sensitivity import lr_sensitivity, prior_sensitivity, prior_sensitivity_black_box
 
 from tests.conftest import NOISE_SD, PRIOR_MU, PRIOR_SD
 
@@ -91,3 +91,45 @@ def test_lr_sensitivity_reference_outside_interval(gaussian_location):
     assert result.lambda_min[0] == 1.2
     assert result.lambda_max[0] == 2.0
     assert result.fd_min > 0.0
+
+
+def _gaussian_natural_score(draws, eta):
+    """Score of the Gaussian prior with natural parameters eta = (mu / s^2, -1 / (2 s^2))."""
+    return eta[0] + 2.0 * eta[1] * draws
+
+
+def _student_t_score(draws, lam):
+    loc, scale, df = lam
+    z = draws - loc
+    return -(df + 1.0) * z / (df * scale ** 2 + z ** 2)
+
+
+def test_black_box_with_candidate_score_matches_quadratic_route(gaussian_location):
+    model, _ = gaussian_location
+    quadratic = prior_sensitivity(model, BOX)
+    black_box = prior_sensitivity_black_box(
+        model, _gaussian_natural_score,
+        lower=[BOX["theta"]["eta_1"][0], BOX["theta"]["eta_2"][0]],
+        upper=[BOX["theta"]["eta_1"][1], BOX["theta"]["eta_2"][1]],
+    )
+    assert black_box.sensitivity == pytest.approx(quadratic.sensitivity, rel=1e-4)
+    np.testing.assert_allclose(black_box.lambda_max, quadratic.lambda_max, atol=1e-4)
+
+
+def test_black_box_finds_global_extremes_for_student_t(gaussian_location):
+    model, _ = gaussian_location
+    lower, upper = np.array([-1.0, 1.0, 2.0]), np.array([1.0, 3.0, 30.0])
+    result = prior_sensitivity_black_box(model, _student_t_score, lower, upper, n_restarts=2)
+    draws = model.posterior_samples_init
+    score_ref = model.prior_init.grad_log_pdf(draws)
+    rng = np.random.default_rng(0)
+    for lam in rng.uniform(lower, upper, size=(200, 3)):
+        fd = np.mean((score_ref - _student_t_score(draws, lam)) ** 2)
+        assert result.fd_min <= fd + 1e-9
+        assert fd <= result.fd_max + 1e-9
+
+
+def test_black_box_rejects_invalid_box(gaussian_location):
+    model, _ = gaussian_location
+    with pytest.raises(ValueError):
+        prior_sensitivity_black_box(model, _student_t_score, lower=[1.0, 1.0, 2.0], upper=[-1.0, 3.0, 30.0])

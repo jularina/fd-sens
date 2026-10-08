@@ -1,7 +1,8 @@
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Callable, Dict, Optional, Sequence
 
 import numpy as np
+from scipy.optimize import differential_evolution, dual_annealing
 
 from src.common.fisher_divergence import PosteriorFDBase
 from src.parametric.fisher_divergence import PosteriorFDParametric
@@ -132,4 +133,55 @@ def lr_sensitivity(model, lower: float, upper: float, lr_ref: Optional[float] = 
         sensitivity=fd(lr_max) - fd(lr_min), fd_min=fd(lr_min), fd_max=fd(lr_max),
         lambda_min=np.array([lr_min]), lambda_max=np.array([lr_max]),
         analysis="learning_rate", method="closed_form",
+    )
+
+
+def _global_minimise(func, bounds, method: str, seed: int, maxiter: int, n_restarts: int):
+    """Minimise func over a box with scipy's dual annealing or differential evolution, keeping the best restart."""
+    if method not in ("dual_annealing", "differential_evolution"):
+        raise ValueError("method must be 'dual_annealing' or 'differential_evolution'.")
+    best = None
+    for r in range(max(1, n_restarts)):
+        if method == "dual_annealing":
+            res = dual_annealing(func, bounds=bounds, seed=seed + r, maxiter=maxiter)
+        else:
+            res = differential_evolution(func, bounds=bounds, seed=seed + r, maxiter=maxiter, polish=True)
+        if best is None or res.fun < best.fun:
+            best = res
+    return best
+
+
+def prior_sensitivity_black_box(
+    model,
+    score_prior_candidate: Callable[[np.ndarray, np.ndarray], np.ndarray],
+    lower: Sequence[float],
+    upper: Sequence[float],
+    score_prior_ref: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+    method: str = "dual_annealing",
+    seed: int = 0,
+    maxiter: int = 200,
+    n_restarts: int = 1,
+) -> FDSensitivityResult:
+    """FDsens prior sensitivity for any candidate family, given its prior score, by global optimisation over a box."""
+    lower = np.atleast_1d(np.asarray(lower, dtype=float))
+    upper = np.atleast_1d(np.asarray(upper, dtype=float))
+    if lower.shape != upper.shape or np.any(lower > upper):
+        raise ValueError("lower and upper must have the same length and satisfy lower <= upper.")
+    draws = model.posterior_samples_init
+    score_ref = model.prior_init.grad_log_pdf(draws) if score_prior_ref is None else score_prior_ref(draws)
+    score_ref = np.asarray(score_ref, dtype=float).reshape(draws.shape)
+
+    def fd(lam: np.ndarray) -> float:
+        diff = score_ref - np.asarray(score_prior_candidate(draws, np.asarray(lam, dtype=float))).reshape(draws.shape)
+        return float(np.mean(np.sum(diff * diff, axis=1)))
+
+    bounds = list(zip(lower, upper))
+    kwargs = dict(method=method, maxiter=maxiter, n_restarts=n_restarts)
+    res_max = _global_minimise(lambda lam: -fd(lam), bounds, seed=seed, **kwargs)
+    res_min = _global_minimise(fd, bounds, seed=seed + n_restarts, **kwargs)
+    lam_max, lam_min = np.asarray(res_max.x, dtype=float), np.asarray(res_min.x, dtype=float)
+    fd_max, fd_min = fd(lam_max), fd(lam_min)
+    return FDSensitivityResult(
+        sensitivity=fd_max - fd_min, fd_min=fd_min, fd_max=fd_max,
+        lambda_min=lam_min, lambda_max=lam_max, analysis="prior", method=f"black_box ({method})",
     )

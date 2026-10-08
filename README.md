@@ -64,7 +64,7 @@ The full script is [`examples/parametric_prior_sensitivity.py`](examples/paramet
 | Path | What's there |
 | --- | --- |
 | [`src/common/`](src/common) | Shared building blocks: reference models (incl. `PosteriorSamplesModel` for your own draws), distributions, losses, the posterior FD base class, utilities. |
-| [`src/parametric/`](src/parametric) | FDsens: `prior_sensitivity()`, `lr_sensitivity()`, the quadratic-form FD estimator and the optimisers. |
+| [`src/parametric/`](src/parametric) | FDsens: `prior_sensitivity()`, `prior_sensitivity_black_box()`, `lr_sensitivity()`, the quadratic-form FD estimator and the optimisers. |
 | [`src/nonparametric/`](src/nonparametric) | FDsens+: `nonparametric_prior_sensitivity()`, basis functions, FD quadratic forms and the generalised-eigenvalue solver. |
 | [`examples/`](examples) | Runnable scripts for each analysis, including one driven by a Hydra config. |
 | [`configs/`](configs) | Hydra configs: [`configs/examples/`](configs/examples) for the examples, `configs/paper/` for the paper experiments; the rules are in [`configs/README.md`](configs/README.md). |
@@ -100,8 +100,9 @@ prior_sensitivity(model, natural_box, method="quadratic", independent=False, **b
   the box $\Gamma$ of candidate natural parameters.
 - `method="quadratic"` (default): the FD is a convex quadratic form in the natural parameters, so the maximum is found by
   enumerating the box corners and the minimum by a convex QP. Cost grows as $4^d$ corners.
-- `method="black_box"`: global optimisation (`scipy` dual annealing by default) of the FD over the box; pass e.g.
-  `maxiter=150, n_restarts=5`.
+- `method="black_box"`: the same exponential-family FD optimised globally (`scipy` dual annealing) instead of through
+  the quadratic form; pass e.g. `maxiter=150, n_restarts=5`. For candidates outside the exponential families, use
+  [`prior_sensitivity_black_box`](#non-exponential-family-priors-black-box) instead.
 - `independent=True`: when the priors factorise over parameters, the sensitivity is the sum of per-parameter
   sensitivities, each solved on its own 2-d box ($4d$ corners instead of $4^d$). `result.components` holds each block's
   `sensitivity`, `fd_min`, `fd_max`, `lambda_min`, `lambda_max` and `sensitivity_share`; see
@@ -120,6 +121,37 @@ Each candidate component is a one-dimensional exponential family with two natura
 
 Reference priors need not be exponential families or match the candidate family (e.g. `HalfCauchy`, `Uniform`,
 `ChiSquared` from [`src/common/distributions/`](src/common/distributions)).
+
+#### Non-exponential-family priors (black box)
+
+```python
+prior_sensitivity_black_box(model, score_prior_candidate, lower, upper, score_prior_ref=None,
+                            method="dual_annealing", seed=0, maxiter=200, n_restarts=1)
+```
+
+For any candidate family, supply its prior score and a box on its hyperparameters $\lambda$, in whatever
+parametrisation is natural for the family:
+
+- `score_prior_candidate(draws, lam)`: the gradient of the candidate log-prior density at the posterior draws, an
+  `(m, d)` array, for hyperparameters `lam` (a 1-d array);
+- `lower` / `upper`: the box on `lam`;
+- `score_prior_ref(draws)`: the reference prior's score; defaults to the `grad_log_pdf` of the model's reference prior (`base_prior`).
+
+The FD is evaluated directly from the scores and its maximum and minimum are found by global optimisation
+(`method="dual_annealing"` or `"differential_evolution"`, with `n_restarts` restarts). There is no convexity guarantee,
+so the result is only as good as the optimiser; increase `maxiter` / `n_restarts` if in doubt. For example, a Student-t
+candidate with varying location, scale and degrees of freedom:
+
+```python
+def student_t_score(draws, lam):
+    loc, scale, df = lam
+    z = draws - loc
+    return -(df + 1.0) * z / (df * scale ** 2 + z ** 2)
+
+result = prior_sensitivity_black_box(model, student_t_score, lower=[-1.0, 1.0, 2.0], upper=[1.0, 3.0, 30.0])
+```
+
+See [`examples/parametric_black_box_prior_sensitivity.py`](examples/parametric_black_box_prior_sensitivity.py).
 
 ### Learning-rate sensitivity (FDsens)
 
@@ -168,7 +200,8 @@ PYTHONPATH=. pdm run python examples/from_config.py --config-name gaussian_locat
 2. **Wrap it** in `PosteriorSamplesModel` (or a config-defined model), giving the reference prior and, depending on the
    analysis, the candidate family or the loss gradient.
 3. **Choose the analysis and the neighbourhood:**
-   - prior hyperparameters (FDsens): a natural-parameter box per parameter, then `prior_sensitivity(...)`;
+   - prior hyperparameters (FDsens): a natural-parameter box per parameter, then `prior_sensitivity(...)`; or, for a
+     non-exponential-family candidate, its score function and a hyperparameter box, then `prior_sensitivity_black_box(...)`;
    - learning rate (FDsens): an interval, then `lr_sensitivity(...)`;
    - nonparametric prior perturbations (FDsens+): a radius and a kernel, then `nonparametric_prior_sensitivity(...)`.
 4. **Read the result**: `sensitivity` is $\widehat S_m^{\mathrm{FD}}$; `lambda_max` / `lambda_min` (FDsens) or `lambda_sup`
@@ -181,6 +214,7 @@ PYTHONPATH=. pdm run python examples/from_config.py --config-name gaussian_locat
 | --- | --- |
 | [`examples/parametric_prior_sensitivity.py`](examples/parametric_prior_sensitivity.py) | FDsens prior sensitivity (Quickstart) |
 | [`examples/parametric_independent_components.py`](examples/parametric_independent_components.py) | FDsens decomposition over independent prior components (Normal mean, Gamma scale) |
+| [`examples/parametric_black_box_prior_sensitivity.py`](examples/parametric_black_box_prior_sensitivity.py) | FDsens for a non-exponential-family candidate (Student-t), black-box |
 | [`examples/parametric_lr_sensitivity.py`](examples/parametric_lr_sensitivity.py) | FDsens learning-rate sensitivity |
 | [`examples/nonparametric_prior_sensitivity.py`](examples/nonparametric_prior_sensitivity.py) | FDsens+ sensitivity over an FD ball |
 | [`examples/from_config.py`](examples/from_config.py) | Both, from [`configs/examples/`](configs/examples) |
