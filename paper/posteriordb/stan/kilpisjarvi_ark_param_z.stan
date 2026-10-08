@@ -1,6 +1,6 @@
 // AR(K) model for Kilpisjarvi (centred series) under the parametric
 // worst-case prior of the shared z-space neighbourhood, found by
-// run_ark_kilpisjarvi.py (and run_ark_kilpisjarvi_param_nonparam.py).
+// run_ark_kilpisjarvi.py.
 //
 // Per component j (alpha, beta[1..K], sigma), with the reference-prior PIT
 // z_j = Phi^{-1}(F_ref,j(theta_j)) (exactly N(0, 1) under the reference), the

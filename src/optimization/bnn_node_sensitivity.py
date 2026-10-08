@@ -17,11 +17,9 @@ def _build_basis(
 ) -> BaseBasisFunction:
     """
     Construct a basis function, passing only the keyword arguments its
-    constructor actually accepts -- so the same calling code works both for
-    fixed-centre bases (e.g. FixedCentersRBFBasisFunction, which wants
-    loc/scale) and data-driven bases (e.g. MaternBasisFunction,
-    RBFBasisFunction, ... which pick their own centres/lengthscale from
-    posterior_samples/prior_samples via kmeans/farthest/halton).
+    constructor actually accepts (e.g. MaternBasisFunction picks its own
+    centres/lengthscale from posterior_samples/prior_samples via
+    kmeans/halton/random and ignores loc/scale).
 
     center_prior_samples, if given, is used instead of `prior_samples` for
     centre/lengthscale selection -- a fresh, independent prior draw, never
@@ -126,16 +124,13 @@ def compute_group_omega_max(
     prior_samples: np.ndarray,
     basis_cls: Type[BaseBasisFunction],
     basis_kwargs: Dict[str, Any],
-    node_chunk_size: int = 1024,
     center_prior_samples: Optional[np.ndarray] = None,
     rel_tol: float = 1e-8,
-    batched: bool = True,
 ) -> np.ndarray:
     """
     Per-node omega_max(A_j, A_c) for every scalar node (column) of
     `posterior_samples`, sharing one reference prior N(loc, scale^2) and one
-    KEF basis (`basis_cls`, e.g. FixedCentersRBFBasisFunction with K fixed
-    centres loc + {-2,-1,0,1,2}*scale).
+    KEF basis (`basis_cls`, e.g. MaternBasisFunction).
 
     Per node j, the worst-case FD sensitivity over the local ball
     {Pi_j: lambda_j^T A_c lambda_j <= r_j} is r_j * omega_max_j (the infimum
@@ -145,42 +140,18 @@ def compute_group_omega_max(
 
     posterior_samples: (m, n_nodes).
     prior_samples: (m_prior,) -- shared across nodes since A_c only depends
-                   on (loc, scale, basis), not on any individual node's draws
-                   (the basis itself is therefore also built once per group,
-                   even for data-driven bases whose centres/lengthscale are
-                   fit from prior_samples, unless center_prior_samples is
-                   given -- see below). The basis and constraint matrix A_c
-                   are fit ONCE for the whole group; only the per-node
-                   objective A_j is computed per parameter.
+                   on (loc, scale, basis), not on any individual node's draws.
+                   The basis and constraint matrix A_c are fit ONCE for the
+                   whole group; only the per-node objective A_j is computed
+                   per parameter.
     center_prior_samples: optional fresh, independent prior draw used only to
-                   select the basis centres/lengthscale (e.g. via kmeans),
-                   kept separate from `prior_samples` so the same samples
-                   never both pick the centres and estimate A_c. Falls back
-                   to `prior_samples` if not given.
+                   select the basis centres/lengthscale, kept separate from
+                   `prior_samples` so the same samples never both pick the
+                   centres and estimate A_c. Falls back to `prior_samples` if
+                   not given.
 
-    Bases flagged `SEPARABLE = True` (e.g. FixedCentersRBFBasisFunction) treat
-    every column of a (m, d) sample matrix as an independent scalar node, so
-    all n_nodes can be pushed through one batched gradient() call per chunk
-    (large (chunk, K, K) tensors solved in one generalised-eigenvalue call --
-    see `batched` below). Other bases (e.g. MaternBasisFunction,
-    RBFBasisFunction, ...) compute a single joint kernel value over the
-    *whole* d-dimensional sample point, so they must be called once per node
-    (d=1 each time) regardless of `batched`; the basis fit itself
-    (centres/lengthscale) still only happens once for the whole group.
-
-    batched: only meaningful for a SEPARABLE basis. If True (default), nodes
-                   are pushed through basis.gradient() in chunks of
-                   node_chunk_size and their (chunk, K, K) objective matrices
-                   solved together in one batched generalised-eigenvalue
-                   call. If False, forces the one-node-at-a-time loop even
-                   for a SEPARABLE basis -- i.e. solving each parameter's
-                   sensitivity problem separately instead of as one large
-                   joint linear-algebra problem -- to benchmark the cost of
-                   NOT exploiting that batching. Same basis/A_c either way,
-                   so omega_max is numerically identical; only the batching
-                   (and hence runtime) differs. Ignored (always node-by-node)
-                   for a non-SEPARABLE basis, since it can't be batched at
-                   all without corrupting the result (see above).
+    The basis computes a joint kernel value over the whole sample point, so
+    it is called once per node (d=1 each time).
     """
     posterior_samples = np.asarray(posterior_samples, dtype=float)
     m, n_nodes = posterior_samples.shape
@@ -196,18 +167,10 @@ def compute_group_omega_max(
     A_c = np.einsum("mdk,mdl->kl", grad_prior, grad_prior) / m_prior  # (K, K)
 
     omega_max = np.empty(n_nodes, dtype=float)
-
-    if getattr(basis_cls, "SEPARABLE", False) and batched:
-        for start in range(0, n_nodes, node_chunk_size):
-            end = min(start + node_chunk_size, n_nodes)
-            grad = basis.gradient(posterior_samples[:, start:end])  # (m, c, K)
-            A_chunk = np.einsum("mnk,mnl->nkl", grad, grad, optimize=True) / m  # (c, K, K)
-            omega_max[start:end] = _generalized_eigvals_max_batch(A_chunk, A_c, rel_tol=rel_tol)
-    else:
-        for j in range(n_nodes):
-            grad = basis.gradient(posterior_samples[:, j:j + 1])  # (m, 1, K)
-            A_j = np.einsum("mdk,mdl->kl", grad, grad, optimize=True) / m  # (K, K)
-            omega_max[j] = _generalized_eigvals_max_batch(A_j[None, :, :], A_c, rel_tol=rel_tol)[0]
+    for j in range(n_nodes):
+        grad = basis.gradient(posterior_samples[:, j:j + 1])  # (m, 1, K)
+        A_j = np.einsum("mdk,mdl->kl", grad, grad, optimize=True) / m  # (K, K)
+        omega_max[j] = _generalized_eigvals_max_batch(A_j[None, :, :], A_c, rel_tol=rel_tol)[0]
 
     return omega_max
 

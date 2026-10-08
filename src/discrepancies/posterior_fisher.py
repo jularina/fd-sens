@@ -58,22 +58,6 @@ class PosteriorFDBase:
         diff = float(np.mean(np.sum(self.g * self.g, axis=1)))
         return (self.beta - self.beta_ref)**2 * diff
 
-    def compute_fisher_quadratic_form_lr_only(
-        self,
-    ) -> Tuple[float, float, float]:
-        """
-        Learning-rate-only perturbation quadratic in beta:
-            FD(beta) = A beta^2 + b beta + c
-        with:
-            A = (1/m) sum_i ||g_i||^2
-            b = -2 beta_ref A
-            c = beta_ref^2 A
-        """
-        self.beta = self.model.loss_lr
-        A = float(np.mean(np.sum(self.g * self.g, axis=1)))
-        b = float(-2.0 * self.beta_ref * A)
-        c = float((self.beta_ref ** 2) * A)
-        return A, b, c
 
     # -------------------------
     # Copula perturbations

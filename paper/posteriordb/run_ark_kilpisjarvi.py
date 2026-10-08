@@ -54,13 +54,7 @@ y = np.array(DATA["y"])
 y_centered = y - np.mean(y)
 
 
-def _gaussian_from_eta(e1, e2):
-    sigma = float(np.sqrt(-1.0 / (2.0 * e2)))
-    return {"mu": float(e1 * sigma ** 2), "sigma": sigma}
-
-
-# Shared z-space parametric neighbourhood (identical for every component), as
-# in run_ark_kilpisjarvi_param_nonparam.py: after the PIT z = Phi^{-1}(F_ref(x))
+# Shared z-space parametric neighbourhood (identical for every component): after the PIT z = Phi^{-1}(F_ref(x))
 # every reference prior is N(0, 1), and candidates are N(mu_z, sigma_z^2) with
 # mu_z in [-z_mu_max, z_mu_max], sigma_z in [z_sigma_min, z_sigma_max]. The box
 # is set by cfg.playground (overridable from the command line, see
@@ -116,8 +110,7 @@ def _run_stage(cfg, stage: str) -> bool:
 
 def _export_param_z_stan_data(worst: dict, base_prior, y_full: np.ndarray, K: int, path: str) -> None:
     """
-    Stan data for paper/posteriordb/stan/kilpisjarvi_ark_param_z.stan (same
-    layout as run_ark_kilpisjarvi_param_nonparam._export_param_z_stan_data):
+    Stan data for paper/posteriordb/stan/kilpisjarvi_ark_param_z.stan:
     per component, z_j ~ N(mu_z_j, sigma_z_j^2) pushed back through the
     reference PIT.
     """
@@ -148,8 +141,7 @@ def compute_z_scale_parametric_sensitivity(
     """
     Per component, the posterior-based FD_z sup over the shared Gaussian-in-z
     box (attained at one of its 4 vertices) -- same quantity as
-    run_ark_kilpisjarvi_nonparam.compute_uniform_z_neighbourhood_parametric_sensitivity,
-    computed from the parametric model's own posterior draws (columns alpha,
+    run_ark_kilpisjarvi_nonparam.compute_parametric_sensitivity, computed from the parametric model's own posterior draws (columns alpha,
     beta1..K, sigma, matching base_prior's component order).
 
     Returns {name: (mu_z, sigma_z, fd_z_sup)}.

@@ -10,9 +10,8 @@ class PriorFDBase:
         """
         Base class for Fisher divergence between priors.
 
-        Holds prior samples and the reference prior score. Subclasses add
-        either a parametric candidate prior (PriorFDParametric) or a
-        nonparametric basis-function representation (PriorFDNonParametric).
+        Holds prior samples and the reference prior score. PriorFDNonParametric
+        adds the basis-function representation of the candidate prior.
         """
         self.model = model
         self.samples: np.ndarray = self.model.prior_samples_init
@@ -36,69 +35,6 @@ class PriorFDBase:
     def _compute_c_prior_only(self) -> float:
         v = self._v_prior_only()
         return float(np.sum(v * v) / self.m)
-
-
-class PriorFDParametric(PriorFDBase):
-    def __init__(self, model: "BayesianModel"):
-        """
-        Fisher divergence between priors in the parametric (exponential-family) representation.
-
-        Requires model.prior_candidate to be set.
-        """
-        super().__init__(model=model)
-
-        # Candidate prior (exp family decomposition), evaluated at the same samples
-        # grad_T: (m, paramdim, natparamdim)
-        # grad_log_g: (m, paramdim)
-        self.grad_T = self.model.prior_candidate.grad_sufficient_statistics(self.samples)
-        self.grad_log_g = self.model.prior_candidate.grad_log_base_measure(self.samples)
-        self.eta = self.model.prior_candidate.natural_parameters()
-
-    def update_candidate(self) -> None:
-        self.grad_T = self.model.prior_candidate.grad_sufficient_statistics(self.samples)
-        self.grad_log_g = self.model.prior_candidate.grad_log_base_measure(self.samples)
-        self.eta = self.model.prior_candidate.natural_parameters()
-
-    def _v_prior_only(self) -> np.ndarray:
-        """
-        v_i = s_ref(θ_i) - grad_log_g(θ_i)
-
-        Shape: (m, paramdim)
-        """
-        return self.score_prior_ref - self.grad_log_g
-
-    def _delta_score_prior_only(self, eta: np.ndarray) -> np.ndarray:
-        """
-        delta_i = s_ref(θ_i) - s_candidate(θ_i)
-               = v_i - grad_T(θ_i) @ eta
-
-        Shape: (m, paramdim)
-        """
-        v = self._v_prior_only()
-        gradT_eta = np.einsum("idp,p->id", self.grad_T, eta)
-        return v - gradT_eta
-
-    def estimate_fisher_prior_only(self) -> float:
-        """
-        (1/m) sum_i || s_ref(θ_i) - s_candidate(θ_i) ||^2
-        """
-        self.update_candidate()
-        diff = self._delta_score_prior_only(self.eta)
-        return float(np.mean(np.sum(diff * diff, axis=1)))
-
-    def compute_fisher_quadratic_form_prior_only(
-        self,
-    ) -> Tuple[np.ndarray, np.ndarray, float]:
-        """
-        Prior-only perturbation quadratic in eta:
-            (1/m) sum_i || v_i - grad_T(θ_i) @ eta ||^2
-          = eta^T A eta + b^T eta + c
-        """
-        self.update_candidate()
-        A = self._compute_A_prior_only()
-        b = self._compute_b_prior_only()
-        c = self._compute_c_prior_only()
-        return A, b, c
 
 
 class PriorFDNonParametric(PriorFDBase):

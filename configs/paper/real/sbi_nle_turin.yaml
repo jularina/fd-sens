@@ -297,10 +297,6 @@ fd:
 #                mu_log: 4
 #                sigma_log: 11
 
-      nonparametric:
-        basis_funcs_type:  MaternBasisFunctionMultidim # PolynomialBasisFunctionMultidim # SigmoidBasisFunctionMultidim  # RBFBasisFunctionMultidim
-        basis_funcs_kwargs: {"num_basis_functions": 5, "method": "kmeans", "scale_multiplier": 3} # polynomial {"degree":3}  # sigmoid { "num_basis_functions": 15, "method": "farthest", "scale":null, "scale_multiplier": 1, "metric": "full" }   # for rbf { "num_basis_functions": 15, "method": "farthest", "lengthscale": null, "scale_multiplier": 1, "metric": "full" }
-
     loss:
       GaussianLogLikelihoodWithGivenGrads:
         parameters_box_range:

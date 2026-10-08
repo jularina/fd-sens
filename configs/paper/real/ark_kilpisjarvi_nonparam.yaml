@@ -87,7 +87,7 @@ model:
 optimize:
   nonparametric:
     # Every component is first mapped to z = Phi^{-1}(F_ref(theta)) (see
-    # run_ark_kilpisjarvi_nonparam.py's _to_z_space), so all 7 reference-
+    # run_ark_kilpisjarvi.py's _to_z_space), so all 7 reference-
     # prior marginals become exactly N(0, 1) regardless of the original
     # family (Gaussian alpha/beta1..5, Half-Cauchy sigma). The same kernel
     # family, number of centres, centre-selection procedure and lengthscale-
@@ -100,28 +100,6 @@ optimize:
       nu: 3.5
       estimation_samples_source: prior
 
-sensitivity:
-  # Shared neighbourhood radius, applied identically to all 7 components.
-  # Because every component lives in the same standardized (z) space, r_j
-  # now represents a genuinely comparable degree of prior perturbation for
-  # every one of them, and raw sensitivity = r_j * omega_max is directly
-  # comparable/summable across components (C_j = S_j / sum_k S_k).
-  r_j: 50.0
-  # Radii to sweep for the posterior-predictive (reference vs. KEF
-  # worst-case) comparison specifically -- independent of r_j above, since
-  # each component's *share* of the total sensitivity doesn't change with
-  # radius (only magnitudes do), so this can be pushed larger purely to
-  # make the predictive gap visible. Self-normalised importance-sampling
-  # reweighting degrades (falling effective sample size) as radius grows,
-  # so the sweep is meant to show where that breakdown starts too.
-  posterior_predictive_radii: [5, 20, 50, 100, 200, 500]
-
 flags:
   plots:
-    output_dir: outputs/paper/plots/fisher/kilpisjarvi/nonparam
-  results:
-    output_dir: outputs/paper/results/kilpisjarvi/nonparam
-
-playground:
-  output_prefix: kilpisjarvi_nonparam
-  save_json: true
+    output_dir: outputs/paper/plots/fisher/kilpisjarvi/param_vs_nonparam

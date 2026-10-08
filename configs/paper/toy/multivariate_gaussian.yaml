@@ -65,10 +65,6 @@ fd:
               "0_1": 2
               "1_0": 2
 
-      nonparametric:
-        basis_funcs_type: MaternBasisFunctionMultidim
-        basis_funcs_kwargs: {"num_basis_functions": 5, "method": "kmeans", "scale_multiplier": 3}
-
     loss:
       MultivariateGaussianLogLikelihood:
         parameters_box_range:

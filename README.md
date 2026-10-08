@@ -126,11 +126,13 @@ flags:
 ## Paper experiments
 
 The `paper/` directory contains the experiment scripts, organized into one folder per experimental setting.
-Each folder contains scripts named with the `_fisher` suffix for the FD-based experiments.
+Scripts with a `_nonparam` suffix belong to the nonparametric (FDsens+) paper, which uses kernel exponential family
+neighbourhoods solved through a generalised eigenvalue problem; the others belong to the parametric (FDsens) paper.
 
 ### `paper/toy/`
 Toy Gaussian experiments and finite-sample complexity comparisons.
 - `run_toy_fisher.py` — sensitivity analysis on univariate/multivariate Gaussian models; generates FD sensitivity curves and comparison plots against the mean, KL and Wasserstein-2 measures.
+- `run_toy_fisher_nonparam.py` — FDsens+ on the Gaussian location model: worst-case priors across radii (1d/2d), runtimes, sensitivity vs number of centres, closed-form estimation errors, kernel and centre choices, and the parametric vs nonparametric comparison.
 
 ### `paper/ising/`
 Generalised Bayesian inference for the Ising model with pseudolikelihood and discrete Fisher divergence losses.
@@ -140,7 +142,12 @@ Generalised Bayesian inference for the Ising model with pseudolikelihood and dis
 Real-data experiments using models from the PosteriorDB benchmark.
 - `run_ark_fisher.py` — optimisation runtime comparison (convex corner enumeration, per-component decomposition, black-box dual annealing) for the arK model.
 - `run_ark_kilpisjarvi.py` — z-scale prior sensitivity and posterior predictives for the Kilpisjarvi AR(5) model; run end to end with `run_kilpisjarvi_param_predictive.sh` (requires R with `rstan`).
+- `run_ark_kilpisjarvi_nonparam.py` — FDsens vs FDsens+ per-parameter sensitivity shares for the Kilpisjarvi AR(5) model in z-scale.
 
 ### `paper/sbi/`
 Experiments on the Turin channel model fitted via simulation-based inference (SBI).
 - `run_turin_fisher.py` — FD sensitivity to Gaussian-copula prior dependence for the Turin SBI model.
+
+### `paper/bnn/`
+Bayesian neural networks on UCI regression datasets (posterior samples from the `bnn_priors` code of Fortuin et al., 2022).
+- `run_bnn_uci_fisher_nonparam.py` — per-parameter FDsens+ sensitivity: Boston weight heatmap, all-dataset runs, and the layer-wise sensitivity table.

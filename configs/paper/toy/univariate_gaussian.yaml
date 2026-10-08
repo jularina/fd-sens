@@ -49,11 +49,6 @@ fd:
             nums:
               mu: 21
               sigma: 4
-      nonparametric:
-        basis_funcs_type: MaternBasisFunction
-        basis_funcs_kwargs: {"num_basis_functions": 5, "method": "kmeans", "scale_multiplier": 1}
-        base_function: src.distributions.gaussian.Gaussian
-
       LogNormal:
           parameters_box_range:
             ranges:

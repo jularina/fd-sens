@@ -45,13 +45,7 @@ optimize:
 
 sensitivity:
   r_j: 5.0
-  node_chunk_size: 1024
-  top_k: 20
-  top_k_plot: 20
-  candidate_display_radius: 5.0
 
 flags:
   plots:
     output_dir: outputs/paper/plots/fisher/bnn/yacht/nonparam/exp_uci_yacht_studentt
-  results:
-    output_dir: outputs/paper/results/bnn/yacht/nonparam/exp_uci_yacht_studentt
