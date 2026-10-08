@@ -23,7 +23,7 @@ from src.plots.paper.posterior_db_paper_funcs import (
     _apply_plot_rc,
     _save_fig,
 )
-from tests.posteriordb.run_ark_kilpisjarvi import (
+from paper.posteriordb.run_ark_kilpisjarvi import (
     x_years,
     y,
     y_centered,
@@ -157,7 +157,7 @@ def _export_kef_stan_data(
     path: str,
 ) -> None:
     """
-    Write the Stan data (see tests/posteriordb/stan/kilpisjarvi_ark_kef.stan)
+    Write the Stan data (see paper/posteriordb/stan/kilpisjarvi_ark_kef.stan)
     for sampling the posterior under the worst-case KEF prior at radius
     r_pred directly with MCMC, instead of SNIS-reweighting the reference
     posterior (_kef_reweight_posterior). Per component j, in z-space:
@@ -555,12 +555,12 @@ def run_ark_kilpisjarvi_nonparametric_sensitivity(cfg: DictConfig) -> None:
     """
     Per-component nonparametric FD sensitivity analysis for the Kilpisjarvi
     AR(K) regression model (posteriordb), for the parametric counterpart see
-    tests/posteriordb/run_ark_kilpisjarvi.py.
+    paper/posteriordb/run_ark_kilpisjarvi.py.
 
     Kilpisjarvi's composite prior decomposes into independent scalar blocks
     (alpha, beta1..beta5 ~ N(0, 5^2); sigma ~ HalfCauchy(gamma)), just like
     the BNN's per-weight/bias decomposable prior in
-    tests/bnn/run_bnn_uci_fisher_nonparam.py, so the same per-node
+    paper/bnn/run_bnn_uci_fisher_nonparam.py, so the same per-node
     nonparametric FD sensitivity machinery (src.optimization.
     bnn_node_sensitivity.compute_group_omega_max / compute_node_lambda_star)
     is reused here via KilpisjarviNonparametricLoader.
@@ -836,7 +836,7 @@ def run_ark_kilpisjarvi_nonparametric_sensitivity(cfg: DictConfig) -> None:
     pred_radii = [float(r) for r in cfg.sensitivity.get("posterior_predictive_radii", [r_j])]
 
     # Stan data for sampling each r_pred's KEF posterior directly (see
-    # tests/posteriordb/stan/sample_kilpisjarvi_ark_kef.R), from the same
+    # paper/posteriordb/stan/sample_kilpisjarvi_ark_kef.R), from the same
     # fitted (basis, lambda_star) the SNIS reweighting below uses.
     stan_data_dir = os.path.join(results_dir, "stan")
     os.makedirs(stan_data_dir, exist_ok=True)

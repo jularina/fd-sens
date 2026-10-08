@@ -123,24 +123,24 @@ flags:
 
 ---
 
-## Tests
+## Paper experiments
 
-The `tests/` directory is organized into four folders, one per experimental setting.
+The `paper/` directory contains the experiment scripts, organized into one folder per experimental setting.
 Each folder contains scripts named with the `_fisher` suffix for the FD-based experiments.
 
-### `tests/toy/`
+### `paper/toy/`
 Toy Gaussian experiments and finite-sample complexity comparisons.
 - `run_toy_fisher.py` — sensitivity analysis on univariate/multivariate Gaussian models; generates FD sensitivity curves and comparison plots against the mean, KL and Wasserstein-2 measures.
 
-### `tests/ising/`
+### `paper/ising/`
 Generalised Bayesian inference for the Ising model with pseudolikelihood and discrete Fisher divergence losses.
 - `run_ising_fisher.py` — `main()` computes FD learning-rate sensitivity grids for the three learning-rate calibration methods; `create_combined_plots()` produces the paper figures.
 
-### `tests/posteriordb/`
+### `paper/posteriordb/`
 Real-data experiments using models from the PosteriorDB benchmark.
 - `run_ark_fisher.py` — optimisation runtime comparison (convex corner enumeration, per-component decomposition, black-box dual annealing) for the arK model.
 - `run_ark_kilpisjarvi.py` — z-scale prior sensitivity and posterior predictives for the Kilpisjarvi AR(5) model; run end to end with `run_kilpisjarvi_param_predictive.sh` (requires R with `rstan`).
 
-### `tests/sbi/`
+### `paper/sbi/`
 Experiments on the Turin channel model fitted via simulation-based inference (SBI).
 - `run_turin_fisher.py` — FD sensitivity to Gaussian-copula prior dependence for the Turin SBI model.

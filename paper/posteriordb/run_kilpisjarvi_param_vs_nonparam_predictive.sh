@@ -18,7 +18,7 @@
 #
 # Fixed seeds throughout (data.seed in the configs, Stan seed below), so
 # reruns give the same result. Run from anywhere:
-#   bash tests/posteriordb/run_kilpisjarvi_param_vs_nonparam_predictive.sh
+#   bash paper/posteriordb/run_kilpisjarvi_param_vs_nonparam_predictive.sh
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -27,8 +27,8 @@ cd "$REPO_ROOT"
 PYTHON="${PYTHON:-$REPO_ROOT/.venv/bin/python}"
 export PYTHONPATH="$REPO_ROOT:$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
-SCRIPT="tests/posteriordb/run_ark_kilpisjarvi_param_nonparam.py"
-STAN_DIR="tests/posteriordb/stan"
+SCRIPT="paper/posteriordb/run_ark_kilpisjarvi_param_nonparam.py"
+STAN_DIR="paper/posteriordb/stan"
 OUT_DIR="outputs/paper/results/kilpisjarvi/param_vs_nonparam/stan"
 STAN_SEED=27
 

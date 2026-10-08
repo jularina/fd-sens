@@ -11,7 +11,7 @@
 #      kilpisjarvi-acf-comparison.pdf.
 #
 # Box via positional args (defaults = paper box, as in configs/paper/real/ark_kilpisjarvi.yaml):
-#   bash tests/posteriordb/run_kilpisjarvi_param_predictive.sh [MU_Z_MAX SIGMA_Z_MIN SIGMA_Z_MAX]
+#   bash paper/posteriordb/run_kilpisjarvi_param_predictive.sh [MU_Z_MAX SIGMA_Z_MIN SIGMA_Z_MAX]
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -20,8 +20,8 @@ cd "$REPO_ROOT"
 PYTHON="${PYTHON:-$REPO_ROOT/.venv/bin/python}"
 export PYTHONPATH="$REPO_ROOT:$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
-SCRIPT="tests/posteriordb/run_ark_kilpisjarvi.py"
-STAN_DIR="tests/posteriordb/stan"
+SCRIPT="paper/posteriordb/run_ark_kilpisjarvi.py"
+STAN_DIR="paper/posteriordb/stan"
 OUT_DIR="outputs/paper/results/kilpisjarvi/param/stan"
 STAN_SEED=27
 

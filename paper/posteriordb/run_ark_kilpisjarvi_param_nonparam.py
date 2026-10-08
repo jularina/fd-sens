@@ -23,7 +23,7 @@ from src.plots.paper.posterior_db_paper_funcs import (
     plot_posterior_predictive_with_data,
 )
 
-from tests.posteriordb.run_ark_kilpisjarvi import (
+from paper.posteriordb.run_ark_kilpisjarvi import (
     x_years,
     y,
     y_centered,
@@ -34,7 +34,7 @@ from tests.posteriordb.run_ark_kilpisjarvi import (
     _stack_corner_chains,
     print_predictive_variance_decomposition,
 )
-from tests.posteriordb.run_ark_kilpisjarvi_nonparam import (
+from paper.posteriordb.run_ark_kilpisjarvi_nonparam import (
     _to_z_space,
     _log_kef_density_ratio,
     _fd_z_posterior_gaussian_in_z,
@@ -53,7 +53,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 # Shared z-space parametric neighbourhood Gamma_{z,j} (identical for every
 # component) and where the Stan data / draws for the "both in z-scale"
 # posterior-predictive comparison live -- see
-# tests/posteriordb/run_kilpisjarvi_param_vs_nonparam_predictive.sh.
+# paper/posteriordb/run_kilpisjarvi_param_vs_nonparam_predictive.sh.
 Z_MU_RANGE = (-0.4, 0.4)
 Z_SIGMA_RANGE = (0.8, 1.25)
 Z_SCALE_STAN_DIR = os.path.join(REPO_ROOT, "outputs/paper/results/kilpisjarvi/param_vs_nonparam/stan")
@@ -383,7 +383,7 @@ def _uniform_z_worst_case_corners(loader, mu_z_range=Z_MU_RANGE, sigma_z_range=Z
 
 def _export_param_z_stan_data(worst_corners: dict, loader, y_full: np.ndarray, K: int, path: str) -> None:
     """
-    Stan data (see tests/posteriordb/stan/kilpisjarvi_ark_param_z.stan) for
+    Stan data (see paper/posteriordb/stan/kilpisjarvi_ark_param_z.stan) for
     sampling the posterior under the parametric worst-case prior of the
     shared z-space box: per component, z_j ~ N(mu_z_j, sigma_z_j^2) pushed
     back through the reference PIT.

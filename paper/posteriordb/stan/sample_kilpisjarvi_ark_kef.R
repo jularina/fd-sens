@@ -3,10 +3,10 @@ library(jsonlite)
 
 # Samples the Kilpisjarvi AR(K) posterior under the worst-case nonparametric
 # KEF prior, for each radius r_pred whose Stan data was exported by
-# tests/posteriordb/run_ark_kilpisjarvi_nonparam.py (_export_kef_stan_data).
+# paper/posteriordb/run_ark_kilpisjarvi_nonparam.py (_export_kef_stan_data).
 # Run from the fd-sens repo root.
 
-stan_file <- "tests/posteriordb/stan/kilpisjarvi_ark_kef.stan"
+stan_file <- "paper/posteriordb/stan/kilpisjarvi_ark_kef.stan"
 stan_data_dir <- "outputs/paper/results/kilpisjarvi/nonparam/stan"
 draws_dir <- "/Users/arinaodv/Desktop/folder/study_phd/code/posteriordb/posterior_database/reference_posteriors/draws/draws"
 radii <- c(5, 20, 50, 100, 200, 500)

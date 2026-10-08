@@ -116,7 +116,7 @@ def _run_stage(cfg, stage: str) -> bool:
 
 def _export_param_z_stan_data(worst: dict, base_prior, y_full: np.ndarray, K: int, path: str) -> None:
     """
-    Stan data for tests/posteriordb/stan/kilpisjarvi_ark_param_z.stan (same
+    Stan data for paper/posteriordb/stan/kilpisjarvi_ark_param_z.stan (same
     layout as run_ark_kilpisjarvi_param_nonparam._export_param_z_stan_data):
     per component, z_j ~ N(mu_z_j, sigma_z_j^2) pushed back through the
     reference PIT.

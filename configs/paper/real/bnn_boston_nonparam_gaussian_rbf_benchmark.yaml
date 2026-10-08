@@ -34,7 +34,7 @@ model:
 # bnn_boston_nonparam_gaussian.yaml) -- this config exists only to benchmark
 # per-node-loop vs. batched-large-matrix runtime (see
 # run_bnn_uci_sensitivity_batching_runtime_benchmark in
-# tests/bnn/run_bnn_uci_fisher_nonparam.py), which needs a SEPARABLE basis
+# paper/bnn/run_bnn_uci_fisher_nonparam.py), which needs a SEPARABLE basis
 # (FixedCentersRBFBasisFunction treats every node independently -- see its
 # docstring) to make the batched code path valid at all.
 optimize:
