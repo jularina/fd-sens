@@ -8,7 +8,6 @@ A Python-based toolkit for **global Bayesian sensitivity analysis** using the **
 
 - **Distributions**
   - Gaussian (univariate and multivariate)
-  - Log-normal
   - Gamma, Inverse-Gamma
   - Beta
   - Cauchy, Half-Cauchy
@@ -64,7 +63,7 @@ src/
 
 The abstract base [`BayesianModel`](src/common/bayesian_model/base.py) defines the interface: it holds a prior and a likelihood, exposes score functions, and handles posterior/prior sampling. Concrete subclasses implement model-specific closed-form posteriors:
 
-- [`SimpleGaussianModel`](src/common/bayesian_model/gaussian.py) — univariate Gaussian likelihood with Gaussian or Log-normal prior.
+- [`SimpleGaussianModel`](src/common/bayesian_model/gaussian.py) — univariate Gaussian likelihood with Gaussian prior.
 - [`MultivariateGaussianModel`](src/common/bayesian_model/gaussian.py) — multivariate Gaussian likelihood with Gaussian prior on the mean.
 
 ### 2. Fisher divergence
@@ -161,8 +160,7 @@ Generalised Bayesian inference for the Ising model with pseudolikelihood and dis
 
 ### `paper/posteriordb/`
 Real-data experiments using models from the PosteriorDB benchmark.
-- `run_ark_fisher.py` — optimisation runtime comparison (convex corner enumeration, per-component decomposition, black-box dual annealing) for the arK model.
-- `run_ark_kilpisjarvi.py` — z-scale prior sensitivity and posterior predictives for the Kilpisjarvi AR(5) model; run end to end with `run_kilpisjarvi_param_predictive.sh` (requires R with `rstan`).
+- `run_ark_kilpisjarvi.py` — z-scale prior sensitivity and posterior predictives for the Kilpisjarvi AR(5) model; run end to end with `run_kilpisjarvi_param_predictive.sh` (requires R with `rstan`). The optimiser runtime comparison (full corner enumeration, per-component decomposition, black-box dual annealing) runs separately with `playground.stage=timing` and is replotted from the saved timings with `playground.stage=plot_timing`.
 - `run_ark_kilpisjarvi_nonparam.py` — FDsens vs FDsens+ per-parameter sensitivity shares for the Kilpisjarvi AR(5) model in z-scale.
 
 ### `paper/sbi/`

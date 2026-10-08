@@ -34,9 +34,10 @@ _DATA = {
 
 class KilpisjarviBayesianModel:
     """
-    Bayesian model for Kilpisjarvi simple linear regression loaded from posteriordb.
-    Model: y_i ~ Normal(alpha + beta * x_i, sigma)
-    Parameter vector order: [alpha, beta, sigma].
+    Bayesian AR(K) model for the Kilpisjarvi June temperatures, with reference
+    posterior draws from posteriordb.
+    Model: y_t ~ Normal(alpha + sum_k beta_k * y_{t-k}, sigma)
+    Parameter vector order: [alpha, beta_1, ..., beta_K, sigma].
     """
 
     def __init__(self, data_config: Any):

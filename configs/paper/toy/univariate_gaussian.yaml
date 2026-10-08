@@ -49,14 +49,6 @@ fd:
             nums:
               mu: 21
               sigma: 4
-      LogNormal:
-          parameters_box_range:
-            ranges:
-              mu_log: [ -10, 10]
-              sigma_log: [2, 5]
-            nums:
-              mu_log: 21
-              sigma_log: 4
 
     loss:
       GaussianLogLikelihood:

@@ -5,7 +5,7 @@ from src.common.bayesian_model.base import BayesianModelExtended
 
 class SimpleGaussianModel(BayesianModelExtended):
     """
-    Univariate Gaussian likelihood with Gaussian or LogNormal prior.
+    Univariate Gaussian likelihood with Gaussian prior.
     """
 
     def __init__(self, data_config):

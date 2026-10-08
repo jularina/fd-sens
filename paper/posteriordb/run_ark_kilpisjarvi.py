@@ -1,4 +1,5 @@
 import os
+import time
 import numpy as np
 from scipy.stats import norm as scipy_norm
 import hydra
@@ -7,14 +8,18 @@ from omegaconf import DictConfig
 import json
 
 from src.common.utils.files_operations import load_plot_config, save_to_serializable_json
+from src.parametric.fisher import PosteriorFDParametric
+from src.parametric.corner_points import OptimizationCornerPointsCompositePrior
 from src.parametric.plots.posteriordb import (
     plot_acf_comparison,
+    plot_complexity_bar,
     plot_component_sensitivity_bar,
     plot_posterior_predictive_with_data,
     plot_priors_z_scale_one_panel,
 )
 from src.common.distributions.gaussian import Gaussian
 from src.common.distributions.cauchy import HalfCauchy
+from src.common.distributions.composite import CompositeProduct
 
 # ---------------------------------------------------------------------------
 # Kilpisjarvi dataset
@@ -222,8 +227,126 @@ def main(cfg: DictConfig) -> None:
     )
 
 
+class _ZScalePriorFDModel:
+    """
+    Prior-only FD problem in z-space for the optimiser runtime comparison: every component
+    has an N(0, 1) reference prior, the candidates are Gaussian in z, and the posterior
+    draws are mapped through the reference PIT. The likelihood is the same for every
+    candidate prior, so its score drops out of the prior-only FD.
+    """
+
+    def __init__(self, posterior_z: np.ndarray, names: list[str]):
+        self.posterior_samples_init = posterior_z
+        self.prior_init = CompositeProduct(distributions={n: Gaussian(mu=0.0, sigma=1.0) for n in names})
+        self.prior_candidate = CompositeProduct(distributions={n: Gaussian(mu=0.0, sigma=1.0) for n in names})
+        self.loss_lr_init = 1.0
+        self.loss_lr = 1.0
+
+    def loss_score(self, x: np.ndarray, multiply_by_lr: bool = True) -> np.ndarray:
+        return np.zeros_like(np.asarray(x, dtype=float))
+
+
+def _z_box_eta_components(names: list[str], mu_z_range, sigma_z_range) -> list[dict]:
+    """
+    Natural-parameter box (eta_1 = mu/s^2, eta_2 = -1/(2 s^2)) spanned by the z-box,
+    identical for every component.
+    """
+    mu_max = max(abs(mu_z_range[0]), abs(mu_z_range[1]))
+    sig_min, sig_max = sigma_z_range
+    eta_1 = [-mu_max / sig_min ** 2, mu_max / sig_min ** 2]
+    eta_2 = [-0.5 / sig_min ** 2, -0.5 / sig_max ** 2]
+    return [{"name": n, "eta_range": {"eta_1": eta_1, "eta_2": eta_2}} for n in names]
+
+
+def _timing_dir(cfg) -> str:
+    return os.path.join(get_original_cwd(), cfg.playground.get("timing_dir", "data/kilpisjarvi"))
+
+
+@hydra.main(version_base="1.1", config_path="../../configs/paper/real/", config_name="ark_kilpisjarvi")
+def time_optimisers(cfg: DictConfig) -> None:
+    """
+    Times the three optimisation routines on the z-scale prior sensitivity problem
+    (14 natural parameters): corner enumeration of the full convex quadratic form plus
+    convex QP for the infimum, the per-component decomposition, and black-box dual
+    annealing. Saves the timings used by plot_timing.
+    """
+    if cfg.playground.get("stage", "all") != "timing":
+        return
+    n_runs = int(cfg.playground.get("n_timing_runs", 500))
+    n_runs_bb = int(cfg.playground.get("n_timing_runs_bb", 100))
+    timing_dir = _timing_dir(cfg)
+    os.makedirs(timing_dir, exist_ok=True)
+
+    model = instantiate(cfg.model, data_config=cfg.data)
+    base_prior = instantiate(cfg.data.base_prior)
+    names = list(base_prior.names)
+    posterior_z = np.column_stack([
+        _to_z_space(ref, model.posterior_samples_init[:, idx])
+        for idx, ref in enumerate(base_prior.components)
+    ])
+    mu_z_range, sigma_z_range = _z_box_from_cfg(cfg)
+
+    fisher_estimator = PosteriorFDParametric(model=_ZScalePriorFDModel(posterior_z, names))
+    optimizer = OptimizationCornerPointsCompositePrior(
+        fisher_estimator,
+        {"eta_components": _z_box_eta_components(names, mu_z_range, sigma_z_range)},
+        loss_config={},
+    )
+
+    print(f"Starting optimisation of all parameters at once ({n_runs} runs).")
+    times_full = np.empty(n_runs)
+    for i in range(n_runs):
+        start = time.perf_counter()
+        optimizer.evaluate_all_prior_corners()
+        optimizer.minimize_prior_full_qp()
+        times_full[i] = time.perf_counter() - start
+    np.savez(os.path.join(timing_dir, "timing_qf_full.npz"), times=times_full)
+
+    print(f"Starting per component optimisation ({n_runs} runs).")
+    times_decomp = np.empty(n_runs)
+    for i in range(n_runs):
+        start = time.perf_counter()
+        optimizer.evaluate_all_prior_corners_per_component(component_names=names)
+        optimizer.minimize_prior_per_component_qp(names)
+        times_decomp[i] = time.perf_counter() - start
+    np.savez(os.path.join(timing_dir, "timing_qf_decomp.npz"), times=times_decomp)
+
+    print(f"Starting black-box optimisation ({n_runs_bb} runs).")
+    times_bb = np.empty(n_runs_bb)
+    for i in range(n_runs_bb):
+        start = time.perf_counter()
+        optimizer.black_box_optimize_prior_box_global(
+            method="dual_annealing",
+            seed=i,
+            maxiter=150,
+            n_restarts=5,
+        )
+        times_bb[i] = time.perf_counter() - start
+        print(f"  Run {i + 1}/{n_runs_bb}: {times_bb[i]:.3f} sec.")
+    np.savez(os.path.join(timing_dir, "timing_bb.npz"), times=times_bb)
+    print(f"Mean times: full {times_full.mean():.4f}s, per-component {times_decomp.mean():.4f}s, "
+          f"black-box {times_bb.mean():.3f}s. Saved to {timing_dir}")
+
+
+@hydra.main(version_base="1.1", config_path="../../configs/paper/real/", config_name="ark_kilpisjarvi")
+def plot_timing(cfg: DictConfig) -> None:
+    if cfg.playground.get("stage", "all") not in ("timing", "plot_timing"):
+        return
+    timing_dir = _timing_dir(cfg)
+    plot_cfg = load_plot_config(os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml"))
+    plot_complexity_bar(
+        plot_cfg=plot_cfg,
+        output_dir=os.path.join(get_original_cwd(), cfg.flags.plots.output_dir),
+        filename="kilpisjarvi_computational_cost.pdf",
+        use_log10=True,
+        qf_full_time_sec=np.load(os.path.join(timing_dir, "timing_qf_full.npz"))["times"],
+        qf_decomp_time_sec=np.load(os.path.join(timing_dir, "timing_qf_decomp.npz"))["times"],
+        black_box_time_sec=np.load(os.path.join(timing_dir, "timing_bb.npz"))["times"],
+    )
+
+
 # ---------------------------------------------------------------------------
-# Posterior predictive helpers (mirrored from run_ark_fisher)
+# Posterior predictive helpers
 # ---------------------------------------------------------------------------
 
 def _load_corner_draws_json(path: str) -> list[dict]:
@@ -530,3 +653,5 @@ def plot_posterior_predictive(cfg: DictConfig) -> None:
 if __name__ == "__main__":
     main()
     plot_posterior_predictive()
+    time_optimisers()
+    plot_timing()
