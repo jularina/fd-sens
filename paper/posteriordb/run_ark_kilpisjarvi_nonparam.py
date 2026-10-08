@@ -12,7 +12,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from src.utils.basis_functions import BASIS_FUNCTIONS_REGISTRY
 from src.utils.files_operations import load_plot_config
-from src.optimization.bnn_node_sensitivity import compute_node_lambda_star
+from src.optimization.bnn_node_sensitivity import compute_group_omega_max
 from src.plots.paper.posterior_db_paper_funcs import _apply_plot_rc, _save_fig
 from paper.posteriordb.run_ark_kilpisjarvi import _to_z_space, _fd_z_posterior_gaussian_in_z
 
@@ -91,32 +91,37 @@ def compute_nonparametric_sensitivity(
     """
     FDsens+: per component, the KEF worst-case sensitivity r_j * omega_max in z-space,
     with centres/lengthscale fitted on a prior draw independent of the one used for A_c.
+    The basis and A_c are built once per reference-prior group and shared by its components.
 
-    Returns {component_name: sensitivity}.
+    Returns ({component_name: sensitivity}, optimisation time in seconds), where the time
+    covers the sensitivity computation only, not drawing and transforming the samples.
     """
     sensitivity = {}
+    optimisation_time = 0.0
     for group_name in loader.param_groups:
         g = loader.groups[group_name]
         prior_dist = g["prior_dist"]
+        posterior_z = _to_z_space(prior_dist, g["posterior"])
         prior_samples_z = _to_z_space(prior_dist, loader.sample_prior(group_name))
         center_prior_samples_z = _to_z_space(
             prior_dist, loader.sample_prior(group_name, n_samples=center_samples_num)
         )
-        posterior_z = _to_z_space(prior_dist, g["posterior"])
 
-        for local_idx, node_name in enumerate(g["node_names"]):
-            _, omega_max, _, _ = compute_node_lambda_star(
-                posterior_samples_col=posterior_z[:, local_idx],
-                loc=0.0,
-                scale=1.0,
-                prior_samples=prior_samples_z,
-                basis_cls=basis_cls,
-                basis_kwargs=basis_kwargs,
-                radius_j=r_j,
-                center_prior_samples=center_prior_samples_z,
-            )
-            sensitivity[node_name] = r_j * omega_max
-    return sensitivity
+        start = time.perf_counter()
+        omega_max = compute_group_omega_max(
+            posterior_samples=posterior_z,
+            loc=0.0,
+            scale=1.0,
+            prior_samples=prior_samples_z,
+            basis_cls=basis_cls,
+            basis_kwargs=basis_kwargs,
+            center_prior_samples=center_prior_samples_z,
+        )
+        optimisation_time += time.perf_counter() - start
+
+        for node_name, omega in zip(g["node_names"], omega_max):
+            sensitivity[node_name] = r_j * float(omega)
+    return sensitivity, optimisation_time
 
 
 def _percentages(values: dict) -> dict:
@@ -198,12 +203,10 @@ def main(cfg: DictConfig) -> None:
     r_j = compute_shared_radius()
     print(f"Shared radius r_j (prior-based FD_z sup over the parametric box): {r_j:.4f}")
 
-    start = time.perf_counter()
-    nonparam_sensitivity = compute_nonparametric_sensitivity(
+    nonparam_sensitivity, nonparam_time = compute_nonparametric_sensitivity(
         loader, basis_cls, basis_kwargs, r_j,
         center_samples_num=int(cfg.data.get("center_prior_samples_num", 5000)),
     )
-    nonparam_time = time.perf_counter() - start
     print(f"Optimisation time: FDsens {param_time:.3f}s, FDsens+ {nonparam_time:.3f}s.")
 
     percentages_param = _percentages(param_sensitivity)
