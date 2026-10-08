@@ -1,149 +1,214 @@
-# Bayesian sensitivity analysis toolkit
+# fd-sens (Python)
 
-A Python-based toolkit for **global Bayesian sensitivity analysis** using the **Fisher Divergence (FD)**.
+Fisher-divergence (FD) global sensitivity analysis for sampling-based Bayesian inference, in Python.
 
----
+- **FDsens** (parametric): sensitivity to prior hyperparameters within an exponential family, or to the learning rate of
+  a generalised posterior. Methodology: [*A computationally-tractable measure of global sensitivity for sampling-based
+  Bayesian inference*](https://arxiv.org/abs/2605.28099).
+- **FDsens+** (nonparametric): sensitivity over an FD ball of priors around the reference prior, approximated by a kernel
+  exponential family sieve and solved exactly through a generalised eigenvalue problem.
 
-## Features
+Both only need samples from the reference posterior and score (gradient-of-log-density) evaluations: no refitting per
+candidate prior. See [`GETTING_STARTED.md`](GETTING_STARTED.md) for the method and [`configs/README.md`](configs/README.md)
+for writing configs. An R/Stan implementation of FDsens is available at [fd-sens-r](https://github.com/jularina/fd-sens-r).
 
-- **Distributions**
-  - Gaussian (univariate and multivariate)
-  - Gamma, Inverse-Gamma
-  - Beta
-  - Cauchy, Half-Cauchy
-  - Uniform
-  - Chi-squared
-  - Composite product of independent marginals
-  - Extensible to custom distributions
+## Installation
 
-- **FD computations**
-  - FD between posterior samples and candidate posterior
-  - FD between prior samples and candidate prior
+The package is not on PyPI; clone the repository and install its dependencies with [PDM](https://pdm-project.org)
+(Python 3.12):
 
-- **Optimization tools for sensitivity analysis**
-  - Parametric corner-point search over prior and loss parameters
-
-- **Plotting utilities**
-  - Prior vs posterior samples
-  - FD sensitivity surfaces across parameter grids
-  - Comparisons across methods and models
-
-- **Configuration-driven**
-  [Hydra](https://hydra.cc/) for flexible experiment configuration via YAML files.
-
----
-
-## Main components
-
-`src/` is split into three packages. `parametric` and `nonparametric` both build on `common` and never import each other.
-
-```
-src/
-  common/                   shared by both methods
-    bayesian_model/         reference models (Gaussian location, Ising, Kilpisjarvi, Turin, BNN)
-    distributions/          priors with scores and exponential-family decompositions
-    losses/                 likelihoods / generalised-Bayes losses and their gradients
-    fisher_divergence.py    PosteriorFDBase: reference-posterior samples, scores, quadratic-form helpers
-    utils/                  config loading, JSON I/O, distribution registry
-  parametric/               FDsens: exponential-family candidate priors
-    fisher_divergence.py    PosteriorFDParametric: FD as a convex quadratic form in the natural parameters
-    optimization.py         corner enumeration, convex QP, black-box baseline, Gaussian-copula perturbations
-  nonparametric/            FDsens+: kernel exponential family (sieve) neighbourhoods
-    basis_functions.py      Matern/RBF bases and the BASIS_FUNCTIONS_REGISTRY
-    fisher_divergence.py    prior/posterior FD quadratic forms in the basis coefficients
-    optimization.py         worst case via the generalised eigenvalue problem
-    node_sensitivity.py     per-parameter sensitivity for factorised priors (BNN, Kilpisjarvi)
-    loaders.py              per-parameter view of the Kilpisjarvi model
+```sh
+git clone https://github.com/jularina/fd-sens.git
+cd fd-sens
+pdm install            # add -G test to also install pytest
 ```
 
-Plotting lives with the experiments in `paper/`: each folder has `plots_parametric.py` / `plots_nonparametric.py`
-next to its `run_*.py`, and `paper/plot_utils.py` holds the shared matplotlib style.
+All commands below are run from the repository root with the root on the Python path, e.g.
+`PYTHONPATH=. pdm run python examples/parametric_prior_sensitivity.py`.
 
-### 1. Bayesian model — `src/common/bayesian_model/`
+## Quickstart (Gaussian location model)
 
-The abstract base [`BayesianModel`](src/common/bayesian_model/base.py) defines the interface: it holds a prior and a likelihood, exposes score functions, and handles posterior/prior sampling. Concrete subclasses implement model-specific closed-form posteriors:
+Reference model: $\theta \sim \mathcal N(0, 2^2)$, $y_i \sim \mathcal N(\theta, 1)$. Take draws from the reference
+posterior with any sampler (Stan, PyMC, NumPyro, ...) and measure sensitivity to the prior's hyperparameters:
 
-- [`SimpleGaussianModel`](src/common/bayesian_model/gaussian.py) — univariate Gaussian likelihood with Gaussian prior.
-- [`MultivariateGaussianModel`](src/common/bayesian_model/gaussian.py) — multivariate Gaussian likelihood with Gaussian prior on the mean.
+```python
+import numpy as np
+from src.common.bayesian_model.samples import PosteriorSamplesModel
+from src.common.distributions.gaussian import Gaussian
+from src.parametric.sensitivity import prior_sensitivity
 
-### 2. Fisher divergence
+rng = np.random.default_rng(123)
+y = rng.normal(loc=1.0, scale=1.0, size=30)
+var_n = 1.0 / (len(y) + 1.0 / 2.0 ** 2)
+posterior = rng.normal(var_n * y.sum(), np.sqrt(var_n), size=2000)   # exact conjugate posterior draws
 
-- [`PosteriorFDBase`](src/common/fisher_divergence.py) — holds the reference-posterior samples and scores shared by both estimators.
-- [`PosteriorFDParametric`](src/parametric/fisher_divergence.py) — FD between the reference and a candidate exponential-family prior, as a quadratic form in its natural parameters; also learning-rate and Gaussian-copula perturbations.
-- [`PriorFDNonParametric`](src/nonparametric/fisher_divergence.py) / [`PosteriorFDNonParametric`](src/nonparametric/fisher_divergence.py) — constraint and objective quadratic forms in the kernel-exponential-family coefficients.
-
-### 3. Optimisation
-
-- [`OptimizationCornerPointsUnivariateGaussian`](src/parametric/optimization.py) / [`OptimizationCornerPointsMultivariateGaussian`](src/parametric/optimization.py) — corner-point search over a box of Gaussian prior hyperparameters (toy experiments).
-- [`OptimizationCornerPointsCompositePrior`](src/parametric/optimization.py) — composite independent-marginal priors: corner enumeration of the convex quadratic form (full or per component), convex QP for the infimum, black-box dual annealing baseline, and Gaussian-copula perturbations.
-- [`OptimisationNonparametricBase`](src/nonparametric/optimization.py) — FDsens+ worst-case prior through the generalised eigenvalue problem.
-- [`compute_group_omega_max`](src/nonparametric/node_sensitivity.py) — FDsens+ per-parameter sensitivities for factorised priors.
-
----
-
-## Contributions
-
-We are happy with any help in adding distributions and models to the project!
-
----
-
-## License
-
----
-
-## Config structure
-
-Experiments are configured via YAML files loaded by Hydra. Below is an example for a univariate Gaussian model:
-
-```yaml
-data:
-  base_prior:
-    _target_: src.common.distributions.gaussian.Gaussian
-    mu: 2
-    sigma: 4
-  true_dgp:
-    _target_: src.common.distributions.gaussian.Gaussian
-    mu: 3
-    sigma: 2
-  loss:
-    _target_: src.common.losses.gaussian_log_likelihood.GaussianLogLikelihood
-    mu: 3
-    sigma: 2
-  loss_lr: 1.0
-  observations_num: 100
-  posterior_samples_num: 1000
-  prior_samples_num: 1000
-
-model:
-  _target_: src.common.bayesian_model.gaussian.SimpleGaussianModel
-
-fd:
-  optimize:
-    prior:
-      Gaussian:
-        parameters_box_range:
-          ranges:
-            mu: [-10, 10]
-            sigma: [2, 5]
-          nums:
-            mu: 21
-            sigma: 4
-    loss:
-      GaussianLogLikelihood:
-        parameters_box_range:
-          ranges:
-            lr: [0.5, 2.5]
-          nums:
-            lr: 9
-
-flags:
-  plots:
-    output_dir: outputs/paper/plots/fisher/univariate
+model = PosteriorSamplesModel(
+    posterior_samples=posterior,
+    base_prior=Gaussian(mu=0.0, sigma=2.0),         # reference prior
+    candidate_prior=Gaussian(mu=0.0, sigma=1.0),    # candidate family (its parameter values are not used)
+)
+result = prior_sensitivity(model, natural_box={"theta": {"eta_1": [-1.0, 1.0], "eta_2": [-2.0, -0.05]}})
+print(result)
+#> FD prior sensitivity
+#>   optimisation: quadratic_corner
+#>   sensitivity: 31.2854
+#>   minimum FD:  4.16334e-17 at lambda_min = [ 0.    -0.125]
+#>   maximum FD:  31.2854 at lambda_max = [-1. -2.]
 ```
 
----
+`eta_1 = mu / s^2` and `eta_2 = -1 / (2 s^2)` are the natural parameters of the candidate $\mathcal N(\mu, s^2)$ (see
+[Exponential-family priors](#exponential-family-priors)). `result.sensitivity` is the largest change in the posterior
+over the box, `result.lambda_max` the worst-case prior that produces it (here $\mathcal N(-0.25, 0.5^2)$), and the
+minimum sits at the reference prior, $\eta = (0, -1/8)$.
 
-## Paper experiments
+The full script is [`examples/parametric_prior_sensitivity.py`](examples/parametric_prior_sensitivity.py).
+
+## Repository contents
+
+| Path | What's there |
+| --- | --- |
+| [`src/common/`](src/common) | Shared building blocks: reference models (incl. `PosteriorSamplesModel` for your own draws), distributions, losses, the posterior FD base class, utilities. |
+| [`src/parametric/`](src/parametric) | FDsens: `prior_sensitivity()`, `lr_sensitivity()`, the quadratic-form FD estimator and the optimisers. |
+| [`src/nonparametric/`](src/nonparametric) | FDsens+: `nonparametric_prior_sensitivity()`, basis functions, FD quadratic forms and the generalised-eigenvalue solver. |
+| [`examples/`](examples) | Runnable scripts for each analysis, including one driven by a Hydra config. |
+| [`configs/`](configs) | Hydra configs: [`configs/examples/`](configs/examples) for the examples, `configs/paper/` for the paper experiments; the rules are in [`configs/README.md`](configs/README.md). |
+| [`tests/`](tests) | Unit tests (`pytest`) for the parametric and nonparametric estimators and for every config. |
+| [`paper/`](paper) | Scripts and plotting code reproducing the figures of both papers. |
+
+## Functionality
+
+### Your model: `PosteriorSamplesModel`
+
+```python
+PosteriorSamplesModel(posterior_samples, base_prior, candidate_prior=None, loss_grad=None, loss_lr=1.0, prior_samples=None)
+```
+
+- `posterior_samples`: `(m, d)` draws from the reference posterior, one column per parameter.
+- `base_prior`: the reference prior. Any object with `grad_log_pdf(x) -> (m, d)` works; FDsens+ additionally uses `sample(n)`.
+  For several parameters with independent priors use a `CompositeProduct` whose components are in column order.
+- `candidate_prior`: the exponential-family candidate family (FDsens prior sensitivity only).
+- `loss_grad`: gradient of the unscaled loss at each draw, an `(m, d)` array or a function of the draws (learning-rate
+  sensitivity only).
+- `loss_lr`: the reference learning rate.
+- `prior_samples`: reference-prior draws for FDsens+; drawn from `base_prior` if omitted.
+
+Models can also be built from a config, see [Config-driven use](#config-driven-use).
+
+### Prior sensitivity (FDsens)
+
+```python
+prior_sensitivity(model, natural_box, method="quadratic", independent=False, **black_box_kwargs)
+```
+
+- `natural_box`: one entry per parameter, in column order: `{name: {"eta_1": (lower, upper), "eta_2": (lower, upper)}}`,
+  the box $\Gamma$ of candidate natural parameters.
+- `method="quadratic"` (default): the FD is a convex quadratic form in the natural parameters, so the maximum is found by
+  enumerating the box corners and the minimum by a convex QP. Cost grows as $4^d$ corners.
+- `method="black_box"`: global optimisation (`scipy` dual annealing by default) of the FD over the box; pass e.g.
+  `maxiter=150, n_restarts=5`.
+- `independent=True`: when the priors factorise over parameters, the sensitivity is the sum of per-parameter
+  sensitivities, each solved on its own 2-d box ($4d$ corners instead of $4^d$). `result.components` holds each block's
+  `sensitivity`, `fd_min`, `fd_max`, `lambda_min`, `lambda_max` and `sensitivity_share`; see
+  [`examples/parametric_independent_components.py`](examples/parametric_independent_components.py).
+
+#### Exponential-family priors
+
+Each candidate component is a one-dimensional exponential family with two natural parameters:
+
+| Family | Class | Natural parameters $(\eta_1, \eta_2)$ | Valid box |
+| --- | --- | --- | --- |
+| Normal $(\mu, s)$ | `Gaussian(mu, sigma)` | $(\mu/s^2,\; -1/(2s^2))$ | $\eta_2 < 0$ |
+| Gamma $(\alpha, \theta)$ | `Gamma(alpha, theta)` | $(\alpha - 1,\; -1/\theta)$ | $\eta_1 > -1,\ \eta_2 < 0$ |
+| Inverse-Gamma $(\alpha, \beta)$ | `InverseGamma(alpha, beta)` | $(-(\alpha+1),\; -\beta)$ | $\eta_1 < -1,\ \eta_2 < 0$ |
+| Beta $(\alpha, \beta)$ | `Beta(alpha, beta)` | $(\alpha - 1,\; \beta - 1)$ | $\eta_1, \eta_2 > -1$ |
+
+Reference priors need not be exponential families or match the candidate family (e.g. `HalfCauchy`, `Uniform`,
+`ChiSquared` from [`src/common/distributions/`](src/common/distributions)).
+
+### Learning-rate sensitivity (FDsens)
+
+```python
+lr_sensitivity(model, lower, upper, lr_ref=None)
+```
+
+With the prior fixed, $\mathrm{FD}(\lambda) = (\lambda - \lambda_\mathrm{ref})^2\,\mathbb E\|\nabla_\theta \ell\|^2$, so no
+optimisation is needed. The model needs `loss_grad`; see
+[`examples/parametric_lr_sensitivity.py`](examples/parametric_lr_sensitivity.py).
+
+### Nonparametric prior sensitivity (FDsens+)
+
+```python
+nonparametric_prior_sensitivity(model, radius, basis="MaternBasisFunction", basis_kwargs=None, independent=False)
+```
+
+- `radius`: the radius $r$ of the FD ball $\{\Pi : \mathrm{FD}(\Pi_\mathrm{ref}\|\Pi) \le r\}$. The sensitivity is linear in $r$,
+  so `result.normalised_sensitivity` ($S/r$) summarises the whole family of balls.
+- `basis` / `basis_kwargs`: the kernel of the sieve, e.g. `{"num_basis_functions": 100, "method": "kmeans", "nu": 3.5}`
+  for a Matérn-7/2 kernel with $K=100$ centres placed by k-means on reference-prior draws. Available bases:
+  `MaternBasisFunction`, `RBFBasisFunction`, `MaternBasisFunctionMultidim`, `FixedCentersRBFBasisFunctionMultidim`.
+- `independent=True`: for factorised priors, solves one problem per parameter (`radius` may then be one value per
+  parameter); `result.components` holds the per-parameter results.
+
+The result also contains `lambda_sup`, the coefficients of the worst-case prior
+$\pi_K(\theta) \propto \pi_\mathrm{ref}(\theta)\exp(\sum_k \lambda_k \kappa(\bar\theta_k, \theta))$, and the fitted
+`basis_function` (its `centers` and `evaluate`). See
+[`examples/nonparametric_prior_sensitivity.py`](examples/nonparametric_prior_sensitivity.py).
+
+### Config-driven use
+
+Models, priors, data and neighbourhoods can be declared in a Hydra YAML config and instantiated with
+`instantiate(cfg.model, data_config=cfg.data)`:
+
+```sh
+PYTHONPATH=. pdm run python examples/from_config.py                                         # FDsens
+PYTHONPATH=. pdm run python examples/from_config.py --config-name gaussian_location_nonparam  # FDsens+
+```
+
+[`configs/README.md`](configs/README.md) explains the required keys and how to write a config for a new model.
+
+### Algorithm
+
+1. **Fit the reference model** with any sampler and collect `(m, d)` reference-posterior draws.
+2. **Wrap it** in `PosteriorSamplesModel` (or a config-defined model), giving the reference prior and, depending on the
+   analysis, the candidate family or the loss gradient.
+3. **Choose the analysis and the neighbourhood:**
+   - prior hyperparameters (FDsens): a natural-parameter box per parameter, then `prior_sensitivity(...)`;
+   - learning rate (FDsens): an interval, then `lr_sensitivity(...)`;
+   - nonparametric prior perturbations (FDsens+): a radius and a kernel, then `nonparametric_prior_sensitivity(...)`.
+4. **Read the result**: `sensitivity` is $\widehat S_m^{\mathrm{FD}}$; `lambda_max` / `lambda_min` (FDsens) or `lambda_sup`
+   (FDsens+) describe the worst-case and least-sensitive choices; `components` gives per-parameter shares when
+   `independent=True`.
+
+### Examples
+
+| Script | Analysis |
+| --- | --- |
+| [`examples/parametric_prior_sensitivity.py`](examples/parametric_prior_sensitivity.py) | FDsens prior sensitivity (Quickstart) |
+| [`examples/parametric_independent_components.py`](examples/parametric_independent_components.py) | FDsens decomposition over independent prior components (Normal mean, Gamma scale) |
+| [`examples/parametric_lr_sensitivity.py`](examples/parametric_lr_sensitivity.py) | FDsens learning-rate sensitivity |
+| [`examples/nonparametric_prior_sensitivity.py`](examples/nonparametric_prior_sensitivity.py) | FDsens+ sensitivity over an FD ball |
+| [`examples/from_config.py`](examples/from_config.py) | Both, from [`configs/examples/`](configs/examples) |
+
+### Tests
+
+```sh
+pdm install -G test
+pdm run pytest
+```
+
+The tests check the estimators against closed forms on a conjugate Gaussian model, the optimisers against brute-force
+search, and that every config's `_target_` and basis names resolve.
+
+## Contributing
+
+New candidate families are welcome: add a class under [`src/common/distributions/`](src/common/distributions) deriving
+from `BaseDistribution` and implement `sample`, `pdf`, `log_pdf`, `grad_log_pdf`, `natural_parameters`,
+`grad_sufficient_statistics` (shape `(m, 1, 2)`) and `grad_log_base_measure`, then register it in
+[`src/common/utils/distributions.py`](src/common/utils/distributions.py). New kernels go in
+[`src/nonparametric/basis_functions.py`](src/nonparametric/basis_functions.py) with `evaluate` / `gradient` returning
+`(m, d, K)` arrays, and an entry in `BASIS_FUNCTIONS_REGISTRY`.
+
+## Reproducing the papers
 
 The `paper/` directory contains the experiment scripts, organized into one folder per experimental setting.
 In each folder, `run_parametric.py` belongs to the parametric (FDsens) paper and `run_nonparametric.py` to the
@@ -174,3 +239,14 @@ Bayesian neural networks on UCI regression datasets (posterior samples from the 
 
 ### `paper/illustrative/`
 - `run_nonparametric.py` — schematic of the sieve approximation and the Monte Carlo constraint estimate (`sieve_and_mc.pdf`); run with `python -m paper.illustrative.run_nonparametric`.
+
+## Citing
+
+```bibtex
+@article{Odnoblyudova2026,
+  author  = {Odnoblyudova, A. and Dellaporta, C. and Briol, F-X.},
+  journal = {arXiv:2605.28099},
+  title   = {{A computationally-tractable measure of global sensitivity for sampling-based Bayesian inference}},
+  year    = {2026}
+}
+```
