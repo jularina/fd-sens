@@ -29,7 +29,7 @@ class IsingGradients:
         return (1 - X) * (X @ self.P_mat)
 
     def grad_pseudologlikelihood(self, param, X, eps: float = 1e-12) -> torch.Tensor:
-        """Gradient of summed log pseudo-likelihood wrt param. Returns shape (M, 1)."""
+        """Return the gradient of the summed log pseudo-likelihood w.r.t. param, shape (M, 1)."""
         X = torch.as_tensor(X, dtype=torch.get_default_dtype())
         H = X @ self.P_mat
         I_minus = (X - 1).abs() / 2
@@ -48,7 +48,7 @@ class IsingGradients:
         return grad
 
     def grad_dfd_loss(self, param, X) -> torch.Tensor:
-        """Analytic gradient of DFD loss wrt param. Returns shape (M, 1)."""
+        """Return the analytic gradient of the DFD loss w.r.t. param, shape (M, 1)."""
         X = torch.as_tensor(X, dtype=torch.get_default_dtype())
         p = torch.as_tensor(param, dtype=X.dtype).view(-1, 1, 1)
         SX_m = self.stat_m(X).unsqueeze(0)

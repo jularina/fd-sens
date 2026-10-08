@@ -22,16 +22,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 
 def _closed_form_conjugate_gaussian_M(mu_ref, Sigma_ref, x_bar, Sigma_over_n) -> float:
-    """
-    Closed form M = ||l(.;x_1:n)||_{L^inf(Pi_ref)} / Z_ref for the conjugate
-    Gaussian location model, with likelihood ~ N(x_bar, Sigma/n) and reference
-    prior ~ N(mu_ref, Sigma_ref):
-
-        M = sqrt(|Sigma/n + Sigma_ref| / |Sigma/n|)
-            * exp(0.5 * (x_bar - mu_ref)^T (Sigma/n + Sigma_ref)^{-1} (x_bar - mu_ref))
-
-    so that S^FD(Q_r) = M * r (Thm. exact-fd-sensitivity).
-    """
+    """Closed-form M for the conjugate Gaussian location model, so that S^FD(Q_r) = M * r."""
     mu_ref = np.atleast_1d(np.asarray(mu_ref, dtype=float))
     x_bar = np.atleast_1d(np.asarray(x_bar, dtype=float))
     Sigma_ref = np.atleast_2d(np.asarray(Sigma_ref, dtype=float))
@@ -47,35 +38,7 @@ def _closed_form_conjugate_gaussian_M(mu_ref, Sigma_ref, x_bar, Sigma_over_n) ->
 def _k_dependent_basis_settings(
     samples: np.ndarray, K: int, n_mc_samples: int, span: float = 3.0, safe_fraction: float = 0.2,
 ) -> tuple[int, float]:
-    """
-    (K_eff, lengthscale) for an isotropic RBF/Matern sieve whose bandwidth
-    shrinks as the number of basis functions grows: lengthscale =
-    domain_scale / K_eff^(1/d), with K_eff = min(K, safe_fraction *
-    n_mc_samples) *also* used as the actual number of basis functions built
-    (not just to compute the bandwidth).
-
-    Without this, MaternBasisFunction(Multidim)'s default bandwidth is
-    estimated once from `samples` independent of K (median pairwise sample
-    distance, or sample covariance), so raising num_basis_functions in a
-    config just adds near-duplicate centres at a fixed, too-wide bandwidth
-    and the sieve sensitivity barely grows (verified empirically: it
-    plateaus after only a few dozen centres).
-
-    K_eff is capped at safe_fraction * n_mc_samples (n_mc_samples = number of
-    Monte-Carlo prior/posterior samples used to estimate A, A_c) because
-    pushing the bandwidth past what those samples can resolve makes A, A_c
-    ill-conditioned and the generalised eigenvalue blow up by orders of
-    magnitude (verified empirically: stable and monotonically increasing up
-    to K ~ 0.2x n_mc_samples, then degrades and eventually explodes).
-    Crucially, K_eff must also cap the *number of centres actually built*:
-    capping only the bandwidth while still placing all K (possibly far more
-    than K_eff) centres just recreates the same ill-conditioning from
-    near-duplicate centres crammed inside a bandwidth sized for fewer of them
-    (verified empirically). So requesting more basis functions than
-    safe_fraction * n_mc_samples silently gets fewer than requested; that
-    ceiling is a property of the finite sample size, not of this schedule,
-    and can only be raised by increasing prior/posterior_samples_num.
-    """
+    """Return (K_eff, lengthscale) for a sieve whose bandwidth shrinks with the capped basis count."""
     samples = np.asarray(samples, dtype=float)
     _, d = samples.shape
     domain_scale = span * float(np.sqrt(np.max(np.var(samples, axis=0))))
@@ -94,17 +57,7 @@ def _k_dependent_basis_settings(
 
 
 def _anisotropic_precision_from_lengthscale(samples: np.ndarray, lengthscale: float) -> np.ndarray:
-    """
-    Precision matrix combining the samples' covariance *shape* (so
-    orientation/anisotropy, e.g. Sigma_ref's off-diagonal correlation, is
-    preserved like MaternBasisFunctionMultidim's default
-    _estimate_precision_from_samples) with an overall *scale* set by
-    `lengthscale` (so it still shrinks with K per
-    _k_dependent_basis_settings): normalises inv(cov(samples)) to unit
-    determinant (encodes only shape) then divides by lengthscale**2 (sets
-    the scale), so det(precision) == det(I / lengthscale**2) in an isotropic
-    basis of the same dimension.
-    """
+    """Precision matrix with the samples' covariance shape and an overall scale set by lengthscale."""
     samples = np.asarray(samples, dtype=float)
     d = samples.shape[1]
     cov = np.cov(samples, rowvar=False)
@@ -123,15 +76,7 @@ def _json_keys_to_int(obj):
 
 @hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="univariate_gaussian_nonparam")
 def run_gaussian_priors_nonparametric_diff_radii(cfg, save_samples: bool = False) -> None:
-    """
-    Main function to compute FD and perform prior parameter grid search using Hydra for configuration.
-
-    Basis centres are selected via the "random" method (i.i.d. subsample) from
-    a fresh, independent draw of the reference prior -- never from the
-    prior/posterior samples used to estimate the Fisher divergence -- using
-    the same fixed seed (27) as run_gaussian_priors_nonparametric_diff_center_methods,
-    so the r=10.0 result here matches that function's "random (fresh prior draw)" case.
-    """
+    """Compute FD sensitivity for the univariate Gaussian model across radii with random basis centres."""
     model = instantiate(cfg.model, data_config=cfg.data)
     output_dir = os.path.join(get_original_cwd(), "data/univariate_gaussian")
 
@@ -244,36 +189,7 @@ def run_gaussian_priors_nonparametric_diff_radii(cfg, save_samples: bool = False
 def _diff_center_methods(
     cfg, basis_funcs_type: str, file_prefix: str, save_samples: bool = False, only_recommended: bool = False,
 ) -> None:
-    """
-    Shared body of run_gaussian_priors_nonparametric_diff_center_methods
-    (Matern basis) and run_gaussian_priors_nonparametric_diff_center_methods_rbf
-    (RBF basis); basis_funcs_type picks the basis class and file_prefix tags
-    every output plot. only_recommended skips everything but the two
-    recommended-centre figures (pooled and stratified mixtures). For the RBF basis the recommended-centre comparison also
-    reports each method's exact sensitivity, from the closed-form A, A_c of
-    rbf_gaussian_gram_closed_form, and the plug-in estimation error against it.
-
-    Compare basis-function centre-selection strategies at a fixed radius, each
-    as its own plot with the SDP worst-case candidate density, the true prior,
-    and the underlying sample points (rug of dots) and resulting basis centres
-    (rug of x's) along the x-axis.
-
-    The Fisher-divergence estimate always uses the saved/loaded prior and
-    posterior samples. Centres are never chosen from those same samples;
-    prior-based centres are instead drawn from a fresh, independent i.i.d.
-    draw of the reference prior (same size as the saved prior samples), and
-    posterior-based centres from a fresh, independent draw of the conjugate
-    posterior (same size as the saved posterior samples), from which a subset
-    is then selected via the chosen method:
-      (a) Halton quantile-mapped centres from the fresh reference-prior draw.
-      (b) K-means centres from the same fresh reference-prior draw.
-      (c) Halton quantile-mapped centres from the fresh posterior draw.
-      (d) Random (i.i.d. subsample) centres from the fresh reference-prior draw.
-      (e) Random (i.i.d. subsample) centres from the fresh posterior draw.
-      (f) K-means centres from a fresh draw of the normalised likelihood
-          N(theta_hat, sigma^2 / (n * lr)), i.e. centres placed around the
-          maximum-likelihood estimate theta_hat = x_bar.
-    """
+    """Shared body comparing basis-centre selection methods at a fixed radius for Matern or RBF bases."""
     radius = 5.0
     model = instantiate(cfg.model, data_config=cfg.data)
     output_dir = os.path.join(get_original_cwd(), "data/univariate_gaussian")
@@ -755,14 +671,7 @@ def run_gaussian_priors_nonparametric_diff_center_methods(cfg, save_samples: boo
 
 @hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="univariate_gaussian_nonparam")
 def run_gaussian_priors_nonparametric_diff_center_methods_rbf(cfg, save_samples: bool = False) -> None:
-    """
-    Centre-selection comparison with the RBF basis -- see _diff_center_methods.
-    Only the two recommended-centre figures (pooled and stratified mixtures)
-    are produced.
-    Since the RBF gradient Gram matrices are available in closed form under
-    the Gaussian prior/posterior, this also prints each recommended method's
-    exact sensitivity and the plug-in estimation error against it.
-    """
+    """Compare recommended centre-selection methods with the RBF basis, including exact sensitivities."""
     _diff_center_methods(
         cfg, basis_funcs_type="RBFBasisFunction", file_prefix="gaussian_1d_location_model_centers_rbf",
         save_samples=save_samples, only_recommended=True,
@@ -771,25 +680,7 @@ def run_gaussian_priors_nonparametric_diff_center_methods_rbf(cfg, save_samples:
 
 @hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="univariate_gaussian_nonparam")
 def run_gaussian_priors_nonparametric_diff_kernels(cfg, save_samples: bool = False) -> None:
-    """
-    Compare basis-function kernel choices at a fixed radius, each as its own
-    plot with the SDP worst-case candidate density, the true prior, and the
-    resulting basis centres (rug of dots) along the x-axis:
-      (a) Matern kernel, nu=2.5
-      (b) Matern kernel, nu=5.5
-      (c) Matern kernel, nu=7.5
-      (d) RBF kernel
-
-    Plus one combined plot overlaying all three Matern nu's worst-case
-    candidate densities in a single panel, with one legend entry per nu.
-
-    All kernels select their centres via k-means (chosen for its guaranteed
-    minimum inter-centre separation, which keeps the constraint Gram matrix
-    A_c well-conditioned -- plain i.i.d. random selection can draw
-    near-duplicate centres and make A_c numerically singular) from a single
-    fresh, independent i.i.d. draw of the reference prior -- never the
-    samples used to estimate the Fisher divergence.
-    """
+    """Compare Matern and RBF basis kernels at a fixed radius via worst-case candidate density plots."""
     radius = 5.0
     model = instantiate(cfg.model, data_config=cfg.data)
     output_dir = os.path.join(get_original_cwd(), "data/univariate_gaussian")
@@ -907,17 +798,7 @@ def run_gaussian_priors_nonparametric_diff_kernels(cfg, save_samples: bool = Fal
 @hydra.main(version_base="1.1", config_path="../../configs/paper/toy/",
             config_name="multivariate_gaussian_nonparam")
 def run_multivariate_gaussian_priors_nonparametric_diff_radii(cfg, save_samples: bool = False) -> None:
-    """
-    Main function to compute FD and perform prior parameter grid search using Hydra for configuration.
-
-    Basis centres are selected via the "random" method (i.i.d. subsample), K=30,
-    nu=5, from a fresh, independent draw of the reference prior -- never from the
-    prior/posterior samples used to estimate the Fisher divergence -- using the
-    same fixed seed (27) as the univariate counterpart.
-
-    Args:
-        cfg (DictConfig): Configuration loaded by Hydra.
-    """
+    """Compute FD sensitivity for the multivariate Gaussian model across radii with random basis centres."""
     model = instantiate(cfg.model, data_config=cfg.data)
     output_dir = os.path.join(get_original_cwd(), "data/multivariate_gaussian")
 
@@ -1012,40 +893,7 @@ def run_multivariate_gaussian_priors_nonparametric_diff_radii(cfg, save_samples:
 def run_gaussian_priors_nonparametric_sensitivity_vs_K(
     cfg, radius: float = 5.0, x_log_scale: bool = False,
 ) -> None:
-    """
-    Validates that the closed-form RBF/Gaussian sieve sensitivity
-    S^FD(Q_r^K) = r * gamma_max(A, A_c) converges to the exact
-    (unrestricted) closed-form sensitivity S^FD(Q_r) = M*r
-    (Thm. exact-fd-sensitivity) as the number of RBF basis functions K
-    grows, for the conjugate Gaussian location model (univariate or
-    multivariate -- dimension-agnostic, see below).
-
-    A and A_c are computed analytically via rbf_gaussian_gram_closed_form
-    (exact expectations under the Gaussian reference prior/posterior)
-    rather than estimated by Monte Carlo from samples, so this isolates the
-    *sieve approximation* (bias) question from finite-sample estimation
-    noise -- the latter is instead studied (at a single fixed K) by
-    run_gaussian_priors_nonparametric_closed_form_convergence.
-
-    RBF centres sit on a growing d-dimensional square grid centred at
-    mu_ref (K = n_side^d basis functions per grid side n_side), spanning
-    +/- `span` prior standard deviations per axis (using the largest prior
-    variance across dimensions so the grid covers all axes), with
-    lengthscale fixed to the grid spacing -- so the lengthscale shrinks as
-    the grid gets denser, as required for the sieve to be consistent.
-    A naive Matern/RBF sieve whose bandwidth is instead estimated once from
-    the sample pool (independent of K) does *not* converge this way: it
-    plateaus well below the true value once the fixed-bandwidth basis
-    functions become near-collinear (verified empirically before adding
-    this function).
-
-    Dimension-agnostic: works for both the univariate (Gaussian prior) and
-    multivariate (MultivariateGaussian prior) configs -- d is inferred from
-    the model's prior, and the cache directory / plot filename are tagged
-    "univariate_gaussian"/"gaussian_1d_location_model" or
-    "multivariate_gaussian"/"gaussian_2d_location_model" accordingly, so the
-    two configs' cached results and plots never collide.
-    """
+    """Check that the closed-form RBF sieve sensitivity converges to the exact sensitivity as K grows."""
     model = instantiate(cfg.model, data_config=cfg.data)
 
     mu_ref = np.atleast_1d(np.asarray(model.prior_init.mu, dtype=float))
@@ -1143,20 +991,7 @@ def run_gaussian_priors_nonparametric_sensitivity_vs_K_combined(
     radius: float = 5.0,
     x_log_scale: bool = True,
 ) -> None:
-    """
-    Overlay the univariate and multivariate sensitivity-vs-K results (each
-    produced beforehand by run_gaussian_priors_nonparametric_sensitivity_vs_K
-    for its own config) in one figure, plotted as the sieve approximation
-    error (S^FD(Q_r) - S^FD(Q_r^K)) / r: univariate on the left y-axis,
-    multivariate on the right -- see plot_sensitivity_vs_basis_funcs_num_dual.
-    This reads each config's cached JSON directly and does not recompute or
-    instantiate any model; raises FileNotFoundError if either config's
-    result for the given grid_sides/radius hasn't been computed yet.
-
-    Plain (non-hydra) function, run from the repo root -- unlike the other
-    functions in this file, it needs no cfg (it never instantiates a model),
-    so it isn't decorated with @hydra.main.
-    """
+    """Overlay cached univariate and multivariate sensitivity-vs-K approximation errors in one figure."""
     if grid_sides_univariate is None:
         grid_sides_univariate = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 150, 200,
                                  250, 300, 400, 500, 700, 1000, 1500, 2000]
@@ -1204,31 +1039,7 @@ def run_gaussian_priors_nonparametric_sensitivity_vs_K_combined(
 @hydra.main(version_base="1.1", config_path="../../configs/paper/toy/",
             config_name="univariate_gaussian_param_nonparam")
 def run_param_nonparam_comparison_skewness_matched_radius(cfg) -> None:
-    """
-    Same skewness comparison as run_param_nonparam_comparison_skewness, but the
-    nonparametric worst-case prior is computed with the exact same setup as
-    run_gaussian_priors_nonparametric_diff_radii's r=10.0 case: basis centres
-    selected via the "random" method (i.i.d. subsample) from a fresh,
-    independent draw of the reference prior (same fixed seed 27), never from
-    the prior/posterior samples used to estimate the Fisher divergence, at a
-    fixed radius r=10.0, solved via the generalised eigenvalue method.
-
-    The parametric side is unrelated: its worst case is just whatever (mu,
-    sigma) in the box maximises posterior sensitivity (same as
-    run_param_nonparam_comparison_skewness), shown alongside the nonparametric
-    r=10.0 worst case for comparison -- the two are not matched to a common FD
-    budget here.
-
-    For the nonparametric worst-case prior to actually come out identical to
-    run_gaussian_priors_nonparametric_diff_radii's r=10.0 case, the model must
-    also be instantiated with the exact same data as that function's config
-    (univariate_gaussian_nonparam) -- not this function's own config
-    (univariate_gaussian_param_nonparam), which uses a different, weaker
-    observations_num (5 vs 100), unseeded freshly-drawn prior/posterior
-    samples (1000, vs 5000 loaded from the same saved files each run), and
-    different basis hyperparameters (num_basis_functions=10, nu=2.0 vs 30,
-    5.0). Those data/basis settings are overridden below to match.
-    """
+    """Compare parametric and nonparametric worst-case priors using the diff_radii r=10 setup."""
     # Match run_gaussian_priors_nonparametric_diff_radii's data exactly (same
     # saved observations/prior/posterior samples, same counts), so both
     # functions build the same model and the nonparametric worst case is
@@ -1308,19 +1119,7 @@ def _diff_basis_funcs_num_runtimes(
     basis_kwargs_overrides: dict | None = None,
     save_samples: bool = False,
 ) -> None:
-    """
-    Compute FD and time nonparametric optimisation for a grid of basis-function
-    counts K=[50, 100, 200, 400, 600], one line per total number of
-    prior+posterior samples m+l (500, 1000, 5000, 10000; m=l=(m+l)/2 each).
-
-    Runtimes are cached per (m+l, K) under data/{dim_tag}/runtimes/nonparam:
-    results are loaded from this grid's cache file if present, otherwise
-    seeded from the cache of the smaller K grid seed_basis_funcs_num (if
-    given and present), and only the (m+l, K) combinations still missing are
-    computed (e.g. adding a new K only times that K). basis_kwargs_overrides
-    (e.g. {"method": "random"}) is applied on top of the config's
-    basis_funcs_kwargs.
-    """
+    """Time nonparametric optimisation over basis counts K and sample sizes, with per-(m+l, K) caching."""
     total_samples_list = [500, 1000, 5000, 10000]
     basis_funcs_num = [50, 100, 200, 400, 600]
     iters = 500
@@ -1409,11 +1208,7 @@ def _diff_basis_funcs_num_runtimes(
 
 @hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="multivariate_gaussian_nonparam")
 def run_multivariate_gaussian_diff_basis_funcs_num_runtimes(cfg, save_samples: bool = False) -> None:
-    """
-    Runtime of nonparametric optimisation vs K for the multivariate Gaussian
-    model -- see _diff_basis_funcs_num_runtimes. Seeded from the earlier
-    K<=400 cache, so only K=600 needed computing on top of it.
-    """
+    """Time nonparametric optimisation vs K for the multivariate Gaussian model."""
     _diff_basis_funcs_num_runtimes(
         cfg, dim_tag="multivariate_gaussian", plot_tag="gaussian_2d_location_model",
         seed_basis_funcs_num=[50, 100, 200, 400], save_samples=save_samples,
@@ -1422,12 +1217,7 @@ def run_multivariate_gaussian_diff_basis_funcs_num_runtimes(cfg, save_samples: b
 
 @hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="univariate_gaussian_nonparam")
 def run_univariate_gaussian_diff_basis_funcs_num_runtimes(cfg, save_samples: bool = False) -> None:
-    """
-    Runtime of nonparametric optimisation vs K for the univariate Gaussian
-    model -- see _diff_basis_funcs_num_runtimes. Centres are selected at
-    random (i.i.d. subsample) rather than via the config's k-means, so the
-    timed optimisation doesn't include k-means clustering cost.
-    """
+    """Time nonparametric optimisation vs K for the univariate Gaussian model with random centres."""
     _diff_basis_funcs_num_runtimes(
         cfg, dim_tag="univariate_gaussian", plot_tag="gaussian_1d_location_model",
         basis_kwargs_overrides={"method": "random"}, save_samples=save_samples,
@@ -1449,55 +1239,7 @@ def _gamma_max_generalized_eig(A: np.ndarray, A_c: np.ndarray, nugget: float = 1
 def run_gaussian_priors_nonparametric_closed_form_convergence(
     cfg, radius: float = 5.0, n_repeats: int = 1000,
 ) -> None:
-    """
-    Validates the closed-form FDsens+ sensitivity for the RBF kernel with a
-    Gaussian reference prior/posterior against its Monte-Carlo (plug-in)
-    estimate, and plots the absolute error between the two as a function of
-    the number of posterior samples m (from m = 3000), averaged (with +/- 1
-    sem band) over independent resamples at each sample size, with one line
-    per allocation of prior samples l: m = l, m = l^(3/2) and m = 3l.
-    The error is expected to shrink as m grows.
-
-    Since prior and posterior are both exactly Gaussian for this conjugate
-    toy model, S^FD(Q_r^K) = r * gamma_max can be computed exactly from A,
-    A_c via rbf_gaussian_gram_closed_form, with A_c built from (mu_ref,
-    Sigma_ref) and A from (mu_post, Sigma_post). The RBF centres (a square
-    grid spanning +/- 3 prior std per axis, centred at mu_ref, with K =
-    n_side^d basis functions, n_side chosen from the config's
-    num_basis_functions -- see below) and lengthscale (the inter-centre
-    spacing) are held fixed across all repeats/sample sizes, so the only
-    source of discrepancy from the closed-form value is Monte-Carlo sample
-    noise in the plug-in A, A_c. The Monte-Carlo side uses
-    FixedCentersRBFBasisFunctionMultidim, whose joint isotropic kernel
-    matches rbf_gaussian_gram_closed_form's exactly.
-
-    Dimension-agnostic: works for both the univariate (Gaussian prior) and
-    multivariate (MultivariateGaussian prior) configs -- d is inferred from
-    the model's prior, and the cache directory / plot filenames are tagged
-    "univariate_gaussian"/"gaussian_1d_location_model" or
-    "multivariate_gaussian"/"gaussian_2d_location_model" accordingly, so the
-    two configs' cached results and plots never collide.
-
-    The sensitivity error is also decomposed into the part coming from
-    estimating the objective A alone (posterior samples; A_c held at its
-    closed-form value) and the part coming from estimating the constraint
-    A_c alone (prior samples; A held at its closed-form value); these are
-    computed and cached alongside the full plug-in error (both A and A_c
-    estimated), though only the full plug-in error is plotted in the
-    combined figure.
-
-    Two further plots show the matrix-level relative Frobenius-norm
-    estimation error directly, independent of the downstream generalised
-    eigenproblem: ||A - Ahat||_F / ||A||_F (vs m) and
-    ||A_c - Achat||_F / ||A_c||_F (vs l).
-
-    Per-repeat errors are cached to a JSON file at
-    data/{univariate,multivariate}_gaussian/closed_form_convergence/closed_form_convergence_errors_K{K}.json
-    (K in the filename so a different config's num_basis_functions -- hence a
-    different actual K -- never silently reuses another K's stale cache) and
-    reused on subsequent runs if present -- delete the file to force a
-    recompute (e.g. after changing sample_sizes, n_repeats, or radius).
-    """
+    """Plot the error of the plug-in RBF FDsens+ sensitivity against its closed form as samples grow."""
     model = instantiate(cfg.model, data_config=cfg.data)
 
     # Dimension-agnostic: works for both the univariate model (Gaussian prior,

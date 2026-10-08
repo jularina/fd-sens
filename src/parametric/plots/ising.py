@@ -144,10 +144,7 @@ def plot_loss_gradient_times_density(
     output_dir: str,
     filename: str,
 ):
-    """
-    For each method, plot grad_loss(theta) * KDE_method(theta) on a single axis.
-    Produces one figure per loss with 3 lines (one per method).
-    """
+    """Plot grad_loss(theta) times each method's KDE density, one figure per loss."""
     import torch
     from scipy.stats import gaussian_kde
 

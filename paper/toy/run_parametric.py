@@ -30,9 +30,7 @@ def density_plot_across_multivariate_prior_parameter_sets(
 
 
 def plots_across_gaussian_prior_parameters_ranges(cfg, model: BayesianModel):
-    """
-    Recalculates Fisher along all the possible hyperparameters combination across the ranges
-    """
+    """Compute the Fisher divergence over the Gaussian prior hyperparameter grid and plot it."""
     results = {}
     box_cfg = cfg.fd.optimize.prior.Gaussian.parameters_box_range
     distribution_cls = DISTRIBUTION_MAP["Gaussian"]
@@ -56,14 +54,7 @@ def plots_across_gaussian_prior_parameters_ranges(cfg, model: BayesianModel):
 
 
 def plots_across_gaussian_parameters_ranges_etas_quadratic_form(cfg, eta_results, corner_points):
-    """
-    Recalculates FD along all the possible hyperparameters combination across the ranges
-
-    Args:
-        cfg (DictConfig): Configuration loaded by Hydra.
-        model (BayesianModel): Model loaded by Hydra.
-        posterior_samples (np.ndarray[float]): Posterior samples
-    """
+    """Plot the FD quadratic-form surface over the natural parameters (etas)."""
     plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
     output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
     plot_cfg = load_plot_config(plot_config_path)
@@ -71,11 +62,7 @@ def plots_across_gaussian_parameters_ranges_etas_quadratic_form(cfg, eta_results
 
 
 def plots_across_gaussian_parameters_ranges_mu_sigma_quadratic_form(cfg, prior_combinations, prior_corners):
-    """
-    Same grid as plots_across_gaussian_parameters_ranges_etas_quadratic_form but
-    visualises the (non-convex) quadratic form surface over the original
-    (mu, sigma) parametrisation instead of the natural parameters.
-    """
+    """Plot the FD quadratic-form surface over the (mu, sigma) parametrisation."""
     plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
     output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
     plot_cfg = load_plot_config(plot_config_path)
@@ -85,12 +72,7 @@ def plots_across_gaussian_parameters_ranges_mu_sigma_quadratic_form(cfg, prior_c
 @hydra.main(version_base="1.1", config_path="../../configs/paper/toy/",
             config_name="univariate_gaussian")
 def run_gaussian_priors(cfg, save_samples: bool = False) -> None:
-    """
-    Main function to compute Fisher divergence and perform prior parameter grid search using Hydra for configuration.
-
-    Args:
-        cfg (DictConfig): Configuration loaded by Hydra.
-    """
+    """Compute the Fisher divergence and run the corner-point search for univariate Gaussian priors."""
     model = instantiate(cfg.model, data_config=cfg.data)
     output_dir = os.path.join(get_original_cwd(), "data/univariate_gaussian")
 
@@ -117,12 +99,7 @@ def run_gaussian_priors(cfg, save_samples: bool = False) -> None:
 
 @hydra.main(version_base="1.1", config_path="../../configs/paper/toy/", config_name="multivariate_gaussian")
 def run_multivariate_gaussian_priors(cfg, save_samples: bool = False) -> None:
-    """
-    Main function to compute Fisher and perform prior parameter grid search using Hydra for configuration.
-
-    Args:
-        cfg (DictConfig): Configuration loaded by Hydra.
-    """
+    """Compute the Fisher divergence and run the corner-point search for multivariate Gaussian priors."""
     model = instantiate(cfg.model, data_config=cfg.data)
     output_dir = os.path.join(get_original_cwd(), "data/multivariate_gaussian")
 

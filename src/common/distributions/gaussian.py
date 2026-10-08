@@ -8,16 +8,7 @@ from src.common.utils.checkers import is_symmetric_and_psd
 
 
 class Gaussian(BaseDistribution):
-    """
-    Univariate Gaussian distribution.
-
-    Parameters
-    ----------
-    mu : float
-        Mean.
-    sigma : float
-        Standard deviation.
-    """
+    """Univariate Gaussian distribution with mean mu and standard deviation sigma."""
 
     def __init__(self, mu: float, sigma: float):
         assert sigma > 0, "Standard deviation must be positive."
@@ -62,16 +53,7 @@ class Gaussian(BaseDistribution):
 
 
 class MultivariateGaussian(BaseDistribution):
-    """
-    Multivariate Gaussian distribution.
-
-    Parameters
-    ----------
-    mu : ArrayLike
-        Mean vector.
-    cov : ArrayLike
-        Covariance matrix.
-    """
+    """Multivariate Gaussian distribution with mean vector mu and covariance matrix cov."""
 
     def __init__(self, mu: ArrayLike, cov: ArrayLike):
         self.mu = np.asarray(mu)

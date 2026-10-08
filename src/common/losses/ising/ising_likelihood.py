@@ -4,10 +4,7 @@ from src.common.losses.base import BaseLoss
 
 
 class IsingLikelihoodGivenGrads(BaseLoss):
-    """
-    Ising Model Likelihood (ignoring normalization constant).
-    4-neighbour l x l grid, where d = l*l.
-    """
+    """Unnormalised Ising model likelihood on an l x l grid, with precomputed log-likelihood gradients."""
 
     def __init__(self):
         self.grad_log_likelihood = None

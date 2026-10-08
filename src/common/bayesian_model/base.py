@@ -28,15 +28,7 @@ class BayesianModel(ABC):
 
 
     def back_to_prior_candidate(self, *, deep: bool = True):
-        """
-        Reset the current prior to the candidate prior.
-
-        Args:
-            deep: If True (default), use a deep copy so future mutations of
-                  `self.prior` do not affect `self.prior_candidate`.
-        Returns:
-            self (for chaining)
-        """
+        """Reset the current prior to the candidate prior (deep-copied by default) and return self."""
         self.prior = copy.deepcopy(self.prior_candidate) if deep else self.prior_candidate
         return self
 
@@ -47,38 +39,19 @@ class BayesianModel(ABC):
         pass
 
     def sample_from_base_prior(self, n_samples: int = 1000) -> np.ndarray:
-        """
-        Draw samples from the posterior distribution.
-        """
+        """Draw samples from the reference prior."""
         return self.prior_init.sample(n_samples)
 
     def set_prior_parameters(self, params: Dict[str, Any], distribution_cls: Type) -> None:
-        """
-        Set or update the prior distribution.
-
-        Args:
-            params: Dictionary of prior parameters.
-            distribution_cls: Distribution class to instantiate the prior.
-        """
+        """Set the prior by instantiating distribution_cls with the given parameters."""
         self.prior = distribution_cls(**params)
 
     def set_candidate_prior_parameters(self, params: Dict[str, Any], distribution_cls: Type) -> None:
-        """
-        Set or update candidate prior distribution.
-
-        Args:
-            params: Dictionary of prior parameters.
-            distribution_cls: Distribution class to instantiate the prior.
-        """
+        """Set the candidate prior by instantiating distribution_cls with the given parameters."""
         self.prior_candidate = distribution_cls(**params)
 
     def set_lr_parameter(self, lr: float) -> None:
-        """
-        Set or update the loss function parameters.
-
-        Args:
-            lr: Learning rate for the loss term.
-        """
+        """Set the learning rate that scales the loss term."""
         self.loss_lr = lr
 
 
@@ -144,10 +117,7 @@ class BayesianModelExtended(BayesianModel):
         return obs
 
     def _prepare_array_from_presaved_samples(self, path: Optional[str], name: str) -> Optional[np.ndarray]:
-        """
-        Generic helper to load an array from a given path in config.
-        Returns None if no path is given.
-        """
+        """Load an array of samples from path, or sample from the posterior/prior if no path is given."""
         if path is None and name == "posterior":
             try:
                 print("Posterior samples path not provided. Trying to sample from posterior.")

@@ -39,12 +39,7 @@ CONFIGS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."
 
 
 def _project_root() -> str:
-    """
-    Repo root, resolved the same way whether this runs as a Hydra job (where
-    get_original_cwd() is the authority) or as a plain function call outside
-    any Hydra app context (e.g. looped over many configs in one process,
-    where get_original_cwd() would raise).
-    """
+    """Return the repo root, whether or not running inside a Hydra job."""
     try:
         return get_original_cwd()
     except Exception:
@@ -56,13 +51,7 @@ def _config_tag(dataset: str, prior: str) -> str:
 
 
 def _basis_config_hash(basis_type: str, basis_kwargs: Dict[str, Any]) -> str:
-    """
-    Short, stable fingerprint of the basis config (type + kwargs, e.g. nu,
-    num_basis_functions, method) that actually determines the computed
-    omega_max/sensitivity -- folded into the sensitivity-cache tag so that
-    changing e.g. `nu` in a config invalidates the old cache instead of
-    silently reusing it (the cache used to be keyed only on dataset+prior).
-    """
+    """Return a short stable hash of the basis config, used to key the sensitivity cache."""
     payload = json.dumps({"type": basis_type, "kwargs": basis_kwargs}, sort_keys=True, default=str)
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:8]
 
@@ -92,14 +81,7 @@ def _new_sensitivity_cache_path(tag: str) -> str:
 
 
 def _build_tensor_axis_meta(feature_names):
-    """
-    For each 2D weight tensor: what its rows/columns mean, and (if
-    applicable) human-readable names for its columns -- used to detect
-    within-layer tendencies (e.g. "is one input feature or one hidden unit
-    consistently more sensitive than the rest of its layer?"). `feature_names`
-    labels net.module.0's input axis and comes from the dataset's config
-    (`data.feature_names`), so this works for any UCI dataset.
-    """
+    """Describe each 2D weight tensor's row/column meanings and column names for tendency analysis."""
     return {
         "net.module.0.weight_prior": {
             "row_label": "out",
@@ -124,28 +106,7 @@ def _build_tensor_axis_meta(feature_names):
 def compute_bnn_group_sensitivities(
     cfg, use_cache: bool = True,
 ) -> Tuple[Any, Dict[str, Dict[str, Any]], float, int, float, Dict, Dict]:
-    """
-    Core per-group FD sensitivity computation shared by
-    run_bnn_uci_node_sensitivity (single dataset/prior, with plots) and
-    run_bnn_uci_layer_sensitivity_table (all datasets/priors, aggregated into
-    a summary table): builds the loader, draws the (FD-estimation,
-    centre-selection) prior samples for every param group, and computes each
-    group's per-node omega_max/sensitivity.
-
-    If use_cache=True (default) and a cached run for this dataset/prior tag
-    already exists under data/bnn/ (see SENSITIVITY_CACHE_DIR), the slow
-    per-node optimisation is skipped and its full per-node results (omega_max
-    + the prior/center draws used to build each group's basis) are loaded
-    instead -- this is what lets a rerun go straight to plotting. Otherwise
-    the sensitivities are computed as before. A new, timestamped cache file
-    is written only when use_cache=True -- pass use_cache=False to force a
-    genuine from-scratch computation and skip the cache entirely (both read
-    and write), e.g. for runtime benchmarking, where hitting the cache would
-    make every run after the first artificially near-instant.
-
-    Returns (loader, group_results, radius, J, r_j, prior_samples_cache,
-    center_prior_samples_cache).
-    """
+    """Compute (or load cached) per-node FD sensitivities for every BNN parameter group."""
     loader = instantiate(cfg.model, data_config=cfg.data)
     J = loader.total_nodes
     r_j = float(cfg.sensitivity.r_j)
@@ -265,16 +226,7 @@ def compute_bnn_group_sensitivities(
 
 
 def _run_bnn_uci_node_sensitivity_core(cfg, use_cache: bool = True) -> None:
-    """
-    Core of run_bnn_uci_node_sensitivity, factored out as a plain function so
-    it can also be called directly (outside a Hydra job context) when looping
-    over many configs, e.g. from run_bnn_uci_all_datasets_sensitivity. Uses
-    _project_root() instead of get_original_cwd() so it works either way.
-
-    use_cache is passed straight through to compute_bnn_group_sensitivities
-    (see its docstring) -- defaults to the normal cache-using behaviour; a
-    caller can override it without affecting everyday use.
-    """
+    """Run per-node BNN sensitivity analysis for one config, callable outside a Hydra job."""
     core_start = time.perf_counter()
     tensor_axis_meta = _build_tensor_axis_meta(cfg.data.get("feature_names"))
     tag = f"{cfg.data.get('dataset', 'uci')}_{cfg.data.get('reference_prior', 'gaussian')}"
@@ -323,23 +275,12 @@ def _run_bnn_uci_node_sensitivity_core(cfg, use_cache: bool = True) -> None:
 
 @hydra.main(version_base="1.1", config_path="../../configs/paper/real/", config_name="bnn_boston_nonparam_gaussian")
 def run_bnn_uci_node_sensitivity(cfg) -> None:
-    """
-    Per-node nonparametric FD sensitivity analysis for the 3-layer BNN of
-    Fortuin et al. (2022), posterior-sampled on a UCI regression dataset.
-    """
+    """Per-node nonparametric FD sensitivity analysis for the Fortuin et al. (2022) BNN on a UCI dataset."""
     _run_bnn_uci_node_sensitivity_core(cfg)
 
 
 def run_bnn_uci_all_datasets_sensitivity() -> None:
-    """
-    Runs _run_bnn_uci_node_sensitivity_core for all 5 UCI datasets under both
-    reference-prior families (10 configs: configs/paper/real/
-    bnn_{dataset}_nonparam_{gaussian,studentt}.yaml), each saving its own
-    bnn_node_sensitivity_{dataset}_{prior}.json (via the same
-    save_to_serializable_json call as a single-config run). This is the slow,
-    run-once-per-change step; run_bnn_uci_layer_sensitivity_table only reads
-    the JSONs it leaves behind, so it stays cheap however often it's re-run.
-    """
+    """Run per-node sensitivity for all 5 UCI datasets under both reference-prior families."""
     for dataset in TABLE_DATASETS:
         for prior in TABLE_PRIORS:
             config_path = os.path.join(CONFIGS_DIR, f"bnn_{dataset}_nonparam_{prior}.yaml")
@@ -349,12 +290,7 @@ def run_bnn_uci_all_datasets_sensitivity() -> None:
 
 
 def _layer_mean_sensitivities(group_results: Dict[str, Dict[str, Any]]) -> Dict[str, float]:
-    """
-    Per-layer mean sensitivity: pools a layer's weight_prior and bias_prior
-    nodes together (mean = combined total_sensitivity / combined n_nodes,
-    equivalent to the mean over the concatenated per-node sensitivity arrays
-    since every node in the network shares the same r_j).
-    """
+    """Return each layer's mean sensitivity, pooling its weight and bias nodes."""
     layer_means = {}
     for layer_label, (weight_group, bias_group) in LAYER_GROUP_MAP.items():
         total_sensitivity = (
@@ -366,12 +302,7 @@ def _layer_mean_sensitivities(group_results: Dict[str, Dict[str, Any]]) -> Dict[
 
 
 def _render_layer_sensitivity_latex(results: Dict[str, Dict[str, Dict[str, float]]]) -> str:
-    """
-    Renders `results[dataset][prior][layer] -> mean sensitivity` as the
-    layer-by-dataset-by-reference-prior LaTeX table used in the paper's
-    appendix. Within each (dataset, prior) column, the layer with the
-    highest mean sensitivity is bolded.
-    """
+    """Render per-layer mean sensitivities as the appendix LaTeX table, bolding each column's maximum."""
     layer_labels = list(LAYER_GROUP_MAP.keys())
 
     def _cell(dataset: str, prior: str, layer: str) -> str:
@@ -419,22 +350,7 @@ def _render_layer_sensitivity_latex(results: Dict[str, Dict[str, Dict[str, float
 
 
 def run_bnn_uci_layer_sensitivity_table(save_path: str = None) -> str:
-    """
-    Reads the per-dataset node_sensitivity_cache_{dataset}_{prior}_*.json
-    files under data/bnn/ (see SENSITIVITY_CACHE_DIR / compute_bnn_group_
-    sensitivities) -- the newest cache per dataset/prior tag is used. These
-    are written the first time compute_bnn_group_sensitivities runs for a
-    given config (e.g. via run_bnn_uci_node_sensitivity or
-    run_bnn_uci_all_datasets_sensitivity), so this function does no
-    sensitivity computation itself, only aggregation: it's cheap and safe to
-    re-run as long as every dataset/prior has been computed at least once.
-
-    Aggregates each dataset/prior's per-group omega_max into a mean
-    sensitivity per network layer (pooling each layer's weight_prior and
-    bias_prior nodes, sensitivity = r_j * omega_max), and renders the result
-    as the LaTeX table used in the paper's appendix
-    (apptab:uci-sensitivity-per-layer).
-    """
+    """Aggregate cached per-node sensitivities into a per-layer LaTeX table for the paper's appendix."""
     results: Dict[str, Dict[str, Dict[str, float]]] = {}
     for dataset in TABLE_DATASETS:
         results[dataset] = {}

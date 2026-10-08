@@ -5,14 +5,7 @@ from .base import BaseDistribution
 
 
 class HalfCauchy(BaseDistribution):
-    """
-    Univariate Half-Cauchy distribution on [0, ∞) with scale γ > 0.
-
-    Parameters
-    ----------
-    gamma : float
-        Scale (> 0)
-    """
+    """Univariate Half-Cauchy distribution on [0, ∞) with scale γ > 0."""
 
     def __init__(self, gamma: float):
         assert gamma > 0, "Scale must be positive."

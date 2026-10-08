@@ -33,12 +33,7 @@ _DATA = {
 
 
 class KilpisjarviBayesianModel:
-    """
-    Bayesian AR(K) model for the Kilpisjarvi June temperatures, with reference
-    posterior draws from posteriordb.
-    Model: y_t ~ Normal(alpha + sum_k beta_k * y_{t-k}, sigma)
-    Parameter vector order: [alpha, beta_1, ..., beta_K, sigma].
-    """
+    """Bayesian AR(K) model for Kilpisjarvi June temperatures with posteriordb reference draws."""
 
     def __init__(self, data_config: Any):
         self.true_dgp = data_config.true_dgp
@@ -59,10 +54,7 @@ class KilpisjarviBayesianModel:
         self.m = self.posterior_samples_init.shape[0]
 
     def _prepare_observations(self) -> np.ndarray:
-        """
-        Build observation matrix from hardcoded data with centered y and pass it to the
-        GaussianARLogLikelihood via set_data(y, K), where K is inferred from prior names.
-        """
+        """Centre the hardcoded data, pass it to the AR likelihood and return the observation column."""
         y = np.asarray(_DATA["y"], dtype=float)
         y_centered = y - y.mean()
         K = sum(1 for name in self.prior_init.names if name.startswith("beta"))

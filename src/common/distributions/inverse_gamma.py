@@ -7,24 +7,7 @@ from .base import BaseDistribution
 
 
 class InverseGamma(BaseDistribution):
-    """
-    Univariate Inverse-Gamma distribution on (0, ∞) with shape α > 0 and scale β > 0.
-
-    PDF:  f(x) = (β^α / Γ(α)) · x^{-(α+1)} · exp(−β/x)
-
-    Exponential-family form:
-        log f(x) = η₁ · log(x) + η₂ · (1/x) + log h(x) + A(η)
-    where
-        η₁ = −(α + 1),  η₂ = −β
-        T(x) = [log x,  1/x],   h(x) = 1
-
-    Parameters
-    ----------
-    alpha : float
-        Shape parameter (> 0)
-    beta : float
-        Scale parameter (> 0)
-    """
+    """Univariate Inverse-Gamma distribution on (0, ∞) with shape α > 0 and scale β > 0."""
 
     def __init__(self, alpha: float, beta: float):
         assert alpha > 0, "Shape must be positive."
@@ -80,10 +63,7 @@ class InverseGamma(BaseDistribution):
         return np.array([-(self.alpha + 1.0), -self.beta], dtype=np.float64)
 
     def grad_sufficient_statistics(self, x: np.ndarray) -> np.ndarray:
-        """
-        T(x) = [log x,  1/x]  ⟹  ∇_x T(x) = [1/x,  −1/x²].
-        Returns array of shape (N, 1, 2).
-        """
+        """Return gradients (1/x, −1/x²) of the sufficient statistics (log x, 1/x), shape (N, 1, 2)."""
         x = np.asarray(x, dtype=np.float64).reshape(-1, 1)
         N = x.shape[0]
         grad = np.zeros((N, 1, 2), dtype=np.float64)
@@ -94,10 +74,7 @@ class InverseGamma(BaseDistribution):
         return grad
 
     def grad_log_base_measure(self, x: np.ndarray) -> np.ndarray:
-        """
-        h(x) = 1 on (0, ∞)  ⟹  ∇ log h(x) = 0.
-        Returns shape (N, 1).
-        """
+        """Return the zero gradient of the log base measure, shape (N, 1)."""
         x = np.asarray(x, dtype=np.float64).reshape(-1, 1)
         return np.zeros_like(x, dtype=np.float64)
 

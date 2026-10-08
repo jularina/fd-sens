@@ -39,16 +39,7 @@ def _maybe_build_component(spec: Union["BaseDistribution", Dict[str, Any]]):
 
 
 class CompositeProduct(BaseDistribution):
-    """
-    Product (independent) composite distribution over concatenated parameters.
-    The joint density factorizes:  p(x) = ∏_k p_k(x_k),  with x = concat(x_1, ..., x_K).
-
-    Parameters
-    ----------
-    distributions : Dict[str, Union[BaseDistribution, Dict]]
-        Mapping name -> component distribution or Hydra-style spec.
-        (No other kwargs are accepted.)
-    """
+    """Product of independent component distributions over concatenated parameters."""
 
     def __init__(self, *, distributions: Dict[str, Union["BaseDistribution", Dict[str, Any]]]):
         if distributions is None:

@@ -163,10 +163,7 @@ def plot_prior_posterior_1d(theta, priors, posteriors, colors, plot_cfg, output_
 # Figure-18-style posterior simulation plot
 # ------------------------------------------------------------
 def simulate_quantity_of_interest(theta_draws, rng):
-    """
-    Two quantities under two conditions, with values kept safely
-    inside the plotting window on a log scale.
-    """
+    """Simulate two quantities under two conditions, kept inside the log-scale plotting window."""
     n = len(theta_draws)
 
     eps_low  = rng.normal(loc=0.0, scale=0.16, size=n)

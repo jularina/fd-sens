@@ -7,10 +7,7 @@ from src.common.losses.gaussian_log_likelihood import GaussianLogLikelihoodWithG
 
 
 class TurinBayesianModel(ABC):
-    """
-    Bayesian model for Turin radio propagation experiment.
-    Parameters vector order used here: [theta_1, theta_2, theta_3, theta_4].
-    """
+    """Bayesian model for the Turin radio propagation experiment with parameters [theta_1, ..., theta_4]."""
 
     def __init__(self, data_config: Any):
         self.true_dgp = data_config.true_dgp

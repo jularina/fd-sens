@@ -5,21 +5,7 @@ from .base import BaseDistribution
 
 
 class Uniform(BaseDistribution):
-    """
-    Univariate Uniform distribution.
-
-    Parameters
-    ----------
-    low : float or str
-        Lower bound of the uniform distribution.
-    high : float or str
-        Upper bound of the uniform distribution.
-
-    Notes
-    -----
-    If either bound is infinite, pdf/log_pdf/grad_log_pdf/grad_log_base_measure/sampling
-    will not be available.
-    """
+    """Univariate Uniform distribution on [low, high]; densities and sampling need finite bounds."""
 
     def __init__(self, low: Union[float, str], high: Union[float, str]):
         def parse_bound(b):

@@ -71,10 +71,7 @@ _PIT_EPS = 1e-8
 
 
 def _to_z_space(prior_dist, x: np.ndarray) -> np.ndarray:
-    """
-    Probability-integral transform z = Phi^{-1}(F_ref(x)), so that z ~ N(0, 1) under the reference prior.
-    Gaussian components use the closed form (x - mu) / sigma; Half-Cauchy uses its CDF, clipped for stability.
-    """
+    """Map x to z = Phi^{-1}(F_ref(x)) so that z ~ N(0, 1) under the reference prior."""
     x = np.asarray(x, dtype=float)
     if isinstance(prior_dist, Gaussian):
         return (x - prior_dist.mu) / prior_dist.sigma
@@ -88,11 +85,7 @@ def _to_z_space(prior_dist, x: np.ndarray) -> np.ndarray:
 def _fd_z_posterior_gaussian_in_z(
     mu_z_cand: float, sigma_z_cand: float, z_post_mean: float, z_post_meansq: float,
 ) -> float:
-    """
-    Exact E_{z~posterior_z}[(score_ref_z(z) - score_cand_z(z))^2] for a reference N(0, 1) and candidate
-    N(mu_z_cand, sigma_z_cand^2). The score difference a*z + b is affine in z, so the expectation only needs
-    the posterior's first two z-moments.
-    """
+    """Exact posterior-based FD_z between N(0, 1) and a Gaussian-in-z candidate from z-moments."""
     a = 1.0 / sigma_z_cand ** 2 - 1.0
     b = -mu_z_cand / sigma_z_cand ** 2
     return float(a ** 2 * z_post_meansq + 2.0 * a * b * z_post_mean + b ** 2)
@@ -114,11 +107,7 @@ def _run_stage(cfg, stage: str) -> bool:
 
 
 def _export_param_z_stan_data(worst: dict, base_prior, y_full: np.ndarray, K: int, path: str) -> None:
-    """
-    Stan data for paper/posteriordb/stan/kilpisjarvi_ark_param_z.stan:
-    per component, z_j ~ N(mu_z_j, sigma_z_j^2) pushed back through the
-    reference PIT.
-    """
+    """Write Stan data for the parametric z-scale Kilpisjarvi model's worst-case priors."""
     ref = dict(zip(base_prior.names, base_prior.components))
     names = list(base_prior.names)
     y_full = np.asarray(y_full, dtype=float).reshape(-1)
@@ -143,14 +132,7 @@ def _export_param_z_stan_data(worst: dict, base_prior, y_full: np.ndarray, K: in
 def compute_z_scale_parametric_sensitivity(
     model, base_prior, mu_z_range=Z_MU_RANGE, sigma_z_range=Z_SIGMA_RANGE,
 ) -> dict:
-    """
-    Per component, the posterior-based FD_z sup over the shared Gaussian-in-z
-    box (attained at one of its 4 vertices) -- same quantity as
-    run_nonparametric.compute_parametric_sensitivity, computed from the parametric model's own posterior draws (columns alpha,
-    beta1..K, sigma, matching base_prior's component order).
-
-    Returns {name: (mu_z, sigma_z, fd_z_sup)}.
-    """
+    """Per component, return (mu_z, sigma_z, fd_z_sup) for the posterior-based FD_z sup over the z-box."""
     corners = [(mu, sig) for mu in mu_z_range for sig in sigma_z_range]
     worst = {}
     for idx, (name, ref) in enumerate(zip(base_prior.names, base_prior.components)):
@@ -228,12 +210,7 @@ def main(cfg: DictConfig) -> None:
 
 
 class _ZScalePriorFDModel:
-    """
-    Prior-only FD problem in z-space for the optimiser runtime comparison: every component
-    has an N(0, 1) reference prior, the candidates are Gaussian in z, and the posterior
-    draws are mapped through the reference PIT. The likelihood is the same for every
-    candidate prior, so its score drops out of the prior-only FD.
-    """
+    """Prior-only z-space FD problem with N(0, 1) references used for the optimiser runtime comparison."""
 
     def __init__(self, posterior_z: np.ndarray, names: list[str]):
         self.posterior_samples_init = posterior_z
@@ -247,10 +224,7 @@ class _ZScalePriorFDModel:
 
 
 def _z_box_eta_components(names: list[str], mu_z_range, sigma_z_range) -> list[dict]:
-    """
-    Natural-parameter box (eta_1 = mu/s^2, eta_2 = -1/(2 s^2)) spanned by the z-box,
-    identical for every component.
-    """
+    """Return the natural-parameter box spanned by the z-box, identical for every component."""
     mu_max = max(abs(mu_z_range[0]), abs(mu_z_range[1]))
     sig_min, sig_max = sigma_z_range
     eta_1 = [-mu_max / sig_min ** 2, mu_max / sig_min ** 2]
@@ -264,12 +238,7 @@ def _timing_dir(cfg) -> str:
 
 @hydra.main(version_base="1.1", config_path="../../configs/paper/real/", config_name="ark_kilpisjarvi")
 def time_optimisers(cfg: DictConfig) -> None:
-    """
-    Times the three optimisation routines on the z-scale prior sensitivity problem
-    (14 natural parameters): corner enumeration of the full convex quadratic form plus
-    convex QP for the infimum, the per-component decomposition, and black-box dual
-    annealing. Saves the timings used by plot_timing.
-    """
+    """Time the corner-enumeration, per-component and dual-annealing optimisers on the z-scale problem."""
     if cfg.playground.get("stage", "all") != "timing":
         return
     n_runs = int(cfg.playground.get("n_timing_runs", 500))
@@ -471,24 +440,7 @@ def predictive_variance_law_of_total(
     samples: np.ndarray,
     K: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Estimate posterior predictive mean and variance via the Law of Total Variance.
-
-    Var[y_t | D] = E_theta[Var[y_t | theta]]   (aleatoric)
-                 + Var_theta[E[y_t | theta]]    (epistemic)
-
-    For y_t | theta ~ N(alpha + beta' * lags_t, sigma^2):
-      - aleatoric = mean(sigma_s^2)                  -- scalar, same for all t
-      - epistemic = var_s(mu_t^s)                    -- (T-K,), time-varying
-
-    Returns
-    -------
-    pred_mean   : (T-K,)  posterior predictive mean
-    pred_std    : (T-K,)  total predictive std
-    aleatoric   : scalar  expected noise variance
-    epistemic   : (T-K,) parameter-uncertainty variance
-    lo, hi      : 95% CI bounds (pred_mean +/- 1.96 * pred_std)
-    """
+    """Estimate posterior predictive mean, std, variance components and 95% bounds via total variance."""
     y_full = np.asarray(y_full, dtype=float).reshape(-1)
     T = len(y_full)
     alpha_s = samples[:, 0]        # (S,)

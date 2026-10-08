@@ -1,17 +1,4 @@
-"""
-Schematic ("potato diagram") figures illustrating the sieve construction of
-Q_r^K (Eq. candidate_prior) and its Monte-Carlo approximation Q_r^{K,l}.
-
-Figure 1 shows the nesting Q_r^{K_1} subset Q_r^{K_2} subset Q_r^{K_3} subset
-... subset Q_r as concentric ('Russian doll') blobs sharing the same centre,
-with a single black dot for Pi_ref shared by every set in the chain.
-
-Figure 2 fixes K (not shown) and grows the number of Monte-Carlo samples l
-used to estimate the FD constraint: nested rings around the true boundary
-of Q_r^K -- representing the spread of the estimated constraint
-\\hat{FD}_l(Pi_ref || Pi_K) across MC draws -- collapse onto the true
-boundary as l grows.
-"""
+"""Schematic diagrams illustrating the sieve construction of Q_r^K and its Monte-Carlo approximation."""
 import os
 from pathlib import Path
 
@@ -51,12 +38,7 @@ def _shape_at(angle_rad, theta_grid, shape):
 
 
 def _closed(x, y):
-    """Append the first vertex to the end so ax.plot draws a fully closed loop.
-
-    theta runs over [0, 2*pi) with endpoint=False, so consecutive-point lines
-    (unlike ax.fill, which closes polygons automatically) leave the last point
-    unconnected to the first -- a small gap right at theta=0 (the positive
-    x-axis, i.e. the right side of every one of these potato shapes)."""
+    """Append the first vertex to the end so ax.plot draws a fully closed loop."""
     return np.append(x, x[0]), np.append(y, y[0])
 
 
@@ -100,21 +82,7 @@ def plot_sieve_and_mc_precision_combined(
     k2_bulge_spread_deg=100.0,
     bottom_squeeze=0.55,
 ):
-    """Single combined diagram: the sieve chain
-    Q_r^{K_1} subset Q_r^{K_2} subset Q_r^{K_3} subset Q_r, with a couple of
-    MC-estimation bundles \\widehat{Q}_r^{K_1,l}: each is itself a sieve-like
-    blob (same size and irregular-potato character as Q_r^{K_1}, via the same
-    harmonics but its own random phases) that genuinely overlaps Q_r^{K_1} --
-    poking out where its own bumps exceed the true boundary, dipping inside
-    elsewhere -- rather than being simply nested inside/around it or offset
-    away from it. l_bundle_deviation controls how much each bundle's shape
-    departs from the true one: small (more MC samples, e.g. l_2) means it
-    nearly coincides with -- so overlaps a lot with -- Q_r^{K_1}; large (fewer
-    samples, e.g. l_1) means a more independently-shaped blob that overlaps it
-    only partially. The two bundles are not nested inside one another either.
-    Both stories (growing K, shrinking MC error) share one picture and one
-    Pi_ref dot.
-    """
+    """Draw the nested sieve chain and overlapping MC-estimation bundles in one diagram."""
     os.makedirs(output_dir, exist_ok=True)
     colors = list(plot_cfg.plot.color_palette.colors)
     _apply_rcparams(plot_cfg)

@@ -16,19 +16,7 @@ class OptimisationNonparametricBase:
         add_nuggets: bool = False,
         basis_function: Optional[BaseBasisFunction] = None,
     ):
-        """
-        Base class to handle nonparametric quadratic form optimization.
-
-        `basis_function`, if given, is used as-is instead of being built from
-        `config` (e.g. to force a basis whose centres are selected from a
-        different sample set than `prior_estimator`/`posterior_estimator`).
-
-        When built from `config`, prior-based centres are never chosen from
-        `prior_estimator.samples` (those samples estimate the Fisher
-        divergence). Instead, a fresh, independent i.i.d. draw of the same
-        size from the reference prior is used as the pool to select centres
-        from, decoupling centre selection from the FD estimate.
-        """
+        """Base class for nonparametric quadratic-form optimisation over a KEF basis."""
         self.posterior_estimator = posterior_estimator
         self.prior_estimator = prior_estimator
 
@@ -146,29 +134,7 @@ class OptimisationNonparametricBase:
 
 
     def optimize_through_generalized_eigenvalue(self, nugget: float = 1e-10, rel_tol: float | None = None):
-        """
-        Solve the QCQP via the generalised eigenvalue problem.
-
-        Valid when the base measure g = π_ref, which makes b = b_c = 0 and
-        c = c_c = 0.  The problem then simplifies to:
-
-            sup_{λᵀ A_c λ ≤ r} λᵀ A λ  =  r · ω_max
-
-        where ω_max is the largest generalised eigenvalue of  A λ' = ω A_c λ'.
-        The optimal solution is  λ_star = sqrt(r) · λ'_star,  with λ'_star the
-        A_c-normalised eigenvector for ω_max.  Complexity O(K³).
-
-        Args:
-            nugget: regularisation added to A_c when it is not PD.
-            rel_tol: if given, instead of shifting A_c by a nugget and
-                Cholesky-factorising it, solve on A_c's numerically
-                well-conditioned eigen-subspace (eigenvalues above
-                max(rel_tol * max_eig(A_c), nugget)) -- see
-                src.nonparametric.node_sensitivity._ac_whitening_transform.
-                Use this when A_c is near-singular (e.g. centres clustered
-                where few prior samples fall), where the nugget shift
-                inflates the ratio along the near-null directions.
-        """
+        """Solve the QCQP via the generalised eigenvalue problem."""
         from scipy.linalg import eigh as scipy_eigh
         import warnings
 

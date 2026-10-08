@@ -50,18 +50,7 @@ def plot_priors_z_scale_one_panel(
     cloud_color: str = "#7c397d",
     x_range: Tuple[float, float] = (-4.0, 4.0),
 ):
-    """
-    Single-panel z-scale analogue of plot_three_panel_priors_all_betas_one_plot_explicit:
-    after the PIT z = Phi^{-1}(F_ref(x)) every component (Gaussian alpha/beta1..5
-    and Half-Cauchy sigma alike) has the reference N(0, 1) and shares the same
-    Gaussian-in-z box (mu_z, sigma_z), so all components fit on one axis.
-
-    Curves:
-      - reference N(0, 1): black dashed
-      - box neighbourhood cloud: faint cloud_color
-      - per-component worst-case corners: red, components sharing a corner grouped
-        under one linestyle
-    """
+    """Plot reference, neighbourhood and worst-case priors for all components on one z-scale panel."""
     if plot_cfg is not None:
         apply_plot_rc(plot_cfg)
     os.makedirs(output_dir, exist_ok=True)
@@ -361,8 +350,7 @@ def plot_posterior_predictive_with_data(
     ylim=None,
     show_ylabel: bool = True,
 ):
-    """Plot uncentered observations (line + scatter, real years) with one set of
-    posterior predictive bands overlaid."""
+    """Plot uncentred observations by year with posterior predictive bands overlaid."""
     try:
         apply_plot_rc(plot_cfg)
     except Exception:

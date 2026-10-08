@@ -22,20 +22,7 @@ class BaseBasisFunction(ABC):
 
 
 class MaternBasisFunction(BaseBasisFunction):
-    r"""
-    Matérn basis functions: φ_k(θ) = φ( ||θ - c_k|| ), with smoothness ν > 1.
-
-    Shapes (to match your RBFBasisFunction interface):
-      - evaluate(samples) -> (m, d, K)   (scalar φ replicated across d)
-      - gradient(samples) -> (m, d, K)   (true ∇θ φ_k)
-
-    Kernel (variance σ^2, lengthscale ℓ):
-        φ(r) = σ^2 * 2^{1-ν} / Γ(ν) * (a r)^ν K_ν(a r),
-        where a = sqrt(2ν) / ℓ, and K_ν is modified Bessel K.
-
-    Radial derivative identity used:
-        d/dr [ x^ν K_ν(x) ] = - x^ν K_{ν-1}(x).
-    """
+    """Isotropic Matérn radial basis φ(||θ - c_k||) with smoothness ν > 1."""
 
     def __init__(
         self,
@@ -126,15 +113,7 @@ class MaternBasisFunction(BaseBasisFunction):
         raise ValueError(f"Unknown center selection method: {method}")
 
     def _halton_centers(self, X: np.ndarray, num_centers: int) -> np.ndarray:
-        """
-        Quasi-uniform centers via a scrambled Halton sequence mapped through
-        the empirical quantiles of X (dimension-wise).
-
-        Halton points u_k ∈ [0,1]^d are mapped as c_{k,j} = Q_j(u_{k,j}),
-        where Q_j is the empirical quantile function of X[:,j].
-        This preserves the O(K^{-1/d}) fill-distance guarantee of the
-        Halton sequence while adapting centers to the data support.
-        """
+        """Select quasi-uniform centers via a scrambled Halton sequence mapped through empirical quantiles."""
         d = X.shape[1]
         sampler = Halton(d=d, scramble=True, seed=27)
         u = sampler.random(n=num_centers)          # (K, d) in [0, 1]^d
@@ -144,24 +123,7 @@ class MaternBasisFunction(BaseBasisFunction):
         return centers
 
     def _random_centers(self, X: np.ndarray, num_centers: int) -> np.ndarray:
-        """
-        Centers via random subsampling of the distinct rows of X, rejecting
-        a candidate that lands too close to an already-chosen center and
-        drawing another one instead.
-
-        Plain uniform-without-replacement subsampling can (and empirically
-        does) draw two centers within a small fraction of the eventual
-        lengthscale of each other; for a smooth radial basis their gradients
-        are then nearly identical functions of theta, which collapses
-        several directions of the K x K gradient Gram matrix A_c to
-        near-zero eigenvalues (verified: two random centers within ~5% of
-        the fitted lengthscale were enough to wipe out 4-5 of 50 gradient
-        directions). That numerically inflates the FD-sensitivity
-        generalized-eigenvalue ratio omega_max for any node with even a
-        small projection onto that spurious near-null direction -- exact
-        deduplication alone does not catch this, since the offending centers
-        are all distinct floats, just clustered.
-        """
+        """Select centers by subsampling distinct rows of X, rejecting candidates too close to chosen ones."""
         X_unique = np.unique(X, axis=0)
         n = X_unique.shape[0]
         num_centers = min(num_centers, n)
@@ -206,10 +168,7 @@ class MaternBasisFunction(BaseBasisFunction):
         return ls
 
     def _matern(self, r: np.ndarray) -> np.ndarray:
-        """
-        r: (...,) nonnegative distances
-        returns φ(r) with φ(0)=variance
-        """
+        """Evaluate the Matérn kernel φ(r) at nonnegative distances r, with φ(0) equal to the variance."""
         r = np.asarray(r, dtype=float)
         x = self._a * r
 
@@ -231,13 +190,7 @@ class MaternBasisFunction(BaseBasisFunction):
         return out
 
     def _matern_dr(self, r: np.ndarray) -> np.ndarray:
-        """
-        Radial derivative dφ/dr.
-
-        For r>0:
-          dφ/dr = -σ^2 * c * a * x^ν K_{ν-1}(x),   x=a r
-        and define dφ/dr(0)=0.
-        """
+        """Radial derivative dφ/dr of the Matérn kernel, defined as 0 at r=0."""
         r = np.asarray(r, dtype=float)
         x = self._a * r
 
@@ -267,10 +220,7 @@ class MaternBasisFunction(BaseBasisFunction):
         return np.broadcast_to(vals[:, None, :], (m, d, vals.shape[1])).copy()
 
     def gradient(self, samples: np.ndarray) -> np.ndarray:
-        """
-        ∇θ φ_k(θ) = (dφ/dr)(r) * (θ - c_k) / r, with 0 at r=0.
-        Returns shape (m, d, K).
-        """
+        """Gradient ∇θ φ_k(θ) with shape (m, d, K), set to 0 at r=0."""
         X = np.asarray(samples, dtype=float)  # (m,d)
         diffs = X[:, None, :] - self.centers[None, :, :]  # (m,K,d)
         r = np.linalg.norm(diffs, axis=-1)  # (m,K)
@@ -288,34 +238,7 @@ class MaternBasisFunction(BaseBasisFunction):
 
 
 class MaternBasisFunctionMultidim(BaseBasisFunction):
-    r"""
-    Multidim Matérn basis with either per-dimension (diag) or full (non-diagonal) metric.
-
-    Two modes (mirrors your RBFBasisFunctionMultidim API):
-
-    metric="diag":
-      Per-dimension (1D) Matérn features:
-        phi_{i,b}(x) = Matérn_nu( |x_i - c_{b,i}| / l_i )
-      evaluate(samples) -> (m, d, B)
-      gradient(samples) -> (m, d, B) with 1D derivative wrt x_i
-
-    metric="full":
-      Scalar Matérn feature using Mahalanobis distance:
-        r_b(x) = sqrt( (x - c_b)^T P (x - c_b) )
-        phi_b(x) = Matérn_nu( r_b(x) )
-      evaluate(samples) -> (m, d, B) by repeating scalar across d
-      gradient(samples) -> (m, d, B): ∇_x phi_b = (dphi/dr) * P(x-c_b)/r_b
-
-    Matérn (scaled-distance form):
-      k(r) = σ^2 * 2^{1-ν}/Γ(ν) * (x^ν K_ν(x)),  x = sqrt(2ν) r
-
-    Radial derivative identity:
-      d/dr [ x^ν K_ν(x) ] = - sqrt(2ν) * x^ν K_{ν-1}(x)   (chain rule via x = sqrt(2ν) r)
-
-    Notes:
-      - You need ν > 1 if you want C^1 basis functions (your Assumption A1).
-      - In metric="full", P plays the role of a precision / inverse lengthscale matrix.
-    """
+    """Multidimensional Matérn basis using either per-dimension (diag) or Mahalanobis (full) distances."""
 
     def __init__(
         self,
@@ -498,24 +421,7 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
 
 
     def _random_centers(self, X: np.ndarray, num_centers: int) -> np.ndarray:
-        """
-        Centers via random subsampling of the distinct rows of X, rejecting
-        a candidate that lands too close to an already-chosen center and
-        drawing another one instead.
-
-        Plain uniform-without-replacement subsampling can (and empirically
-        does) draw two centers within a small fraction of the eventual
-        lengthscale of each other; for a smooth radial basis their gradients
-        are then nearly identical functions of theta, which collapses
-        several directions of the K x K gradient Gram matrix A_c to
-        near-zero eigenvalues (verified: two random centers within ~5% of
-        the fitted lengthscale were enough to wipe out 4-5 of 50 gradient
-        directions). That numerically inflates the FD-sensitivity
-        generalized-eigenvalue ratio omega_max for any node with even a
-        small projection onto that spurious near-null direction -- exact
-        deduplication alone does not catch this, since the offending centers
-        are all distinct floats, just clustered.
-        """
+        """Select centers by subsampling distinct rows of X, rejecting candidates too close to chosen ones."""
         X_unique = np.unique(X, axis=0)
         n = X_unique.shape[0]
         num_centers = min(num_centers, n)
@@ -540,11 +446,7 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
 
     # ---------------- estimation helpers ----------------
     def _median_heuristic_per_dim(self, x: np.ndarray, jitter: float = 1e-12) -> np.ndarray:
-        """
-        Per-dimension median heuristic:
-          l_i = sqrt(median_{p<q} (x_{p,i} - x_{q,i})^2 + jitter)
-        x: (n, d)
-        """
+        """Per-dimension median-heuristic lengthscales for samples x of shape (n, d)."""
         x = np.asarray(x, dtype=float)
         if x.ndim != 2:
             raise ValueError("x must be (n,d).")
@@ -589,12 +491,7 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
         floor_frac: float = 0.1,
         jitter: float = 1e-8,
     ) -> np.ndarray:
-        """
-        Estimate shared precision P ≻ 0:
-          - compute covariance Σ
-          - floor eigenvalues
-          - invert, then scale by 1/multiplier^2
-        """
+        """Estimate a shared precision matrix from the eigenvalue-floored sample covariance."""
         X = np.asarray(samples, dtype=float)
         Σ = np.cov(X, rowvar=False)
         Σ = 0.5 * (Σ + Σ.T)
@@ -624,10 +521,7 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
 
     # ---------------- Matérn core in scaled-distance form ----------------
     def _matern_scaled(self, r: np.ndarray) -> np.ndarray:
-        """
-        r: (...,) scaled distance (dimensionless). Uses x = sqrt(2ν) r.
-        Returns k(r) with k(0)=variance.
-        """
+        """Evaluate the Matérn kernel k(r) at scaled distances r, with k(0) equal to the variance."""
         r = np.asarray(r, dtype=float)
         x = self._sqrt_2nu * r
 
@@ -645,12 +539,7 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
         return out
 
     def _matern_scaled_dr(self, r: np.ndarray) -> np.ndarray:
-        """
-        d/dr k(r) in scaled-distance form.
-        For r>0:
-          dk/dr = -σ^2 * c * sqrt(2ν) * x^ν K_{ν-1}(x),  x = sqrt(2ν) r
-        with dk/dr(0)=0.
-        """
+        """Radial derivative dk/dr of the scaled-distance Matérn kernel, defined as 0 at r=0."""
         r = np.asarray(r, dtype=float)
         x = self._sqrt_2nu * r
 
@@ -669,10 +558,7 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
 
     # ---------------- API: evaluate / gradient ----------------
     def evaluate(self, samples: np.ndarray) -> np.ndarray:
-        """
-        metric="diag": returns (m, d, B) with per-dim Matérn.
-        metric="full": returns (m, d, B) by repeating scalar across d.
-        """
+        """Evaluate the basis features with shape (m, d, B) for either the diag or full metric."""
         X = np.asarray(samples, dtype=float)  # (m,d)
         m, d = X.shape
         if d != self.dim:
@@ -693,17 +579,7 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
         return np.repeat(phi[:, None, :], d, axis=1)              # (m,d,B)
 
     def gradient(self, samples: np.ndarray) -> np.ndarray:
-        """
-        metric="diag":
-          phi_{i,b}(x) = k( |x_i - c_{b,i}| / l_i )
-          d/dx_i phi_{i,b}(x) = k'(r) * sign(x_i - c_{b,i}) / l_i   (with 0 at diff=0)
-
-        metric="full":
-          r_b(x)=sqrt((x-c)^T P (x-c))
-          ∇ phi_b = k'(r) * P(x-c)/r, with 0 at r=0
-
-        Returns: (m, d, B)
-        """
+        """Compute the basis gradients with shape (m, d, B) for either the diag or full metric."""
         X = np.asarray(samples, dtype=float)
         m, d = X.shape
         if d != self.dim:
@@ -799,11 +675,7 @@ class RBFBasisFunction(BaseBasisFunction):
         raise ValueError(f"Unknown center selection method: {method}")
 
     def _halton_centers(self, X: np.ndarray, num_centers: int) -> np.ndarray:
-        """
-        Quasi-uniform centers via a scrambled Halton sequence mapped through
-        the empirical quantiles of X (dimension-wise). See
-        MaternBasisFunction._halton_centers for details.
-        """
+        """Select quasi-uniform centers via a scrambled Halton sequence mapped through empirical quantiles."""
         d = X.shape[1]
         sampler = Halton(d=d, scramble=True, seed=27)
         u = sampler.random(n=num_centers)          # (K, d) in [0, 1]^d
@@ -813,24 +685,7 @@ class RBFBasisFunction(BaseBasisFunction):
         return centers
 
     def _random_centers(self, X: np.ndarray, num_centers: int) -> np.ndarray:
-        """
-        Centers via random subsampling of the distinct rows of X, rejecting
-        a candidate that lands too close to an already-chosen center and
-        drawing another one instead.
-
-        Plain uniform-without-replacement subsampling can (and empirically
-        does) draw two centers within a small fraction of the eventual
-        lengthscale of each other; for a smooth radial basis their gradients
-        are then nearly identical functions of theta, which collapses
-        several directions of the K x K gradient Gram matrix A_c to
-        near-zero eigenvalues (verified: two random centers within ~5% of
-        the fitted lengthscale were enough to wipe out 4-5 of 50 gradient
-        directions). That numerically inflates the FD-sensitivity
-        generalized-eigenvalue ratio omega_max for any node with even a
-        small projection onto that spurious near-null direction -- exact
-        deduplication alone does not catch this, since the offending centers
-        are all distinct floats, just clustered.
-        """
+        """Select centers by subsampling distinct rows of X, rejecting candidates too close to chosen ones."""
         X_unique = np.unique(X, axis=0)
         n = X_unique.shape[0]
         num_centers = min(num_centers, n)
@@ -892,26 +747,7 @@ def rbf_gaussian_gram_closed_form(
     mu: np.ndarray,
     Sigma: np.ndarray,
 ) -> np.ndarray:
-    r"""
-    Closed-form K x K Gram matrix
-
-        M_{ij} = E_{theta ~ N(mu, Sigma)}[ grad phi_i(theta) . grad phi_j(theta) ],
-
-    for the RBF kernel phi_i(theta) = exp(-||theta - c_i||^2 / (2 ell^2)), when
-    the reference measure is Gaussian. This is the closed form used for both
-    A (theta ~ posterior) and A_c (theta ~ prior) in the FDsens+ RBF setting:
-    call this once with (mu_ref, Sigma_ref) for A_c, and once with
-    (mu_post, Sigma_post) for A.
-
-    Args:
-        centers: (K, d) kernel centres bar_theta_1, ..., bar_theta_K.
-        lengthscale: RBF lengthscale ell.
-        mu: (d,) mean of the Gaussian reference measure.
-        Sigma: (d, d) covariance of the Gaussian reference measure.
-
-    Returns:
-        (K, K) symmetric PSD matrix M.
-    """
+    """Closed-form K x K expected gradient Gram matrix of an RBF basis under a Gaussian reference measure."""
     centers = np.atleast_2d(np.asarray(centers, dtype=float))
     K, d = centers.shape
     mu = np.asarray(mu, dtype=float).reshape(d)
@@ -947,23 +783,7 @@ def rbf_gaussian_gram_closed_form(
 
 
 class FixedCentersRBFBasisFunctionMultidim(BaseBasisFunction):
-    r"""
-    Joint (non-separable) isotropic Gaussian-RBF basis with explicit, shared
-    d-dimensional centres:
-
-        phi_b(theta) = exp( -||theta - c_b||^2 / (2 ell^2) ),   c_b in R^d,
-
-    matching exactly the kernel assumed by `rbf_gaussian_gram_closed_form`
-    (isotropic precision I / ell^2), unlike FixedCentersRBFBasisFunction
-    (which is separable per-column/1D) or RBFBasisFunctionMultidim (whose
-    centres are estimated from data via kmeans/halton/random, not passed in
-    directly). Used to Monte-Carlo estimate A, A_c for a basis whose exact
-    closed-form Gram matrices under a Gaussian reference measure can be
-    computed independently via `rbf_gaussian_gram_closed_form` for the same
-    centres/lengthscale, so the two can be compared directly.
-
-    evaluate/gradient shapes match BaseBasisFunction: (m, d, K).
-    """
+    """Joint isotropic Gaussian-RBF basis with explicitly given, shared d-dimensional centres."""
 
     def __init__(self, centers: np.ndarray, lengthscale: float):
         centers = np.atleast_2d(np.asarray(centers, dtype=float))

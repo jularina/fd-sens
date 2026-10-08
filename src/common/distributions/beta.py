@@ -5,20 +5,7 @@ from .base import BaseDistribution
 
 
 class Beta(BaseDistribution):
-    """
-    Univariate Beta distribution.
-
-    Parameters
-    ----------
-    alpha : float
-        First shape parameter ( > 0 ).
-    beta : float
-        Second shape parameter ( > 0 ).
-
-    Notes
-    -----
-    Support is (0, 1).
-    """
+    """Univariate Beta distribution with shape parameters alpha, beta > 0 on (0, 1)."""
 
     def __init__(self, alpha: Union[float, str], beta: Union[float, str]):
 
@@ -91,22 +78,11 @@ class Beta(BaseDistribution):
         return np.zeros_like(x, dtype=float)
 
     def natural_parameters(self) -> np.ndarray:
-        """
-        Beta IS an exponential family:
-
-        η₁ = α − 1
-        η₂ = β − 1
-        """
+        """Return the natural parameters (alpha - 1, beta - 1) of the Beta exponential family."""
         return np.array([self.alpha - 1.0, self.beta - 1.0])
 
     def grad_sufficient_statistics(self, x: np.ndarray) -> np.ndarray:
-        """
-        T₁(x) = log x
-        T₂(x) = log (1 − x)
-
-        ∇T₁ = 1/x
-        ∇T₂ = −1/(1−x)
-        """
+        """Return the gradients (1/x, -1/(1-x)) of the sufficient statistics (log x, log(1-x))."""
         x = np.asarray(x, dtype=float)
 
         grad = np.zeros((x.shape[0], 2))

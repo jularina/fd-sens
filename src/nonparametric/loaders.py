@@ -6,22 +6,7 @@ from src.common.bayesian_model.posteriordb.kilpisjarvi import KilpisjarviBayesia
 
 
 class KilpisjarviNonparametricLoader:
-    """
-    Adapts KilpisjarviBayesianModel's composite (alpha, beta1..5, sigma)
-    prior/posterior to the per-node "groups" interface used by
-    src.common.bayesian_model.bnn.uci_bnn.BNNPosteriorSamples, so the same per-node
-    nonparametric FD sensitivity machinery used for the BNN's decomposable
-    weight/bias parameters (src.nonparametric.node_sensitivity.
-    compute_group_omega_max / compute_node_lambda_star) can be reused here:
-    Kilpisjarvi's prior also decomposes into independent scalar blocks
-    (alpha, beta1..beta5 ~ N(0, 5^2); sigma ~ HalfCauchy(gamma)).
-
-    Two groups, split by reference-prior family:
-      "gaussian": alpha, beta1..beta5 -- share one reference prior.
-      "sigma":    the lone Half-Cauchy(gamma) scalar.
-    Column order within each group matches KilpisjarviBayesianModel.
-    posterior_samples_init's column order (alpha, beta[1..5], sigma).
-    """
+    """Adapt the Kilpisjarvi model to the per-node groups interface used for nonparametric FD sensitivity."""
 
     def __init__(self, data_config: Any):
         self.model = KilpisjarviBayesianModel(data_config)
@@ -68,11 +53,6 @@ class KilpisjarviNonparametricLoader:
         return sum(g["n_nodes"] for g in self.groups.values())
 
     def sample_prior(self, group_name: str, n_samples: Optional[int] = None) -> np.ndarray:
-        """
-        Draw i.i.d. samples from the reference prior shared by every scalar
-        node in `group_name`. Every node in a group has the same family and
-        parameters (independent product prior), so any one component's own
-        `sample` method can be used directly.
-        """
+        """Draw i.i.d. samples from the reference prior shared by every scalar node in the group."""
         n = self.prior_samples_num if n_samples is None else int(n_samples)
         return np.asarray(self.groups[group_name]["prior_dist"].sample(n), dtype=float).reshape(-1)

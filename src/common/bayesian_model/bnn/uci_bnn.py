@@ -25,16 +25,7 @@ DEFAULT_PARAM_GROUPS: Tuple[str, ...] = (
 
 
 class BNNPosteriorSamples:
-    """
-    Loads posterior draws for a bnn_priors run and exposes, per weight/bias
-    tensor, the scalar reference prior (loc, scale[, df]) shared by every
-    entry, plus the (n_samples, n_nodes) matrix of flattened posterior draws.
-
-    Reference prior family is set by `data_config.reference_prior`
-    ("gaussian" or "studentt"); a "studentt" run's weight tensors carry a
-    Student-t prior (loc + scale * T_df) while biases stay Gaussian
-    N(loc, scale^2).
-    """
+    """Posterior draws and per-tensor scalar reference priors (Gaussian or Student-t) for a bnn_priors run."""
 
     def __init__(self, data_config: Any):
         samples_path = data_config.samples_path
@@ -85,10 +76,7 @@ class BNNPosteriorSamples:
         return sum(g["n_nodes"] for g in self.groups.values())
 
     def sample_prior(self, group_name: str, n_samples: Optional[int] = None) -> np.ndarray:
-        """
-        Draw i.i.d. samples from the reference prior shared by every scalar
-        node in `group_name` (Gaussian, or Student-t if `g["df"]` is set).
-        """
+        """Draw i.i.d. samples from the scalar reference prior of a parameter group."""
         g = self.groups[group_name]
         n = self.prior_samples_num if n_samples is None else int(n_samples)
         if g.get("df") is not None:

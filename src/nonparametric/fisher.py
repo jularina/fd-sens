@@ -8,12 +8,7 @@ import numpy as np
 
 class PriorFDBase:
     def __init__(self, model: "BayesianModel"):
-        """
-        Base class for Fisher divergence between priors.
-
-        Holds prior samples and the reference prior score. PriorFDNonParametric
-        adds the basis-function representation of the candidate prior.
-        """
+        """Store the prior samples and reference prior score used for prior Fisher divergence computations."""
         self.model = model
         self.samples: np.ndarray = self.model.prior_samples_init
         self.m = int(self.samples.shape[0])
@@ -40,10 +35,7 @@ class PriorFDBase:
 
 class PriorFDNonParametric(PriorFDBase):
     def __init__(self, model: "BayesianModel"):
-        """
-        Fisher divergence between priors in the nonparametric representation.
-        No candidate prior required. The base measure g is the reference prior.
-        """
+        """Prior Fisher divergence in the nonparametric representation, with the reference prior as base."""
         super().__init__(model=model)
         # ∇_θ log g(θ_i) where g = prior_init is the base measure in the nonparametric family
         self.grad_log_g = self.model.prior_init.grad_log_pdf(self.samples)
@@ -69,20 +61,13 @@ class PriorFDNonParametric(PriorFDBase):
         self,
         basis_func: "BaseBasisFunction",
     ) -> np.ndarray:
-        """
-        gradT(theta_i) = Jacobian of T(theta) = [phi_1, ..., phi_K]^T at samples.
-
-        Expected shape: (m, paramdim, K)
-        """
+        """Return the basis-function gradients at the prior samples with shape (m, paramdim, K)."""
         return basis_func.gradient(self.samples)
 
 
 class PosteriorFDNonParametric(PosteriorFDBase):
     def __init__(self, model: "BayesianModel"):
-        """
-        Fisher divergence at posterior samples in the nonparametric representation.
-        No candidate prior required. The base measure g is the reference prior.
-        """
+        """Posterior Fisher divergence in the nonparametric representation, with the reference prior as base."""
         super().__init__(model=model)
         # ∇_θ log g(θ_i) where g = prior_init is the base measure in the nonparametric family
         self.grad_log_g = self.model.prior_init.grad_log_pdf(self.samples)

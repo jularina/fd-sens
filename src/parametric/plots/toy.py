@@ -331,11 +331,7 @@ def plot_mu_sigma_contour(
     plot_cfg: DictConfig,
     output_dir: str,
 ) -> None:
-    """
-    2D filled contour plot of the quadratic form over (mu, sigma) space.
-    Non-elliptic contour shapes reveal the non-convexity of the objective
-    in the original parametrisation.
-    """
+    """Plot a filled 2D contour of the quadratic form over (mu, sigma) space."""
     import os
     import numpy as np
     import matplotlib.pyplot as plt
@@ -452,11 +448,7 @@ def plot_mu_sigma_contour(
 
 
 def plot_multivariate_joint_prior_densities_by_fd(results, output_dir, plot_cfg, true_theta=None, true_cov=None):
-    """
-    Plots joint KDE contours of multivariate priors, colored by FD magnitude (no fill).
-    Overlays true density if provided. Uses color map based on config.
-    Highlights the distribution with the largest KSD in red.
-    """
+    """Plot joint KDE contours of multivariate priors coloured by FD, highlighting the largest in red."""
     os.makedirs(output_dir, exist_ok=True)
 
     # Sort results by KSD ascending (low to high)
@@ -731,10 +723,7 @@ def fisher_divergence_gaussians_ref_expectation(
     mu_cand: np.ndarray,
     Sigma_cand: np.ndarray,
 ) -> float:
-    """
-    FD(P_ref || P_cand) = E_{X~P_ref} || s_ref(X) - s_cand(X) ||^2
-    for Gaussians with score s(x) = -Sigma^{-1}(x-mu).
-    """
+    """Compute the closed-form Fisher divergence FD(P_ref || P_cand) between two Gaussians."""
     d = mu_ref.shape[0]
     Sref_inv = np.linalg.inv(Sigma_ref)
     Scand_inv = np.linalg.inv(Sigma_cand)
@@ -750,10 +739,7 @@ def fisher_divergence_gaussians_ref_expectation(
 
 
 def w2_gaussian(mu1: np.ndarray, Sigma1: np.ndarray, mu2: np.ndarray, Sigma2: np.ndarray) -> float:
-    """
-    2-Wasserstein distance between Gaussians:
-    W2^2 = ||m1-m2||^2 + tr(S1 + S2 - 2*(S2^{1/2} S1 S2^{1/2})^{1/2})
-    """
+    """Compute the closed-form 2-Wasserstein distance between two Gaussians."""
     diff = mu1 - mu2
     from scipy.linalg import sqrtm
     S2_sqrt = sqrtm(Sigma2)
@@ -766,21 +752,7 @@ def w2_gaussian(mu1: np.ndarray, Sigma1: np.ndarray, mu2: np.ndarray, Sigma2: np
 
 
 def estimate_w2_from_samples(X: np.ndarray, Y: np.ndarray) -> float:
-    """
-    Estimate W2 distance between empirical distributions of X and Y.
-
-    Parameters
-    ----------
-    X : np.ndarray, shape (m, d)
-        Samples from first distribution.
-    Y : np.ndarray, shape (n, d)
-        Samples from second distribution.
-
-    Returns
-    -------
-    float
-        Estimated 2-Wasserstein distance.
-    """
+    """Estimate the 2-Wasserstein distance between the empirical distributions of X and Y."""
     X = np.asarray(X)
     Y = np.asarray(Y)
 
@@ -836,11 +808,7 @@ def make_toeplitz_cov(d: int, rho: float = 0.35, diag: float = 1.0) -> np.ndarra
 
 
 def make_experiment_distributions(d: int) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
-    """
-    Fix one reference and (i) one candidate for FD/mean,
-    and (ii) two candidates for WIM.
-    These are kept stable across d.
-    """
+    """Return fixed reference, FD/mean candidate and two WIM candidate Gaussians for dimension d."""
     mu_ref = np.zeros(d)
     Sigma_ref = make_toeplitz_cov(d, rho=0.30, diag=1.0)
 
@@ -889,30 +857,7 @@ def estimate_kl_from_ref_samples_kde(
     bw_method: None,
     eps: float = 1e-12,
 ) -> float:
-    """
-    Monte Carlo estimator of KL(P_ref || P_cand) using samples from P_ref
-    and KDE approximations for both densities.
-
-    Parameters
-    ----------
-    X_ref_eval :
-        Samples used to approximate the expectation, shape (m_eval, d).
-        These should ideally be different from X_ref_fit to reduce bias.
-    X_ref_fit :
-        Samples used to fit KDE for the reference posterior, shape (m_ref, d).
-    X_cand_fit :
-        Samples used to fit KDE for the candidate posterior, shape (m_cand, d).
-    bw_method :
-        Bandwidth passed to scipy.stats.gaussian_kde.
-        Examples: None, "scott", "silverman", or a float.
-    eps :
-        Small constant to avoid log(0).
-
-    Returns
-    -------
-    float
-        KDE-based estimator of KL(P_ref || P_cand).
-    """
+    """Estimate KL(P_ref || P_cand) by Monte Carlo over reference samples with KDE density estimates."""
     if X_ref_eval.ndim != 2 or X_ref_fit.ndim != 2 or X_cand_fit.ndim != 2:
         raise ValueError("All inputs must have shape (n_samples, d).")
 
@@ -950,10 +895,7 @@ def _method_color(plot_cfg, method: str) -> str:
 
 
 def _alpha_for_dim(dims, d, alpha_min=0.25, alpha_max=0.95) -> float:
-    """
-    Fade within a method by varying alpha across dims.
-    Here: earlier dims -> more opaque, later dims -> more transparent.
-    """
+    """Return an alpha that decreases linearly from alpha_max to alpha_min across dims."""
     if len(dims) <= 1:
         return alpha_max
     i = dims.index(d)
@@ -1042,10 +984,7 @@ def compute_gaussian_complexity_results(
     seed: int = 0,
     divergence: str = None,
 ) -> Dict[str, Any]:
-    """
-    Compute finite-sample estimation errors and runtimes in one shared Monte Carlo loop.
-    Only the requested divergence ("fd", "mean", "wim" or "kl") is estimated; None estimates all four.
-    """
+    """Compute finite-sample estimation errors and runtimes for the requested divergence(s)."""
     rng = np.random.default_rng(seed)
 
     methods = ["fd", "mean", "wim", "kl"] if divergence is None else [divergence]
@@ -1062,15 +1001,7 @@ def compute_gaussian_complexity_results(
             alpha: float = 0.05,
             rng: np.random.Generator = None,
     ) -> Tuple[float, float]:
-        """
-        Bootstrap confidence interval for the mean.
-
-        Returns
-        -------
-        mean : float
-        ci_half_width : float
-            Symmetric half-width so it can be plotted as mean ± ci.
-        """
+        """Return the mean of x and the half-width of its bootstrap confidence interval."""
         x = np.asarray(x, dtype=float)
         n = len(x)
 
@@ -1188,11 +1119,7 @@ def plot_runtime_complexity_gaussians(
     xlim: Tuple[float, float] = None,
     show_ci: bool = False,
 ) -> Dict[str, Any]:
-    """
-    Plot runtime of estimating FD, mean, KL, and WIM.
-
-    All figures are saved with identical axes size.
-    """
+    """Plot runtimes of estimating FD, mean, KL and WIM with identical axes sizes."""
     os.makedirs(output_dir, exist_ok=True)
 
     plt.rcParams.update({
@@ -1381,11 +1308,7 @@ def plot_finite_sample_complexity_gaussians(
     xlim: Tuple[float, float] = None,
     show_ci: bool = False,
 ) -> Dict[str, Any]:
-    """
-    Plot finite-sample error curves and return the computed results.
-
-    All figures are saved with identical axes size.
-    """
+    """Plot finite-sample error curves with identical axes sizes and return the computed results."""
     os.makedirs(output_dir, exist_ok=True)
 
     plt.rcParams.update({
@@ -1540,10 +1463,7 @@ def plot_gaussian_copula_grid_pair(
     ylim=None,
     show_ylabel: bool = True,
 ):
-    """
-    Plot two Gaussian-copula FD grids (e.g. idx_g0=0 and idx_g0=1) as two
-    lines on a single axes.
-    """
+    """Plot two Gaussian-copula FD grids as two lines on a single axes."""
     try:
         apply_plot_rc(plot_cfg)
     except Exception:

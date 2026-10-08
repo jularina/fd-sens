@@ -239,12 +239,7 @@ class OptimizationCornerPointsMultivariateGaussian(OptimizationCornerPointsBase)
 
 
 class OptimizationCornerPointsCompositePrior:
-    """
-    Corner/grid quadratic-form optimization for a Composite prior.
-    The model is expected to accept composite prior parameters via either:
-        - model.set_composite_prior_parameters(params, combine_rule=...), or
-        - model.set_prior_parameters({"components": params, "combine_rule": ...}, distribution_cls="CompositePrior")
-    """
+    """Corner/grid quadratic-form and black-box FD optimisation for a composite prior."""
 
     def __init__(self, posterior_estimator, config: Dict, loss_config: Dict):
         self.posterior_estimator = posterior_estimator
@@ -309,19 +304,13 @@ class OptimizationCornerPointsCompositePrior:
         return results, results[0][0]
 
     def _component_qf(self, name: str, eta_j: np.ndarray) -> float:
-        """
-        Q_j(eta_j) = eta_j^T A_j eta_j + b_j^T eta_j + c_j
-        using the principled blockwise QF from PosteriorFDBase.
-        """
+        """Evaluate the quadratic form eta_j^T A_j eta_j + b_j^T eta_j + c_j of component name."""
         A_j, b_j, c_j = self.qf_per_component[name]
         eta_j = np.asarray(eta_j, dtype=float).reshape(-1)
         return float(eta_j @ A_j @ eta_j + b_j @ eta_j + c_j)
 
     def _component_eta_corners(self, j: int) -> List[np.ndarray]:
-        """
-        Returns the 4 eta corners for component j as 2D vectors.
-        Uses self.eta_components_cfg[j]["eta_range"].
-        """
+        """Return the four 2D eta corners of component j from its configured eta_range."""
         cfg = self.eta_components_cfg[j]
         e1_lo, e1_hi = cfg["eta_range"]["eta_1"]
         e2_lo, e2_hi = cfg["eta_range"]["eta_2"]
@@ -358,12 +347,7 @@ class OptimizationCornerPointsCompositePrior:
         return results_per_comp, eta_star_per_comp
 
     def _solve_box_qp_2d(self, Ajj: np.ndarray, bj: np.ndarray, lo: np.ndarray, hi: np.ndarray):
-        """
-        Solve:
-            min_x x^T A x + b^T x
-            s.t. lo <= x <= hi
-        for a 2D variable x.
-        """
+        """Solve the 2D box-constrained QP min x^T A x + b^T x subject to lo <= x <= hi."""
         Ajj = np.asarray(Ajj, dtype=float)
         bj = np.asarray(bj, dtype=float).reshape(-1)
         lo = np.asarray(lo, dtype=float).reshape(-1)
@@ -380,18 +364,7 @@ class OptimizationCornerPointsCompositePrior:
         return np.array(x.value).reshape(-1)
 
     def minimize_prior_full_qp(self) -> Tuple[np.ndarray, float]:
-        """
-        Solve:
-            min_{eta in box} eta^T A_prior eta + b_prior^T eta + c_prior
-        over the full eta box (all components jointly) using a single QP.
-
-        Returns
-        -------
-        eta_inf : np.ndarray
-            Minimising eta vector.
-        val_inf : float
-            Minimum QF value.
-        """
+        """Minimise the full prior quadratic form jointly over the eta box and return (eta_inf, val_inf)."""
         dim = len(self.eta_components_cfg) * 2
         lo = np.empty(dim)
         hi = np.empty(dim)
@@ -445,14 +418,7 @@ class OptimizationCornerPointsCompositePrior:
         return bounds
 
     def _evaluate_prior_fd_black_box(self, eta: np.ndarray) -> float:
-        """
-        True black-box evaluation of prior-only FD at eta:
-            (1/m) sum_i || (s_ref - grad_log_g) - grad_T @ eta ||^2
-        This does NOT use A,b,c.
-
-        Requires posterior_estimator to expose:
-            fd_prior_only_given_eta(eta) -> float
-        """
+        """Evaluate the prior-only FD at eta directly via the posterior estimator, without the QF."""
         eta = np.asarray(eta, dtype=float).reshape(-1)
         return float(self.posterior_estimator.fd_prior_only_given_eta(eta))
 
@@ -520,19 +486,7 @@ class OptimizationCornerPointsCompositePrior:
         updating: str = "immediate",
         n_restarts: int = 1,
     ) -> BlackBoxOptResult:
-        """
-        Solve:
-            sup_{eta in Gamma_box} FD(eta)
-            inf_{eta in Gamma_box} FD(eta)
-        using a global black-box solver.
-
-        Parameters
-        ----------
-        method : str
-            "differential_evolution" or "dual_annealing".
-        n_restarts : int
-            Number of independent restarts; best result is kept.
-        """
+        """Find the sup and inf of the prior-only FD over the eta box with a global black-box solver."""
         bounds = self._eta_bounds_full_box()
 
         kwargs = dict(
@@ -567,25 +521,7 @@ class OptimizationCornerPointsCompositePrior:
         idx_nu: int = 2,
         apply_z_transform: bool = True,
     ) -> float:
-        """
-        True black-box evaluation of the FD objective for Gaussian copula sensitivity.
-
-        Parameters
-        ----------
-        x : np.ndarray
-            1D array containing the Gaussian copula correlation parameter.
-        idx_g0 : int
-            Index of the first component.
-        idx_nu : int
-            Index of the second component.
-        apply_z_transform : bool
-            Passed through to fd_gaussian_copula_given_lambda.
-
-        Returns
-        -------
-        float
-            Empirical FD estimate.
-        """
+        """Evaluate the empirical Gaussian-copula FD at the correlation parameter in x."""
         lam = float(np.asarray(x, dtype=float).reshape(-1)[0])
         lower = upper = None
         if apply_z_transform:
@@ -615,17 +551,7 @@ class OptimizationCornerPointsCompositePrior:
         workers: int = 1,
         updating: str = "immediate",
     ) -> BlackBoxCopulaOptResult:
-        """
-        Solve:
-            sup_{lambda in Gamma} FD_copula(lambda)
-            inf_{lambda in Gamma} FD_copula(lambda)
-
-        using a black-box global optimiser.
-
-        If 0 belongs to lambda_range, then the reference prior is in the family
-        and the infimum should be attained at lambda = 0 with value 0. We still
-        optionally optimise the infimum numerically for consistency with the API.
-        """
+        """Find the sup and inf of the Gaussian-copula FD over lambda_range with differential evolution."""
         lo, hi = map(float, lambda_range)
         bounds = [(lo, hi)]
 
@@ -685,28 +611,7 @@ class OptimizationCornerPointsCompositePrior:
         idx_nu: int = 2,
         apply_z_transform: bool = True,
     ) -> List[Tuple[float, float]]:
-        """
-        Evaluate the Gaussian copula FD objective on a 1D grid.
-
-        Parameters
-        ----------
-        lambda_range : tuple[float, float]
-            Range of Gaussian copula correlation parameter.
-        n_grid : int
-            Number of grid points.
-        idx_g0 : int
-            Index of the first component.
-        idx_nu : int
-            Index of the second component.
-        apply_z_transform : bool
-            If True (default), rescale samples to (0,1) and apply Phi^{-1}.
-            If False, samples are used directly as z-scores.
-
-        Returns
-        -------
-        List[Tuple[float, float]]
-            Pairs (lambda, FD(lambda)), sorted by lambda.
-        """
+        """Evaluate the Gaussian-copula FD on a 1D lambda grid and return (lambda, FD) pairs."""
         lo, hi = map(float, lambda_range)
         grid = np.linspace(lo, hi, int(n_grid))
 
@@ -731,32 +636,7 @@ class OptimizationCornerPointsCompositePrior:
         idx_nu: int = 2,
         apply_z_transform: bool = True,
     ) -> Tuple[List[Tuple[float, float]], float, float]:
-        """
-        Evaluate the Gaussian copula FD objective on a grid and return
-        the maximiser on that grid.
-
-        Parameters
-        ----------
-        lambda_range : tuple[float, float]
-            Range of Gaussian copula correlation parameter.
-        n_grid : int
-            Number of grid points.
-        idx_g0 : int
-            Index of the first component.
-        idx_nu : int
-            Index of the second component.
-        apply_z_transform : bool
-            If True (default), rescale samples to (0,1) and apply Phi^{-1}.
-            If False, samples are used directly as z-scores.
-
-        Returns
-        -------
-        results : list of (lambda, value)
-        lambda_star : float
-            Grid maximiser.
-        val_star : float
-            Maximum FD value on the grid.
-        """
+        """Evaluate the Gaussian-copula FD on a lambda grid and return the results, argmax and maximum."""
         results = self.evaluate_gaussian_copula_grid(
             lambda_range=lambda_range,
             n_grid=n_grid,

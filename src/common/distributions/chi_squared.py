@@ -4,14 +4,7 @@ from .base import BaseDistribution
 
 
 class ChiSquared(BaseDistribution):
-    """
-    Univariate Chi-Squared distribution.
-
-    Parameters
-    ----------
-    k : int
-        Degrees of freedom (must be positive).
-    """
+    """Univariate Chi-Squared distribution with k > 0 degrees of freedom."""
 
     def __init__(self, k: int):
         assert k > 0, "Degrees of freedom must be positive."
@@ -54,19 +47,13 @@ class ChiSquared(BaseDistribution):
         return grad
 
     def natural_parameters(self) -> np.ndarray:
-        """
-        Exponential family form:
-        p(x) ∝ exp( (k/2 - 1) * log(x) - x/2 )
-        """
+        """Return the natural parameters (k/2 - 1, -1/2) of the Chi-Squared exponential family."""
         eta1 = self.k / 2 - 1
         eta2 = -0.5
         return np.array([eta1, eta2])
 
     def grad_sufficient_statistics(self, x: np.ndarray) -> np.ndarray:
-        """
-        Gradients of sufficient statistics wrt x.
-        T1(x) = log(x), T2(x) = x
-        """
+        """Return gradients (1/x, 1) of the sufficient statistics (log x, x), zero outside the support."""
         x = np.asarray(x, dtype=np.float64).reshape(-1)
         n = x.shape[0]
         grad = np.zeros((n, 2), dtype=np.float64)

@@ -97,11 +97,7 @@ def create_prior_posterior_animation(
     theta, priors, posteriors, colors, plot_cfg, output_dir, prefix,
     fps=30, hold_seconds=2.0, draw_seconds=1.0,
 ):
-    """Create an MP4 where prior/posterior pairs are drawn one by one left-to-right.
-
-    For each pair the line is animated from x-min to x-max, then held for
-    `hold_seconds` before the next pair starts drawing.
-    """
+    """Create an MP4 that draws prior/posterior pairs one by one, holding each before the next."""
     import imageio.v3 as iio
 
     n_hold = max(1, int(fps * hold_seconds))
@@ -366,18 +362,7 @@ def plot_prior_posterior_2d(xx, yy, priors, posteriors, colors, plot_cfg, output
 # Main 2-D
 # ------------------------------------------------------------
 def main_2d() -> None:
-    """2-D analogue of main(): three bivariate scale-mixture priors × one
-    2-D Gaussian likelihood, yielding qualitatively different posteriors.
-
-    Prior A: isotropic N(0, I)                                — light tail
-    Prior B: 0.93·N(0, 0.98²I) + 0.07·N(0, 4.5²I)           — moderate tail
-    Prior C: 0.80·N(0, 0.92²I) + 0.20·N(0, 4.5²I)           — heavy tail
-
-    Observation placed in the tail at (3.5, 3.5), sigma_y = 0.7:
-      Posterior A  — concentrated close to origin (prior dominates)
-      Posterior B  — bimodal / uncertain between prior and data
-      Posterior C  — pulled toward the observation (tail follows data)
-    """
+    """2-D analogue of main(): three bivariate scale-mixture priors with one Gaussian likelihood."""
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     plot_config_path = os.path.join(project_root, "configs/plots/overleaf_plots_settings.yaml")
     output_dir = os.path.join(project_root, "outputs/presentation/slide_1")

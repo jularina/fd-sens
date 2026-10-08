@@ -12,10 +12,7 @@ class SimpleGaussianModel(BayesianModelExtended):
         super().__init__(data_config)
 
     def compute_posterior_params(self) -> tuple:
-        """
-        Compute the conjugate posterior Normal(mu_n, sigma_n^2) w.r.t. the reference
-        prior (prior_init), and cache mu_n/sigma_n2 on the model.
-        """
+        """Compute and cache the conjugate Normal posterior parameters w.r.t. the reference prior."""
         sigma_n2 = 1 / (self.observations_num / self.loss.var + 1 / self.prior_init.var)
         mu_n = sigma_n2 * (self.observations_num * self.x_bar / self.loss.var +
                            self.prior_init.mu / self.prior_init.var)
@@ -44,10 +41,7 @@ class MultivariateGaussianModel(BayesianModelExtended):
         self.dim = self.observations.shape[1]
 
     def compute_posterior_params(self) -> tuple:
-        """
-        Compute the closed-form posterior for the mean with known covariance,
-        w.r.t. the reference prior (prior_init), and cache mu_n/Sigma_n on the model.
-        """
+        """Compute and cache the closed-form posterior of the mean w.r.t. the reference prior."""
         mu0, Sigma0 = self.prior_init.mu, self.prior_init.cov
         Sigma_obs = self.loss.cov
 

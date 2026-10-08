@@ -41,23 +41,7 @@ class MultivariateGaussianLogLikelihood(BaseLoss):
         self._norm_const = 1.0 / np.sqrt((2 * np.pi) ** self.dim * self.det_cov)
 
     def grad_log_pdf(self, theta: ArrayLike, x_bar: ArrayLike, observations_num: int) -> np.ndarray:
-        """
-        Gradient of the log-likelihood w.r.t. parameter x (mean vector).
-
-        Parameters
-        ----------
-        theta : np.ndarray
-            Current parameter (mean vector), shape (d,)
-        x_bar : np.ndarray
-            Empirical mean of the data, shape (d,)
-        observations_num : int
-            Number of data points
-
-        Returns
-        -------
-        grad : np.ndarray
-            Gradient vector of shape (d,)
-        """
+        """Return the gradient of the log-likelihood w.r.t. the mean vector, shape (d,)."""
         diff = x_bar - theta
         result = diff @ self.cov_inv.T
 
@@ -65,13 +49,7 @@ class MultivariateGaussianLogLikelihood(BaseLoss):
 
 
 class GaussianARLogLikelihood(BaseLoss):
-    """
-    AR(K) Gaussian log-likelihood:
-        y_t ~ Normal(alpha + sum_{k=1}^K beta_k * y_{t-k}, sigma)
-    Parameter vector order: [alpha, beta1, ..., betaK, gamma]
-        gamma = sigma        if scale == "sigma"
-        gamma = log(sigma)   if scale == "log_sigma"
-    """
+    """AR(K) Gaussian log-likelihood with parameters [alpha, beta_1..beta_K, sigma or log(sigma)]."""
 
     def __init__(self, eps: float = 1e-6):
         self.eps = float(eps)

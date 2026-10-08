@@ -5,14 +5,7 @@ from src.common.bayesian_model.base import BayesianModel
 
 class PosteriorFDBase:
     def __init__(self, model: "BayesianModel"):
-        """
-        Base class for Fisher divergence computed at posterior samples.
-
-        Holds posterior samples, reference prior score, and loss gradient.
-        Subclasses add either a parametric candidate prior
-        (src.parametric.fisher.PosteriorFDParametric) or a nonparametric
-        basis-function representation (src.nonparametric.fisher.PosteriorFDNonParametric).
-        """
+        """Store posterior samples, reference prior score and loss gradient for Fisher divergence estimation."""
         self.model = model
         self.samples: np.ndarray = self.model.posterior_samples_init
         self.m = self.samples.shape[0]

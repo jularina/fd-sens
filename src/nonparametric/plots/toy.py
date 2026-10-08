@@ -138,13 +138,7 @@ def plot_sdp_matern_nu_comparison(
     resolution: int = 500,
     show_legend: bool = True,
 ) -> None:
-    """
-    Single-panel plot overlaying the nonparametric SDP worst-case candidate
-    densities for several Matern basis functions that differ only in
-    smoothness nu, plus the true prior (dashed black), with one legend entry
-    per nu. Unlike plot_sdp_densities (shared basis across curves), each
-    curve here has its own basis_function since nu changes the kernel shape.
-    """
+    """Plot SDP worst-case candidate densities for several Matérn smoothness values nu with the true prior."""
     os.makedirs(output_dir, exist_ok=True)
     plt.rcParams.update({
         "font.size": plot_cfg.plot.font.size,
@@ -233,14 +227,7 @@ def plot_sdp_density_with_centers(
     show_centers: bool = True,
     show_yaxis: bool = True,
 ) -> None:
-    """
-    Single-panel plot: one nonparametric SDP candidate density, the true prior
-    (dashed black), and, if show_centers=True, the resulting basis-function
-    centres shown as a rug of dots along the x-axis. If show_yaxis=False, the
-    y-axis spine, ticks, and label are hidden -- the plotted axes box (and
-    thus the overall figure size) is unchanged, only the y-axis decoration is
-    removed.
-    """
+    """Plot one SDP candidate density with the true prior and optionally its basis-function centres."""
     os.makedirs(output_dir, exist_ok=True)
     plt.rcParams.update({
         "font.size": plot_cfg.plot.font.size,
@@ -350,26 +337,7 @@ def plot_sdp_density_with_centers_combined(
     upper_bound_at: float = None,
     sensitivity_label_key: str = "estimatedSensitivityMeasure",
 ) -> None:
-    """
-    Combined figure for several centre-selection methods: one main panel
-    overlaying each method's nonparametric SDP worst-case candidate density
-    (own basis_function/lambda_star per method, since the basis differs)
-    plus the true prior (dashed black); below it, one very-low-height rug
-    strip per method showing that method's basis-function centres, each
-    coloured to match its density curve above.
-
-    colors: optional per-method colours, overriding the plot config palette
-    (e.g. when there are more methods than palette colours).
-    legend_labels: if True, legend entries read "{label}: {estimate}" instead
-    of the estimate alone.
-    upper_bound / upper_bound_at: optional known ceiling on the sensitivity
-    and the theta where it is attained -- drawn as a dotted vertical line at
-    upper_bound_at, with its value as an extra legend entry labelled
-    with sensitivityMeasureFull, S^FD(Q_r).
-    sensitivity_label_key: key in plot_cfg.plot.param_latex_names for the
-    legend title -- the plug-in estimate by default, "sensitivityMeasure"
-    when the estimates passed in are exact values.
-    """
+    """Plot candidate densities for several centre-selection methods with per-method centre rug strips below."""
     os.makedirs(output_dir, exist_ok=True)
     plt.rcParams.update({
         "font.size": plot_cfg.plot.font.size*1.2,
@@ -653,22 +621,7 @@ def plot_runtime_nonparametric_diff_basis_funcs_num_diff_samples_with_ci(
     filename: str = "runtime_nonparametric_diff_basis_funcs_nums_diff_samples.pdf",
     k_max: int | None = None,
 ) -> None:
-    """
-    Single-axis plot of nonparametric optimisation runtime against the number of
-    basis functions K, with one line per number of prior/posterior samples m.
-
-    Parameters
-    ----------
-    times_nonparametric : dict
-        {samples_num: {basis_funcs_num: {run_iter: time, ...}, ...}, ...}
-
-    ci_level : float
-        Confidence interval level (default=0.95).
-
-    k_max : int, optional
-        If given, only basis-function counts K <= k_max are plotted (the
-        underlying data/cache is unaffected).
-    """
+    """Plot nonparametric optimisation runtime against K with confidence bands, one line per sample size."""
     os.makedirs(output_dir, exist_ok=True)
 
     # Helper
@@ -810,29 +763,7 @@ def plot_param_nonparam_prior_and_stats(
     resolution: int = 400,
     filename: str = "gaussian_1d_location_model_param_nonparam_prior_stats.pdf",
 ) -> None:
-    """
-    Left: reference prior + worst-case parametric/nonparametric candidate priors
-    (no posterior panel). Right: a full-height 2 (Param. / Ours) x 3 (skewness,
-    modes, excess kurtosis) stats table summarising the two candidate priors'
-    shape.
-
-    All three stats are computed on the candidate *priors* (pi_a, pi_b), since
-    that's the only panel shown here. The parametric candidate is always
-    exactly Gaussian, so its column is always (0.0, 1, 0.0) -- 0 skewness,
-    1 mode (unimodal), 0 excess kurtosis -- regardless of which corner was
-    picked; the nonparametric column shows whatever the KEF candidate
-    actually achieves.
-
-    Args:
-        worst_corner: dict with keys 'mu', 'sigma' from parametric optimisation.
-        lambda_star: coefficient vector from nonparametric optimisation.
-        basis_function: fitted basis function object (e.g. MaternBasisFunction).
-        model: fitted Bayesian model providing the reference prior.
-        plot_cfg: plot configuration loaded from overleaf_plots_settings.yaml.
-        output_dir: directory to save the PDF.
-        domain: (lo, hi) range for the theta grid.
-        resolution: number of grid points.
-    """
+    """Plot reference and worst-case candidate priors beside a table of their shape statistics."""
     os.makedirs(output_dir, exist_ok=True)
     plt.rcParams.update({
         "font.size": plot_cfg.plot.font.size * 1.4,
@@ -975,23 +906,7 @@ def plot_closed_form_sensitivity_error(
     y_bottom: float | None = None,
     ylabel_fontsize_scale: float = 0.8,
 ) -> None:
-    """
-    Plot (x-axis linear, y-axis log10 if y_log_scale=True) of the absolute
-    error between the closed-form RBF/Gaussian sensitivity S^FD(Q_r^K) and
-    one or more Monte-Carlo estimates of it, as a function of the number of
-    prior/posterior samples m=l. `series` maps a legend label to
-    (error_mean, error_band) -- e.g. one series for the full plug-in
-    estimate, and one each isolating the error coming from estimating the
-    objective matrix A alone or the constraint matrix A_c alone (the other
-    held at its closed-form value) -- each with a shaded +/- 1 error_band
-    (e.g. standard error of the mean) band over repeated draws. All series
-    are expected to decay as the sample size grows. Each series' lower band
-    edge is floored at 1% of that series' own smallest mean error (rather
-    than at a raw near-zero value) so a single noisy repeat can't blow up a
-    log-scale y-axis. `series_x` optionally gives a per-series x-grid
-    (overriding `sample_sizes` for that label); `y_bottom` fixes the lower
-    y-limit (ignored on a log-scale y-axis).
-    """
+    """Plot the absolute error of Monte-Carlo sensitivity estimates against the sample size."""
     os.makedirs(output_dir, exist_ok=True)
     plt.rcParams.update({
         "font.size": plot_cfg.plot.font.size,
@@ -1135,17 +1050,7 @@ def plot_sensitivity_vs_basis_funcs_num_dual(
     ylabel_left: str = r"$(S^{\mathrm{FD}}(\mathcal{Q}_r) - S^{\mathrm{FD}}(\mathcal{Q}_r^{K})) / r$",
     x_log_scale: bool = True,
 ) -> None:
-    """
-    Overlay the univariate and multivariate sieve approximation errors
-    S^FD(Q_r) - S^FD(Q_r^K) (closed-form true value minus the closed-form
-    sieve sensitivity; non-negative, since the sieve sensitivity
-    lower-bounds the true one) against K in one figure on a shared x-axis,
-    with the univariate series on the left y-axis and the multivariate
-    series on the right y-axis -- the two live on very different scales
-    (see run_gaussian_priors_nonparametric_sensitivity_vs_K), so sharing one
-    y-axis would flatten one of them unreadably. Both errors are divided by
-    the radius r, so the plotted quantity is independent of the FD budget.
-    """
+    """Plot univariate and multivariate sieve approximation errors divided by r against K on twin y-axes."""
     os.makedirs(output_dir, exist_ok=True)
     plt.rcParams.update({
         "font.size": plot_cfg.plot.font.size,

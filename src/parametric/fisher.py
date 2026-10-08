@@ -9,10 +9,7 @@ from src.common.fisher import PosteriorFDBase
 
 class PosteriorFDParametric(PosteriorFDBase):
     def __init__(self, model: "BayesianModel"):
-        """
-        Fisher divergence at posterior samples in the parametric (exponential-family)
-        representation. Requires model.prior_candidate to be set.
-        """
+        """Fisher divergence at posterior samples for parametric exponential-family candidate priors."""
         super().__init__(model=model)
 
         # Candidate prior (exp family decomposition), evaluated at the same samples
@@ -29,18 +26,11 @@ class PosteriorFDParametric(PosteriorFDBase):
         self.beta = self.model.loss_lr
 
     def _v_prior_only(self) -> np.ndarray:
-        """
-        v_i = s_{pi_ref}(θ_i) - grad_log_g(θ_i)
-        Shape: (m, paramdim)
-        """
+        """Return v_i = s_ref(θ_i) - grad_log_g(θ_i) at the posterior samples, shape (m, paramdim)."""
         return self.score_prior_ref - self.grad_log_g
 
     def _delta_score_prior_only(self, eta: np.ndarray) -> np.ndarray:
-        """
-        delta_i = s_ref(θ_i) - s_candidate(θ_i)
-               = (s_{pi_ref}(θ_i) - grad_log_g(θ_i)) - grad_T(θ_i) @ eta
-        Shape: (m, paramdim)
-        """
+        """Return the score differences v_i - grad_T(θ_i) @ eta at the posterior samples, shape (m, paramdim)."""
         v = self._v_prior_only()
         gradT_eta = np.einsum("idp,p->id", self.grad_T, eta)
         return v - gradT_eta
@@ -51,10 +41,7 @@ class PosteriorFDParametric(PosteriorFDBase):
         return float(np.mean(np.sum(diff * diff, axis=1)))
 
     def fd_prior_only_given_eta(self, eta: np.ndarray) -> float:
-        r"""
-        Black-box objective: compute \hat{rho}^FD_m for prior-only perturbations,
-        evaluated at the provided natural parameter vector eta.
-        """
+        """Compute the prior-only empirical FD at the natural parameter vector eta."""
         self.update_candidate()
         eta = np.asarray(eta, dtype=float).reshape(-1)
         v = self._v_prior_only()
@@ -78,12 +65,7 @@ class PosteriorFDParametric(PosteriorFDBase):
             theta_blocks: Sequence[Sequence[int]],
             eta_blocks: Sequence[Sequence[int]],
     ) -> Dict[str, Tuple[np.ndarray, np.ndarray, float]]:
-        """
-        Build per-component quadratic forms:
-            Q_j(eta_j) = eta_j^T A_j eta_j + b_j^T eta_j + c_j
-        where each component j uses only theta coordinates in theta_blocks[j]
-        and only natural-parameter coordinates in eta_blocks[j].
-        """
+        """Build per-component prior-only quadratic forms (A_j, b_j, c_j) from theta and eta blocks."""
         assert len(component_names) == len(theta_blocks) == len(eta_blocks)
 
         self.update_candidate()
@@ -109,12 +91,7 @@ class PosteriorFDParametric(PosteriorFDBase):
     # -------------------------------
 
     def estimate_fisher_lr_only(self) -> float:
-        """
-        Learning-rate-only perturbation with eta fixed to eta_ref (and prior fixed to ref).
-        Then:
-            s_ref(θ_i) - s_beta(θ_i) = (beta - beta_ref) * g_i
-        so FD = (beta - beta_ref) (1/m) sum_i || g_i||^2
-        """
+        """Compute the learning-rate-only FD (beta - beta_ref) * mean ||g_i||^2 with the prior fixed."""
         self.beta = self.model.loss_lr
         diff = float(np.mean(np.sum(self.g * self.g, axis=1)))
         return (self.beta - self.beta_ref)**2 * diff
@@ -134,32 +111,7 @@ class PosteriorFDParametric(PosteriorFDBase):
             upper: np.ndarray = None,
             apply_z_transform: bool = True,
     ) -> float:
-        """
-        Empirical Fisher divergence for Gaussian copula perturbation.
-
-        Computes
-            E_{theta ~ Pi_ref} || ∇_theta log c_lam(u_G0, u_nu) ||^2.
-
-        Parameters
-        ----------
-        lam : float
-            Gaussian copula correlation parameter. Must satisfy |lam| < 1.
-        idx_g0 : int
-            Column index of the G0 coordinate in self.samples.
-        idx_nu : int
-            Column index of the nu coordinate in self.samples.
-        eps : float
-            Boundary clipping level for numerical stability after F_i transform.
-        lower, upper : np.ndarray, optional
-            Per-dimension prior bounds. When provided, samples are mapped to (0,1)
-            via F_i(theta) = (theta - lower[i]) / (upper[i] - lower[i]) before
-            applying Phi^{-1}. If None, samples are assumed to already be in (0,1).
-            Only used when apply_z_transform=True.
-        apply_z_transform : bool
-            If True (default), rescale samples to (0,1) using lower/upper and apply
-            Phi^{-1} to obtain z-scores. If False, samples are used directly as
-            z-scores without any transform.
-        """
+        """Compute the empirical Fisher divergence of a Gaussian copula perturbation with correlation lam."""
         lam = float(lam)
         if abs(lam) >= 1.0:
             return np.inf

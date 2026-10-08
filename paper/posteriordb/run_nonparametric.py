@@ -42,13 +42,7 @@ def _box_corners(mu_z_range, sigma_z_range):
 
 
 def compute_parametric_sensitivity(loader, mu_z_range=Z_MU_RANGE, sigma_z_range=Z_SIGMA_RANGE) -> dict:
-    """
-    FDsens: per component, the posterior-based FD_z sup over the shared
-    Gaussian-in-z box. The FD is convex in the candidate's natural parameters,
-    so the sup is attained at one of the box's 4 vertices.
-
-    Returns {component_name: fd_z_sup}.
-    """
+    """Per component, return the posterior-based FD_z sup over the shared Gaussian-in-z box."""
     corners = _box_corners(mu_z_range, sigma_z_range)
     fd_z_sup = {}
     for group_name in loader.param_groups:
@@ -64,20 +58,14 @@ def compute_parametric_sensitivity(loader, mu_z_range=Z_MU_RANGE, sigma_z_range=
 
 
 def _fd_z_prior_gaussian_in_z(mu_z_cand: float, sigma_z_cand: float) -> float:
-    """
-    Exact prior-based FD_z = E_{z~N(0,1)}[(score_ref_z(z) - score_cand_z(z))^2] for a
-    Gaussian-in-z candidate: diff_z(z) = a*z + b, so E[diff_z(z)^2] = a^2 + b^2.
-    """
+    """Exact prior-based FD_z for a Gaussian-in-z candidate against an N(0, 1) reference."""
     a = 1.0 / sigma_z_cand ** 2 - 1.0
     b = -mu_z_cand / sigma_z_cand ** 2
     return float(a ** 2 + b ** 2)
 
 
 def compute_shared_radius(mu_z_range=Z_MU_RANGE, sigma_z_range=Z_SIGMA_RANGE) -> float:
-    """
-    Radius r_j = sup_{Gamma_{z,j}} FD(N(0,1) || N(mu_z, sigma_z^2)), so every prior in
-    Gamma_{z,j} lies in Q_{r_j}. Data independent, hence identical for every component.
-    """
+    """Return the radius r_j bounding the FD of every prior in the z-box, shared by all components."""
     return max(_fd_z_prior_gaussian_in_z(mu_z, sig_z) for mu_z, sig_z in _box_corners(mu_z_range, sigma_z_range))
 
 
@@ -88,14 +76,7 @@ def compute_nonparametric_sensitivity(
     r_j: float,
     center_samples_num: int = 5000,
 ) -> dict:
-    """
-    FDsens+: per component, the KEF worst-case sensitivity r_j * omega_max in z-space,
-    with centres/lengthscale fitted on a prior draw independent of the one used for A_c.
-    The basis and A_c are built once per reference-prior group and shared by its components.
-
-    Returns ({component_name: sensitivity}, optimisation time in seconds), where the time
-    covers the sensitivity computation only, not drawing and transforming the samples.
-    """
+    """Compute per-component FDsens+ sensitivities in z-space and return them with the optimisation time."""
     sensitivity = {}
     optimisation_time = 0.0
     for group_name in loader.param_groups:
@@ -130,12 +111,7 @@ def _percentages(values: dict) -> dict:
 
 
 def _draw_component_sensitivity_stack(ax, percentages: dict, title: str) -> None:
-    """
-    Single stacked bar: each component a segment coloured by contribution rank
-    (lowest "#4d7298", lightening towards white for larger contributions), with an
-    inline "{label} {pct:.1f}%" text for segments >= 4%. The title is drawn to the
-    left of the bar.
-    """
+    """Draw a single stacked bar of component contributions, coloured by rank and labelled above 4%."""
     ranked = sorted(COMPONENT_ORDER, key=lambda k: percentages[k])
     n = len(ranked)
     low = np.array(to_rgb("#4d7298"))
