@@ -91,8 +91,7 @@ def run_gaussian_priors_nonparametric_diff_radii(cfg, save_samples: bool = False
     sdp_lambda_list, sdp_fd_estimates_list, radius_labels = [], [], []
     sdp_lambda_list, sdp_fd_estimates_list = [], []
 
-    # Fresh, independent draw from the reference prior, used only as the pool
-    # to select centres from -- never the samples that feed the FD estimate.
+    # Fresh reference-prior draw used only as the centre pool, never for the FD estimate.
     np.random.seed(27)
     centers_pool_samples = model.sample_from_base_prior(n_samples=len(model.prior_samples_init))
 
@@ -103,10 +102,7 @@ def run_gaussian_priors_nonparametric_diff_radii(cfg, save_samples: bool = False
     basis_kwargs["estimation_samples_source"] = "prior"
     basis_kwargs["method"] = "random"
 
-    # Lengthscale shrinks with K so increasing num_basis_functions in the
-    # config actually grows the achievable sensitivity, instead of the
-    # class's default (K-independent, sample-based) bandwidth causing it to
-    # plateau after a few dozen centres -- see _k_dependent_basis_settings.
+    # Lengthscale shrinks with K so larger K grows the sensitivity instead of plateauing.
     n_mc_samples = min(len(model.prior_samples_init), len(model.posterior_samples_init))
     basis_kwargs["num_basis_functions"], basis_kwargs["lengthscale"] = _k_dependent_basis_settings(
         centers_pool_samples, basis_kwargs["num_basis_functions"], n_mc_samples,
@@ -210,13 +206,10 @@ def _diff_center_methods(
     estimator_prior = PriorFDNonParametric(model=model)
     estimator_posterior = PosteriorFDNonParametric(model=model)
 
-    # Fresh, independent draw from the reference prior, used only as the pool
-    # to select centres from -- never the samples that feed the FD estimate.
+    # Fresh reference-prior draw used only as the centre pool, never for the FD estimate.
     np.random.seed(27)
     centers_pool_samples = model.sample_from_base_prior(n_samples=len(original_prior_samples))
-    # Likewise, a fresh, independent draw from the (conjugate) posterior, used
-    # only as the pool for posterior-based centres and their lengthscale --
-    # never the posterior samples that feed the FD estimate.
+    # Likewise a fresh posterior draw, used only as the pool for posterior-based centres.
     centers_pool_posterior_samples = model.sample_posterior(n_samples=len(model.posterior_samples_init))
 
     basis_cls = BASIS_FUNCTIONS_REGISTRY[basis_funcs_type]
@@ -226,9 +219,7 @@ def _diff_center_methods(
     if basis_funcs_type != "MaternBasisFunction":
         base_basis_kwargs.pop("nu", None)
 
-    # Lengthscale shrinks with K (per basis function's own centre count) so
-    # increasing num_basis_functions actually grows the achievable
-    # sensitivity instead of plateauing -- see _k_dependent_basis_settings.
+    # Lengthscale shrinks with K so larger K grows the sensitivity -- see _k_dependent_basis_settings.
     n_mc_samples = min(len(model.prior_samples_init), len(model.posterior_samples_init))
 
     def _apply_k_schedule(kwargs, samples_for_scale):
@@ -237,8 +228,7 @@ def _diff_center_methods(
         )
         return kwargs
 
-    # Solved as a generalised eigenvalue problem on A_c's well-conditioned
-    # subspace (b = b_c = 0 here, g = pi_ref) -- not the SDP relaxation.
+    # Generalised eigenproblem on A_c's well-conditioned subspace (b = b_c = 0), not the SDP.
     def _run_and_plot(method_label, filename, optimizer):
         result_sdp = optimizer.optimize_through_generalized_eigenvalue(rel_tol=1e-8)
         print(f"[{method_label}] Nonparametric FD (primal value): {result_sdp['primal_value']:.4f}")
@@ -255,9 +245,7 @@ def _diff_center_methods(
         )
         return result_sdp
 
-    # The per-method figures (a)-(f) and the combined figure are skipped when
-    # only_recommended is set; the recommended-centre figures below do not
-    # depend on them (they reseed and draw their own estimation samples).
+    # Per-method and combined figures are skipped if only_recommended; later figures don't need them.
     if not only_recommended:
         # (a) Halton, centres from a fresh reference-prior draw
         basis_kwargs = dict(base_basis_kwargs)
@@ -301,12 +289,7 @@ def _diff_center_methods(
         basis_kwargs["posterior_samples"] = centers_pool_posterior_samples
         basis_kwargs["estimation_samples_source"] = "posterior"
         basis_kwargs["method"] = "halton"
-        # Not scheduled: posterior samples are far more concentrated than the
-        # fresh prior draw, so the same K-dependent formula produces a
-        # disproportionately narrow (unstable) bandwidth here -- verified
-        # empirically (already inflated at K=30, SDP relaxation unbounded by
-        # K=70 in the loop below). Left on the class's own auto-estimated
-        # (K-independent) bandwidth.
+        # Not scheduled: posterior pool is too concentrated, so the K-schedule bandwidth is unstable.
         basis_function_posterior = basis_cls(**basis_kwargs)
         optimizer = OptimisationNonparametricBase(
             estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
@@ -354,11 +337,7 @@ def _diff_center_methods(
             optimizer=optimizer,
         )
 
-        # (f) K-means, centres from a fresh draw of the normalised likelihood.
-        # For the Gaussian location model L(theta)^lr is proportional to
-        # N(theta; x_bar, sigma^2 / (n * lr)), so the pool concentrates around the
-        # MLE theta_hat = x_bar -- independent of both the prior and posterior
-        # samples used for the FD estimate.
+        # (f) K-means, centres from a fresh draw of the normalised likelihood N(x_bar, sigma^2/(n*lr)).
         theta_hat = float(np.asarray(model.x_bar).reshape(-1)[0])
         likelihood_sd = float(np.sqrt(model.loss.var / (model.observations_num * model.loss_lr_init)))
         likelihood_pool_samples = np.random.default_rng(27).normal(
@@ -370,8 +349,7 @@ def _diff_center_methods(
         basis_kwargs["posterior_samples"] = likelihood_pool_samples
         basis_kwargs["estimation_samples_source"] = "posterior"
         basis_kwargs["method"] = "kmeans"
-        # Not scheduled: the likelihood pool is as concentrated as the posterior
-        # samples -- see the "Halton (posterior)" case above.
+        # Not scheduled: the likelihood pool is as concentrated as the posterior samples.
         basis_function_likelihood = basis_cls(**basis_kwargs)
         optimizer = OptimisationNonparametricBase(
             estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
@@ -383,11 +361,7 @@ def _diff_center_methods(
             optimizer=optimizer,
         )
 
-        # Combined figure: K-means (fresh prior), Random (fresh prior), Random
-        # (posterior) and K-means (likelihood maximum) densities overlaid in one panel, with each method's
-        # basis centres shown in its own colour-matched rug strip underneath --
-        # one such combined figure per number of basis functions K, so the effect
-        # of K on the centre-selection comparison is also visible.
+        # Combined figure per K: methods' densities overlaid, with colour-matched centre rug strips.
         def _compute(basis_function):
             optimizer = OptimisationNonparametricBase(
                 estimator_posterior, estimator_prior, cfg.optimize.nonparametric, radius=radius,
@@ -459,22 +433,7 @@ def _diff_center_methods(
                 resolution=500,
             )
 
-    # Recommended centre selection (K=100): draw K_max >> K candidates from the
-    # mixture alpha * posterior + (1 - alpha) * prior -- each component a fresh
-    # draw, separate from the FD-estimation samples -- then select a
-    # well-spread subset of K via k-means -- either on the pooled candidates,
-    # or stratified so that round(alpha * K) centres come from the posterior
-    # part and the rest from the prior part (see _stratified_mixture_centers;
-    # plotted separately). Compared, for several alphas, against k-means
-    # candidates from the prior only.
-    #
-    # Unlike the figures above, A and A_c are estimated here from larger fresh
-    # prior/posterior draws (n_rec_mc each, separate from every centre pool):
-    # with 1000 prior samples, narrow bases clustered near theta_hat get too
-    # few prior samples under each bump, so A_c is underestimated and the
-    # sensitivity inflated far above the population value. Verified against
-    # exact quadrature: still ~10% too high at 50k, within ~4% at 200k, and
-    # within ~1% at 500k.
+    # Recommended centres: k-means on a posterior/prior mixture pool; A, A_c from large fresh draws.
     K = 100
     K_max = 10 * K
     mixture_alphas = [0.25, 0.5]
@@ -488,13 +447,7 @@ def _diff_center_methods(
         ], axis=0)
 
     def _stratified_mixture_centers(alpha, n_centers, min_sep, seed=27):
-        # Stratified alternative to k-means on the pooled candidates: round(alpha * K)
-        # centres by k-means on the posterior part of the pool and the rest by
-        # k-means on the prior part, so alpha is exactly the fraction of centres
-        # from the posterior. Prior centres within min_sep of a posterior centre
-        # are near-duplicates (ill-conditioning A_c); each is dropped and
-        # replaced by a random prior candidate at least min_sep from every
-        # centre kept so far.
+        # Stratified: round(alpha*K) centres from posterior, rest from prior; near-duplicates replaced.
         from sklearn.cluster import KMeans
 
         n_post = int(round(alpha * K_max))
@@ -534,9 +487,7 @@ def _diff_center_methods(
         pooled_mixture_methods.append((rf"$\alpha={alpha:g}$", basis_cls(**kwargs)))
 
         basis_function = basis_cls(**kwargs)
-        # Overwrite the pooled k-means centres with the stratified ones; the
-        # (scheduled) lengthscale is kept, and centres closer than half of it
-        # count as coinciding.
+        # Replace pooled centres with stratified ones; keep the lengthscale, min_sep = lengthscale / 2.
         basis_function.centers = _stratified_mixture_centers(
             alpha, kwargs["num_basis_functions"], min_sep=0.5 * kwargs["lengthscale"],
         )
@@ -573,13 +524,7 @@ def _diff_center_methods(
     ):
         print(f"[K={K}, recommended] {label}: {result['primal_value']:.4f}")
 
-    # RBF only: given the centres, the exact sensitivity S^FD(Q_r^K) =
-    # r * omega_max follows from the closed-form A (posterior) and A_c (prior)
-    # -- as in run_gaussian_priors_nonparametric_closed_form_convergence -- so
-    # the remaining gap to the plug-in value is pure Monte-Carlo error in A,
-    # A_c. Solved on A_c's well-conditioned subspace with the same rel_tol as
-    # the plug-in solve, so both sides use the same eigenproblem. The figures
-    # then show the exact value and worst-case density, not the plug-in ones.
+    # RBF only: exact sensitivity from closed-form A, A_c; the gap to plug-in is pure MC error.
     sensitivity_label_key = "estimatedSensitivityMeasure"
     if basis_funcs_type == "RBFBasisFunction":
         from src.nonparametric.node_sensitivity import _ac_whitening_transform
@@ -616,10 +561,7 @@ def _diff_center_methods(
         baseline_results = _exact_results(baseline_methods, baseline_results)
         sensitivity_label_key = "sensitivityMeasure"
 
-    # Population ceiling over *all* smooth perturbations (b = b_c = 0):
-    # sup_f E_post|f'|^2 / E_prior|f'|^2 = sup_theta p_post / p_prior, which is
-    # proportional to the likelihood and so attained at theta_hat. In closed
-    # form this is r * M (Thm. exact-fd-sensitivity).
+    # Population ceiling over all smooth perturbations: r * M, attained at theta_hat.
     M_closed = _closed_form_conjugate_gaussian_M(
         mu_ref=model.prior_init.mu,
         Sigma_ref=model.prior_init.var,
@@ -630,8 +572,7 @@ def _diff_center_methods(
     ceiling_at = float(np.asarray(model.x_bar).reshape(-1)[0])
     print(f"[K={K}, recommended] Population ceiling r * sup p_post/p_prior: {ceiling:.4f} at theta={ceiling_at:.4f}")
 
-    # One figure with the pooled k-means mixtures, one with the stratified
-    # mixtures; both against the same prior-only baseline.
+    # One figure for pooled mixtures, one for stratified; both against the prior-only baseline.
     for mixture_methods, mixture_results, filename in [
         (pooled_mixture_methods, pooled_mixture_results,
          f"{file_prefix}_recommended_K{K}.pdf"),
@@ -701,16 +642,13 @@ def run_gaussian_priors_nonparametric_diff_kernels(cfg, save_samples: bool = Fal
     estimator_prior = PriorFDNonParametric(model=model)
     estimator_posterior = PosteriorFDNonParametric(model=model)
 
-    # Fresh, independent draw from the reference prior, used only as the pool
-    # to select centres from -- never the samples that feed the FD estimate.
+    # Fresh reference-prior draw used only as the centre pool, never for the FD estimate.
     np.random.seed(27)
     centers_pool_samples = model.sample_from_base_prior(n_samples=len(original_prior_samples))
 
     num_basis_functions = 100
 
-    # Lengthscale shrinks with K (per basis function's own centre count) so
-    # increasing num_basis_functions actually grows the achievable
-    # sensitivity instead of plateauing -- see _k_dependent_basis_settings.
+    # Lengthscale shrinks with K so larger K grows the sensitivity -- see _k_dependent_basis_settings.
     n_mc_samples = min(len(model.prior_samples_init), len(model.posterior_samples_init))
     num_basis_functions, kernel_lengthscale = _k_dependent_basis_settings(
         centers_pool_samples, num_basis_functions, n_mc_samples,
@@ -813,8 +751,7 @@ def run_multivariate_gaussian_priors_nonparametric_diff_radii(cfg, save_samples:
     estimator_posterior = PosteriorFDNonParametric(model=model)
     sdp_lambda_list, fd_estimates_list, radius_labels = [], [], []
 
-    # Fresh, independent draw from the reference prior, used only as the pool
-    # to select centres from -- never the samples that feed the FD estimate.
+    # Fresh reference-prior draw used only as the centre pool, never for the FD estimate.
     np.random.seed(27)
     centers_pool_samples = model.sample_from_base_prior(n_samples=len(model.prior_samples_init))
 
@@ -826,14 +763,7 @@ def run_multivariate_gaussian_priors_nonparametric_diff_radii(cfg, save_samples:
     basis_kwargs["nu"] = 5
     basis_kwargs["method"] = "random"
 
-    # Precision (metric="full") shrinks (isotropically) with K so increasing
-    # num_basis_functions in the config actually grows the achievable
-    # sensitivity, instead of the class's default (K-independent,
-    # covariance-based) bandwidth causing it to plateau -- see
-    # _k_dependent_basis_settings. Previously num_basis_functions was
-    # hardcoded to 30 here, so editing the config's value had no effect at
-    # all; it now comes from the config like every other basis_funcs_kwargs
-    # entry.
+    # Precision shrinks with K so larger K grows the sensitivity -- see _k_dependent_basis_settings.
     n_mc_samples = min(len(model.prior_samples_init), len(model.posterior_samples_init))
     basis_kwargs["num_basis_functions"], ell = _k_dependent_basis_settings(
         centers_pool_samples, basis_kwargs["num_basis_functions"], n_mc_samples,
@@ -906,11 +836,7 @@ def run_gaussian_priors_nonparametric_sensitivity_vs_K(
     dim_tag = "univariate_gaussian" if d == 1 else "multivariate_gaussian"
     plot_tag = "gaussian_1d_location_model" if d == 1 else "gaussian_2d_location_model"
 
-    # Univariate converges to the true value fast enough (in K) that the
-    # grid can be pushed out until the sieve estimate actually reaches it;
-    # multivariate converges far slower in K (see the docstring), so a
-    # comparably large n_side would mean K = n_side^2 basis functions --
-    # infeasible -- so it keeps the original, more modest grid.
+    # Univariate converges fast in K so its grid extends further; multivariate K = n_side^2 limits it.
     if d == 1:
         grid_sides = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 150, 200,
                       250, 300, 400, 500, 700, 1000, 1500, 2000]
@@ -1040,10 +966,7 @@ def run_gaussian_priors_nonparametric_sensitivity_vs_K_combined(
             config_name="univariate_gaussian_param_nonparam")
 def run_param_nonparam_comparison_skewness_matched_radius(cfg) -> None:
     """Compare parametric and nonparametric worst-case priors using the diff_radii r=10 setup."""
-    # Match run_gaussian_priors_nonparametric_diff_radii's data exactly (same
-    # saved observations/prior/posterior samples, same counts), so both
-    # functions build the same model and the nonparametric worst case is
-    # reproducible across them.
+    # Use the same saved data as run_gaussian_priors_nonparametric_diff_radii for reproducibility.
     cfg.data.observations_path = "data/univariate_gaussian/observations.npy"
     cfg.data.posterior_samples_path = "data/univariate_gaussian/posterior_samples.npy"
     cfg.data.prior_samples_path = "data/univariate_gaussian/prior_samples.npy"
@@ -1051,8 +974,7 @@ def run_param_nonparam_comparison_skewness_matched_radius(cfg) -> None:
     cfg.data.prior_samples_num = 5000
     model = instantiate(cfg.model, data_config=cfg.data)
 
-    # Parametric optimisation: worst-case Gaussian prior within the (mu, sigma) box
-    # (worst case = maximises posterior sensitivity, the box's natural objective).
+    # Parametric optimisation: worst-case Gaussian prior within the (mu, sigma) box.
     posterior_fd = PosteriorFDParametric(model=model)
     param_optimizer = OptimizationCornerPointsUnivariateGaussian(
         posterior_fd,
@@ -1064,20 +986,17 @@ def run_param_nonparam_comparison_skewness_matched_radius(cfg) -> None:
 
     radius = 10.0
 
-    # Nonparametric optimisation -- same setup as run_gaussian_priors_nonparametric_diff_radii
-    # at r=10.0.
+    # Nonparametric optimisation -- same setup as run_gaussian_priors_nonparametric_diff_radii, r=10.
     estimator_prior = PriorFDNonParametric(model=model)
     estimator_posterior = PosteriorFDNonParametric(model=model)
 
-    # Fresh, independent draw from the reference prior, used only as the pool
-    # to select centres from -- never the samples that feed the FD estimate.
+    # Fresh reference-prior draw used only as the centre pool, never for the FD estimate.
     np.random.seed(27)
     centers_pool_samples = model.sample_from_base_prior(n_samples=len(model.prior_samples_init))
 
     basis_cls = BASIS_FUNCTIONS_REGISTRY[cfg.optimize.nonparametric.basis_funcs_type]
     basis_kwargs = OmegaConf.to_container(cfg.optimize.nonparametric.basis_funcs_kwargs, resolve=True)
-    # Match run_gaussian_priors_nonparametric_diff_radii's basis hyperparameters
-    # (this config's own defaults are num_basis_functions=10, nu=2.0).
+    # Match diff_radii's basis hyperparameters (config defaults: num_basis_functions=10, nu=2.0).
     basis_kwargs["num_basis_functions"] = 30
     basis_kwargs["nu"] = 5.0
     basis_kwargs["prior_samples"] = centers_pool_samples
@@ -1242,9 +1161,7 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
     """Plot the error of the plug-in RBF FDsens+ sensitivity against its closed form as samples grow."""
     model = instantiate(cfg.model, data_config=cfg.data)
 
-    # Dimension-agnostic: works for both the univariate model (Gaussian prior,
-    # exposing scalar .mu/.var) and the multivariate one (MultivariateGaussian
-    # prior, exposing vector .mu/matrix .cov).
+    # Dimension-agnostic: works with univariate (.mu/.var) and multivariate (.mu/.cov) priors.
     mu_ref = np.atleast_1d(np.asarray(model.prior_init.mu, dtype=float))
     cov_ref = getattr(model.prior_init, "cov", model.prior_init.var)
     Sigma_ref = np.atleast_2d(np.asarray(cov_ref, dtype=float))
@@ -1255,8 +1172,7 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
     dim_tag = "univariate_gaussian" if d == 1 else "multivariate_gaussian"
     plot_tag = "gaussian_1d_location_model" if d == 1 else "gaussian_2d_location_model"
 
-    # K from the config, laid out as a square grid: the closest n_side^d to
-    # the configured num_basis_functions (e.g. 1000 -> n_side=32 -> K=1024).
+    # K from the config as a square grid: the closest n_side^d to num_basis_functions.
     num_basis_functions_cfg = cfg.optimize.nonparametric.basis_funcs_kwargs.num_basis_functions
     n_side = int(round(num_basis_functions_cfg ** (1.0 / d)))
     span = 3.0
@@ -1321,9 +1237,7 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
                 errors_full.append(abs(S_hat_full - S_closed))
                 errors_obj.append(abs(S_hat_obj - S_closed))
                 errors_constr.append(abs(S_hat_constr - S_closed))
-                # Matrix-level relative Frobenius-norm error of each plug-in estimator
-                # against its closed-form target, independent of the downstream
-                # generalised eigenproblem: ||A - Ahat||_F / ||A||_F.
+                # Relative Frobenius-norm error of each plug-in matrix: ||A - Ahat||_F / ||A||_F.
                 errors_A.append(float(np.linalg.norm(A_hat - A_closed, ord="fro")) / A_closed_norm)
                 errors_Ac.append(float(np.linalg.norm(A_c_hat - A_c_closed, ord="fro")) / A_c_closed_norm)
 
@@ -1354,9 +1268,7 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
 
     errors_by_l = _load_or_compute(errors_path, [(int(l), int(l)) for l in sample_sizes])
 
-    # Other allocations of posterior (m) vs prior (l) samples, all indexed by
-    # m on the x-axis: m = l^(3/2) (l = m^(2/3)) and m = 3l (l = m/3). Each
-    # is cached to its own file next to the m = l one.
+    # Other m-vs-l allocations (m = l^(3/2), m = 3l), each cached to its own file.
     m_grid = [int(m) for m in sample_sizes if m >= 3000]
     relations = [
         (r"$m = l$", None, lambda m: m),

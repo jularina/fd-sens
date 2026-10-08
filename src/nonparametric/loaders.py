@@ -12,9 +12,7 @@ class KilpisjarviNonparametricLoader:
         self.model = KilpisjarviBayesianModel(data_config)
         self.prior_samples_num = int(getattr(data_config, "prior_samples_num", 5000))
 
-        # Component `sample()` methods draw from the shared global numpy RNG
-        # (they take no local generator), so `sample_prior` calls are only
-        # reproducible across runs if that global state is seeded once here.
+        # Component samplers use the global numpy RNG, so seed it once here for reproducibility.
         np.random.seed(int(getattr(data_config, "seed", 0)))
 
         names = self.model.prior_init.names

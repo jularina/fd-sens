@@ -12,9 +12,7 @@ class PosteriorFDParametric(PosteriorFDBase):
         """Fisher divergence at posterior samples for parametric exponential-family candidate priors."""
         super().__init__(model=model)
 
-        # Candidate prior (exp family decomposition), evaluated at the same samples
-        # grad_T: (m, paramdim, natparamdim)
-        # grad_log_g: (m, paramdim)
+        # Candidate prior terms at the samples: grad_T (m, paramdim, natparamdim), grad_log_g (m, paramdim).
         self.grad_T = self.model.prior_candidate.grad_sufficient_statistics(self.samples)
         self.grad_log_g = self.model.prior_candidate.grad_log_base_measure(self.samples)
         self.eta = self.model.prior_candidate.natural_parameters()

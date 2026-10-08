@@ -111,8 +111,7 @@ def plot_posterior(theta, posteriors, colors, plot_cfg, output_dir, prefix):
 
 
 # ------------------------------------------------------------
-# Combined 1D prior/posterior plot
-# analogous to plot_prior_posterior_2d(...)
+# Combined 1D prior/posterior plot (analogous to plot_prior_posterior_2d)
 # ------------------------------------------------------------
 def plot_prior_posterior_1d(theta, priors, posteriors, colors, plot_cfg, output_dir, filename):
     from matplotlib.lines import Line2D

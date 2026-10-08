@@ -73,12 +73,7 @@ def _generalized_eigvals_max_batch(
     nugget: float = 1e-10,
     rel_tol: float = 1e-8,
 ) -> np.ndarray:
-    """
-    Largest generalised eigenvalue of A_j v = omega * A_c v for every node j,
-    solved by projecting onto A_c's numerically well-conditioned eigen-
-    subspace rather than Cholesky-factorising A_c directly -- see
-    `_ac_whitening_transform`.
-    """
+    """Largest generalised eigenvalue of A_j v = omega * A_c v for each node j, via A_c's stable eigenbasis."""
     A_c = 0.5 * (A_c + A_c.T)
     W, _ = _ac_whitening_transform(A_c, rel_tol=rel_tol, nugget=nugget)
 

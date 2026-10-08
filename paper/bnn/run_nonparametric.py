@@ -19,8 +19,7 @@ from src.nonparametric.plots.bnn import plot_bnn_weight_heatmaps
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-# net.module.{0,2,4} are this BNN's 3 linear layers; each layer's mean
-# sensitivity pools its weight_prior and bias_prior nodes together.
+# net.module.{0,2,4} are the 3 linear layers; each layer pools its weight and bias prior nodes.
 LAYER_GROUP_MAP: Dict[str, Tuple[str, str]] = {
     "Layer 0": ("net.module.0.weight_prior", "net.module.0.bias_prior"),
     "Layer 2": ("net.module.2.weight_prior", "net.module.2.bias_prior"),
@@ -56,10 +55,7 @@ def _basis_config_hash(basis_type: str, basis_kwargs: Dict[str, Any]) -> str:
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:8]
 
 
-# Full-fidelity cache of compute_bnn_group_sensitivities' output (per-node
-# omega_max arrays + the prior/center-prior draws used to build each group's
-# basis). Letting this be found and reloaded lets a rerun skip straight to
-# plotting instead of repeating the slow per-node optimisation.
+# Full cache of compute_bnn_group_sensitivities' output, so reruns can skip straight to plotting.
 SENSITIVITY_CACHE_DIR = "data/bnn"
 _CACHE_TIMESTAMP_FMT = "%Y%m%d_%H%M%S"
 
@@ -113,10 +109,7 @@ def compute_bnn_group_sensitivities(
     radius = r_j * J
     base_tag = _config_tag(cfg.data.get("dataset", "uci"), cfg.data.get("reference_prior", "gaussian"))
 
-    # basis_cls/basis_kwargs (e.g. nu, num_basis_functions) determine the
-    # computed omega_max, so they must be resolved *before* the cache check
-    # and folded into its key -- otherwise changing e.g. nu and rerunning
-    # would silently hit the old cache and skip recomputation entirely.
+    # Basis settings change omega_max, so resolve them before the cache check and fold them into its key.
     basis_cls = BASIS_FUNCTIONS_REGISTRY[cfg.optimize.nonparametric.basis_funcs_type]
     basis_kwargs = OmegaConf.to_container(cfg.optimize.nonparametric.basis_funcs_kwargs, resolve=True)
     tag = f"{base_tag}_b{_basis_config_hash(cfg.optimize.nonparametric.basis_funcs_type, basis_kwargs)}"
@@ -159,10 +152,7 @@ def compute_bnn_group_sensitivities(
         prior_samples = loader.sample_prior(group_name)
         prior_samples_cache[group_name] = prior_samples
 
-        # Fresh, independent prior draw used only to pick basis centres via
-        # kmeans -- never the same samples used above to estimate the FD
-        # constraint matrix A_c (mirrors the toy model's centers_pool_samples
-        # pattern in run_gaussian_priors_nonparametric_diff_radii).
+        # Fresh prior draw used only to pick basis centres, independent of the samples used for A_c.
         center_prior_samples = loader.sample_prior(group_name, n_samples=center_samples_num)
         center_prior_samples_cache[group_name] = center_prior_samples
 

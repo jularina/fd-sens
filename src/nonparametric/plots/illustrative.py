@@ -12,8 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _radial_profile(theta, harmonics, seed, mean=1.0):
-    """Smooth, irregular ('potato') radius-vs-angle profile: a circle
-    perturbed by a few low-frequency, randomly phased harmonics."""
+    """Smooth, irregular ('potato') radius-vs-angle profile: a circle perturbed by random harmonics."""
     rng = np.random.default_rng(seed)
     wobble = np.ones_like(theta)
     for k, amp in harmonics:
@@ -43,18 +42,13 @@ def _closed(x, y):
 
 
 def _blend_over_white(color, alpha):
-    """Flatten (color, alpha) to an opaque RGB as it would look painted over a
-    white background -- used so each nested layer's *own* alpha determines its
-    look, instead of alpha-compositing on top of whatever was already painted
-    underneath it (which would make a low-alpha inner layer look darker than
-    intended, since it lets an already-dark base show through)."""
+    """Flatten (color, alpha) to opaque RGB as painted over white, so each layer's own alpha sets its look."""
     r, g, b = mcolors.to_rgb(color)
     return (1 - alpha) + alpha * r, (1 - alpha) + alpha * g, (1 - alpha) + alpha * b
 
 
 def _widehat_l_label(l, all_l_values, K_label="K"):
-    """\\widehat{Q}_r^{K,l_i} with l_i's subscript rank taken from l's position
-    among all_l_values sorted ascending (l_1 = fewest MC samples, etc.)."""
+    """\\widehat{Q}_r^{K,l_i} , where i is l's rank in sorted all_l_values (l_1 = fewest MC samples)."""
     rank = sorted(all_l_values).index(l) + 1
     return rf"\widehat{{\mathcal{{Q}}}}_r^{{{K_label},l_{{{rank}}}}}"
 
@@ -93,10 +87,7 @@ def plot_sieve_and_mc_precision_combined(
     scales = list(radius_scales) + [outer_radius]
     labels = list(K_labels) + [outer_label]
 
-    # Q_r^{K_2} gets an extra, direction-dependent bulge toward the top-right
-    # (a smooth raised-cosine bump peaking at k2_bulge_angle_deg and tapering
-    # to zero k2_bulge_spread_deg away on either side), so that band widens
-    # there without inflating it uniformly all the way round.
+    # Q_r^{K_2} gets a raised-cosine bulge toward the top-right instead of widening uniformly.
     angle_diff = np.mod(theta - np.deg2rad(k2_bulge_angle_deg) + np.pi, 2 * np.pi) - np.pi
     spread_rad = np.deg2rad(k2_bulge_spread_deg)
     k2_bulge = np.where(
@@ -104,19 +95,13 @@ def plot_sieve_and_mc_precision_combined(
         k2_bulge_amount * 0.5 * (1 + np.cos(np.pi * angle_diff / spread_rad)),
         0.0,
     )
-    # Q_r^{K_1}, Q_r^{K_2}, Q_r^{K_3} all share one color (colors[9]) and are told
-    # apart by alpha alone -- higher alpha for the smaller, innermost sets; Q_r
-    # keeps its own distinct color (colors[6])
+    # Q_r^{K_1..K_3} share colors[9] and differ only by alpha; Q_r keeps colors[6].
     fill_colors_by_rank = ["#ADEBDC", "#77a6b6", "#77a6b6", "#77a6b6"]
     fill_alphas_by_rank = [0.45, 0.60, 0.4, 0.2]
-    # pre-blended to opaque RGB per rank so each layer's own alpha sets its look,
-    # rather than compositing on top of the (already painted) layers beneath it
+    # Pre-blend to opaque RGB per rank so each layer's own alpha sets its look.
     fill_render_colors_by_rank = [_blend_over_white(c, a) for c, a in zip(fill_colors_by_rank, fill_alphas_by_rank)]
 
-    # the outer (Q_r) ring is the tallest element and its bottom half carries
-    # no labels, so shrink the figure height by exactly how much the squeeze
-    # shortens it -- keeping the unsqueezed top half at its original scale
-    # rather than stretching everything to refill a fixed-height canvas
+    # Shrink the figure height by the bottom squeeze, keeping the top half at its original scale.
     outer_y_raw = outer_radius * shape * np.sin(theta)
     y_max_raw, y_min_raw = outer_y_raw.max(), outer_y_raw.min()
     y_min_squeezed = np.where(outer_y_raw < 0, outer_y_raw * bottom_squeeze, outer_y_raw).min()
@@ -128,15 +113,14 @@ def plot_sieve_and_mc_precision_combined(
         dpi=plot_cfg.plot.figure.dpi,
     )
 
-    # sieve chain: draw largest-first so each smaller, more saturated region
-    # is layered on top, leaving a visible annulus for every set in the chain
+    # Draw largest-first so each smaller set sits on top, leaving a visible annulus for each.
     order = sorted(range(len(scales)), key=lambda i: scales[i], reverse=True)
     for rank, i in enumerate(order):
         r = scales[i] * shape
         if i == 1:  # Q_r^{K_2}
             r = r + k2_bulge
         x, y = r * np.cos(theta), r * np.sin(theta)
-        y = np.where(y < 0, y * bottom_squeeze, y)  # the bottom carries no labels, so compress it to trim empty vertical space
+        y = np.where(y < 0, y * bottom_squeeze, y)  # unlabelled bottom: compress it to trim empty space
         is_outer = (i == len(scales) - 1)
         ax.fill(x, y, color=fill_render_colors_by_rank[rank], linewidth=0)
         if not is_outer:
@@ -144,10 +128,7 @@ def plot_sieve_and_mc_precision_combined(
         if is_outer:
             outer_x, outer_y = x, y
 
-    # tracks every plotted point (outer boundary + label anchors) so the axis
-    # limits can be set tight to the actual content in x and y independently
-    # -- true full-bleed, rather than one shared radial margin that leaves
-    # slack wherever the (irregular) shape is narrower than its own peak
+    # Track every plotted point so x/y limits can be fit tightly to the content independently.
     xs_all = list(outer_x)
     ys_all = list(outer_y)
 
@@ -155,10 +136,9 @@ def plot_sieve_and_mc_precision_combined(
     for i, angle_deg in enumerate(K_label_angles_deg):
         angle_rad = np.deg2rad(angle_deg)
         own_r = scales[i] * _shape_at(angle_rad, theta, shape)
-        label_r = own_r * K_label_text_inside_area[i]  # inside its own neighbourhood, hugging the border from within
+        label_r = own_r * K_label_text_inside_area[i]  # inside its own neighbourhood, near its border
         lx, ly = label_r * np.cos(angle_rad), label_r * np.sin(angle_rad)
-        # Q_r^{K_1}, Q_r^{K_2}, Q_r^{K_3} text in dark blue; Q_r itself uses its own
-        # (fully opaque) area color instead of the faded alpha=0.45 fill
+        # Q_r^{K_i} labels in dark blue; Q_r uses its opaque area color instead of the faded fill.
         text_color = "#77a6b6" if i < len(scales) - 1 else fill_colors_by_rank[0]
         text_color = "black"
         ax.text(lx, ly, f"${labels[i]}$", ha="center", va="center",
@@ -166,12 +146,7 @@ def plot_sieve_and_mc_precision_combined(
         xs_all.append(lx)
         ys_all.append(ly)
 
-    # MC-estimation bundles for K_1: each sample line in a bundle is its own
-    # independent sieve-like shape (same harmonics as the true boundary, own
-    # random phases via a fresh seed per line) blended with the true shape by
-    # l_bundle_deviation[i] -- a small deviation nearly reproduces the true
-    # boundary (lots of overlap); a large one is a genuinely different blob of
-    # the same size that only partially overlaps Q_r^{K_1}.
+    # K_1 MC bundles: random sieve-like shapes blended with the true one by l_bundle_deviation[i].
     true_harmonics = ((1, 0.18), (2, 0.12), (3, 0.08), (5, 0.05))
     l_order = sorted(range(len(l_bundle_deviation)), key=lambda i: l_bundle_deviation[i], reverse=True)
     for i in l_order:
@@ -188,7 +163,7 @@ def plot_sieve_and_mc_precision_combined(
     for i, angle_deg in enumerate(l_label_angles_deg):
         angle_rad = np.deg2rad(angle_deg)
         own_r = radius_scales[0] * _shape_at(angle_rad, theta, shape)
-        label_r = own_r * (1 + 0.35 * l_bundle_deviation[i] + 0.05) * l_label_radius_scale[i]  # just past this bundle's own spread, pulled back in to stay clear of the Q_r^{K_2} border
+        label_r = own_r * (1 + 0.35 * l_bundle_deviation[i] + 0.05) * l_label_radius_scale[i]  # just past the bundle's spread, clear of the Q_r^{K_2} border
         lx, ly = label_r * np.cos(angle_rad), label_r * np.sin(angle_rad)
         lx += l_label_x_offsets[i] * outer_radius  # nudge clear of this bundle's own lines
         ax.text(
@@ -204,12 +179,7 @@ def plot_sieve_and_mc_precision_combined(
         ha="center", va="top", fontsize=label_fontsize * 0.72, zorder=10, fontweight="bold",
     )
 
-    # no aspect='equal': let the (otherwise circular) potato shapes stretch to
-    # fill the configured width x height rectangle exactly. Limits are fit
-    # tightly to the actual content bounding box (outer boundary + every
-    # label anchor), independently in x and y, plus a small buffer for each
-    # label's own text extent -- true full-bleed, like a tight_layout crop,
-    # rather than one shared radial margin.
+    # No aspect='equal': shapes stretch to fill the figure; limits fit the content tightly in x and y.
     xs_all, ys_all = np.array(xs_all), np.array(ys_all)
     x_pad = 0.04 * (xs_all.max() - xs_all.min())
     y_pad = 0.06 * (ys_all.max() - ys_all.min())

@@ -23,11 +23,7 @@ def plot_sdp_densities(
     show_posterior: bool = False,
     show_legend: bool = False,
 ) -> None:
-    """
-    Single-panel plot: nonparametric SDP densities for each radius, plus the true prior
-    (dashed steelblue) and, optionally (if show_posterior=True), the true posterior
-    (dashed black) density.
-    """
+    """Single-panel plot of nonparametric SDP densities per radius, the true prior and optional posterior."""
     os.makedirs(output_dir, exist_ok=True)
     plt.rcParams.update({
         "font.size": plot_cfg.plot.font.size,
@@ -305,9 +301,7 @@ def plot_sdp_density_with_centers(
     if getattr(plot_cfg.plot.figure, "tight_layout", False):
         plt.tight_layout()
 
-    # Hidden only after the layout pass above, so the axes keep the same
-    # inner width/position they would have with the y-axis shown -- tight_layout
-    # would otherwise reclaim the freed-up label space and widen the plot.
+    # Hide after layout so the axes keep their width (tight_layout would reclaim the freed space).
     if not show_yaxis:
         ax.set_ylabel("")
         ax.spines["left"].set_visible(False)
@@ -405,8 +399,7 @@ def plot_sdp_density_with_centers_combined(
     ax_density.spines["right"].set_visible(False)
 
     if show_legend:
-        # Labelled entries are too wide to sit inside the axes without
-        # covering the curves, so they go outside, to the right.
+        # Labelled entries are too wide to sit inside the axes, so the legend goes outside, right.
         legend_loc = dict(loc="upper left", bbox_to_anchor=(1.01, 1.0)) if legend_labels else dict(loc="best")
         leg = ax_density.legend(
             handles=density_lines,
@@ -463,11 +456,7 @@ def plot_sdp_2d_densities(
     show_centers: bool = False,
     show_legend: bool = False,
 ) -> None:
-    """
-    2D plot:
-      True prior contours (dashed blue) + SDP density contours (palette) + optional
-      posterior contours (dashed black), shown only if show_posterior=True.
-    """
+    """2D plot of true prior contours, SDP density contours and optional posterior contours."""
     os.makedirs(output_dir, exist_ok=True)
 
     def _f_grid(Phi_XY: np.ndarray, psi: np.ndarray, nx: int, ny: int) -> np.ndarray:
@@ -655,8 +644,7 @@ def plot_runtime_nonparametric_diff_basis_funcs_num_diff_samples_with_ci(
     names = _deep_get(plot_cfg, "plot.param_latex_names", {}) or {}
     x_label = r"$K$"
     y_label = names.get("runtimeSeconds", "Time (sec.)")
-    # Keys of times_nonparametric are the total m+l; the legend shows the
-    # per-set count n=m=(m+l)/2 instead.
+    # times_nonparametric keys are m+l; the legend shows the per-set count n=m=(m+l)/2.
     legend_prefix = names.get("numPriorPosteriorSamplesEach", "n=m")
 
     # Colors
@@ -804,11 +792,7 @@ def plot_param_nonparam_prior_and_stats(
     pi_b = np.exp(log_pi_b)
     print(f"Nonparametric prior integral (should be 1.0): {np.sum(pi_b) * dx:.8f}")
 
-    # Parametric candidate is exactly Gaussian: skewness/excess kurtosis are 0
-    # analytically (estimating them via truncated-domain quadrature is
-    # numerically unstable -- a tail-sensitive 3rd/4th moment on a fixed
-    # domain not guaranteed to cover +-few sigma_a), so hardcode rather than
-    # estimate. It's unimodal by construction, hence 1 mode.
+    # Parametric candidate is exactly Gaussian: skewness = excess kurtosis = 0, 1 mode, so hardcode.
     skew_a, kurt_a, modes_a = 0.0, 0.0, 1
     skew_b = _skewness(pi_b)
     kurt_b = _excess_kurtosis(pi_b)
@@ -847,10 +831,7 @@ def plot_param_nonparam_prior_and_stats(
     ax_prior.spines["right"].set_visible(False)
     ax_prior.legend(frameon=False, fontsize=fs * 1.0, labelspacing=0.4, handlelength=1.8, handletextpad=0.5)
 
-    # Right: full-height 2 (Param. / Ours) x 3 (skewness, modes, excess
-    # kurtosis) stats layout -- plain positioned text (no cell grid/box
-    # borders), with a light header rule and column rules so it still reads
-    # as a table.
+    # Right: 2 (Param. / Ours) x 3 (skewness, modes, excess kurtosis) stats as a ruled text table.
     ax_stats = fig.add_subplot(gs[0, 1])
     ax_stats.axis("off")
     ax_stats.set_xlim(0, 1)
@@ -979,12 +960,7 @@ def plot_sensitivity_vs_basis_funcs_num(
     true_value_label: str = r"$S^{\mathrm{FD}}(\mathcal{Q}_r)$",
     x_log_scale: bool = True,
 ) -> None:
-    """
-    Plot the nonparametric sieve sensitivity estimate as a function of the
-    number of basis functions K, together with a horizontal line at the
-    exact closed-form sensitivity S^FD(Q_r) = M*r that the sieve estimate is
-    expected to approach as K grows.
-    """
+    """Plot the sieve sensitivity estimate against K with the exact S^FD(Q_r) = M*r as a reference line."""
     os.makedirs(output_dir, exist_ok=True)
     plt.rcParams.update({
         "font.size": plot_cfg.plot.font.size,
@@ -1088,11 +1064,7 @@ def plot_sensitivity_vs_basis_funcs_num_dual(
 
     if x_log_scale:
         ax_left.set_xscale("log")
-        # Matplotlib only labels decade ticks (10^0, 10^1, ...) that fall
-        # strictly inside the data range; if the largest K (e.g. 6400) sits
-        # below the next power of ten (10^4), that next decade tick is never
-        # drawn, so labels appear to stop early. Extend the right xlim just
-        # past the next decade above the max K so its tick renders too.
+        # Extend xlim past the next decade above max K so that decade's tick label is drawn.
         max_K = max(max(basis_funcs_nums_left), max(basis_funcs_nums_right))
         ax_left.set_xlim(right=10 ** np.ceil(np.log10(max_K)) * 1.2)
     ax_left.set_xlabel(xlabel)

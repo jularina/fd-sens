@@ -601,8 +601,7 @@ def plot_existing_methods_comparison_gaussians(
         figsize=(plot_cfg.plot.figure.size.width, plot_cfg.plot.figure.size.height)
     )
 
-    # Build a grid covering all three distributions
-    # Use eigenvalues to set a reasonable extent (say ~3 std in principal directions)
+    # Grid covering all three distributions, extent ~3 std along the principal directions.
     def extent_from_cov(cov: np.ndarray, k: float = 4.5):
         w, V = np.linalg.eigh(cov)
         r = k * np.sqrt(np.max(w))
@@ -729,8 +728,7 @@ def fisher_divergence_gaussians_ref_expectation(
     Scand_inv = np.linalg.inv(Sigma_cand)
 
     A = Scand_inv - Sref_inv  # (d,d)
-    # mean term simplifies nicely:
-    # (A mu_ref + (Sref_inv mu_ref - Scand_inv mu_cand)) = Scand_inv (mu_ref - mu_cand)
+    # Mean term: A mu_ref + (Sref_inv mu_ref - Scand_inv mu_cand) = Scand_inv (mu_ref - mu_cand).
     diff_mu = (mu_ref - mu_cand).reshape(d, 1)
     mean_term = float(diff_mu.T @ (Scand_inv.T @ Scand_inv) @ diff_mu)
 

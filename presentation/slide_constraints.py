@@ -56,9 +56,7 @@ def _style_ax_3d(ax, plot_cfg):
 
 
 # ------------------------------------------------------------
-# Plot: hyperrectangle  C = [-1, 1]^3
-# Drawn as wireframe edges + ghost faces so the z-axis label
-# is never occluded.
+# Plot: hyperrectangle C = [-1, 1]^3 (wireframe + ghost faces so the z-label isn't occluded)
 # ------------------------------------------------------------
 def plot_hyperrectangle(plot_cfg, color, output_dir):
     fig, ax = _make_figure_3d(plot_cfg)

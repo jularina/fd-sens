@@ -203,19 +203,7 @@ def main(cfg: DictConfig) -> None:
     theta = np.linspace(-2.5, 6.5, 5000)
 
     # ---------------------------------------------------------------
-    # Three unimodal priors — all centered at 0, visually similar near
-    # the mode (peaks differ by <10%), but with progressively heavier
-    # tails via scale mixtures (same mean → always unimodal).
-    #
-    # At the likelihood location θ≈3.5 their densities differ by
-    # factors of ~6× (A→B) and ~15× (A→C), producing:
-    #   Posterior A: concentrated near ~2.4 (light tail resists data)
-    #   Posterior B: bimodal — uncertainty between prior and data
-    #   Posterior C: concentrated near ~3.4 (heavy tail follows data)
-    #
-    #   Prior A: N(0, 1.00)                          — light tail
-    #   Prior B: 0.93·N(0,0.98) + 0.07·N(0,4.5)     — moderate tail
-    #   Prior C: 0.80·N(0,0.92) + 0.20·N(0,4.5)     — heavy tail
+    # Three zero-centred unimodal priors, alike near the mode but with progressively heavier tails.
     # ---------------------------------------------------------------
     prior_A_unnorm = gaussian_pdf(theta, 0, 1.00)
     prior_B_unnorm = (
@@ -395,9 +383,7 @@ def main_2d() -> None:
     prior_C = prior_C_un / (np.sum(prior_C_un) * dx * dy)
 
     # --- likelihood ---
-    # 5 observations drawn around (2.5, 2.5) for display as crosses.
-    # Likelihood is modelled as N(θ | ȳ, σ_y²) — sigma_y is kept at its
-    # original value so the prior still meaningfully shapes each posterior.
+    # 5 observations around (2.5, 2.5); likelihood N(θ | ȳ, σ_y²) keeps the prior influential.
     rng = np.random.default_rng(42)
     sigma_y, n_obs = 0.7, 5
     obs = rng.normal(loc=[2.5, 2.5], scale=0.35, size=(n_obs, 2))

@@ -18,8 +18,7 @@ from paper.posteriordb.run_parametric import _to_z_space, _fd_z_posterior_gaussi
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-# Kilpisjarvi's composite prior decomposes into 7 independent scalar blocks:
-# alpha, beta1..beta5 ~ N(0, 5^2), and sigma ~ HalfCauchy(gamma).
+# Kilpisjarvi's prior has 7 scalar blocks: alpha, beta1..beta5 ~ N(0, 5^2), sigma ~ HalfCauchy(gamma).
 LATEX_NAMES = {
     "alpha": r"$\alpha$",
     "beta1": r"$\beta_1$",
@@ -31,8 +30,7 @@ LATEX_NAMES = {
 }
 COMPONENT_ORDER = ["alpha", "beta1", "beta2", "beta3", "beta4", "beta5", "sigma"]
 
-# Shared z-space parametric neighbourhood Gamma_{z,j} (identical for every component):
-# candidates N(mu_z, sigma_z^2) with mu_z in Z_MU_RANGE, sigma_z in Z_SIGMA_RANGE.
+# Shared z-space neighbourhood: N(mu_z, sigma_z^2), mu_z in Z_MU_RANGE, sigma_z in Z_SIGMA_RANGE.
 Z_MU_RANGE = (-0.4, 0.4)
 Z_SIGMA_RANGE = (0.8, 1.25)
 

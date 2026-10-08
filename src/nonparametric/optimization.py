@@ -70,10 +70,7 @@ class OptimisationNonparametricBase:
             A: np.ndarray,
             tol: float = 1e-10,
     ):
-        """
-        Check whether a symmetric matrix is positive definite (PD),
-        positive semidefinite (PSD), or not PSD, and return its numerical rank.
-        """
+        """Classify a symmetric matrix as PD, PSD or not PSD and return its numerical rank."""
         eigvals = np.linalg.eigvalsh(A)
         rank = int(np.sum(eigvals > tol))
 
@@ -88,10 +85,7 @@ class OptimisationNonparametricBase:
 
     @staticmethod
     def _pinv_psd(A: np.ndarray, rcond: float | None = None) -> np.ndarray:
-        """
-        Moore–Penrose pseudoinverse specialized for symmetric PSD/Hermitian:
-        eigen-decompose, invert eigenvalues above tolerance.
-        """
+        """Moore–Penrose pseudoinverse for symmetric PSD matrices, inverting eigenvalues above tolerance."""
         w, V = np.linalg.eigh(A)
 
         if rcond is None:
@@ -163,8 +157,7 @@ class OptimisationNonparametricBase:
                 A_c = A_c + shift * np.eye(self.d)
                 print(f"A_c shifted by {shift:.2e} to ensure PD for generalised eigenvalue solver.")
 
-            # scipy_eigh solves A v = ω A_c v and returns A_c-orthonormal eigenvectors
-            # in ascending eigenvalue order; the optimum is the last column.
+            # scipy_eigh returns A_c-orthonormal eigenvectors in ascending order; the optimum is the last.
             omega_vals, V = scipy_eigh(A, A_c)
 
             omega_star = float(omega_vals[-1])

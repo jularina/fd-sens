@@ -98,8 +98,7 @@ flags:
 
 playground:
   output_prefix: kilpisjarvi_param
-  # stage: all | optimise | plot_predictive (see run_parametric_predictive.sh),
-  # or timing | plot_timing for the optimiser runtime comparison (not part of "all").
+  # stage: all | optimise | plot_predictive, or timing | plot_timing (not part of "all").
   stage: all
   # Shared z-space parametric box: mu_z in [-z_mu_max, z_mu_max], sigma_z in [z_sigma_min, z_sigma_max]
   z_mu_max: 1.0

@@ -51,19 +51,14 @@ DATA = {
     "psbeta": 0.0333333333333333,
 }
 
-# x values in DATA are offset; actual years start at 1952
-# (3952 corresponds to 1952 in the PosteriorDB encoding)
+# x values in DATA are offset: 3952 corresponds to 1952 in the PosteriorDB encoding.
 X_OFFSET = 2000
 x_years = np.array(DATA["x"]) - X_OFFSET
 y = np.array(DATA["y"])
 y_centered = y - np.mean(y)
 
 
-# Shared z-space parametric neighbourhood (identical for every component): after the PIT z = Phi^{-1}(F_ref(x))
-# every reference prior is N(0, 1), and candidates are N(mu_z, sigma_z^2) with
-# mu_z in [-z_mu_max, z_mu_max], sigma_z in [z_sigma_min, z_sigma_max]. The box
-# is set by cfg.playground (overridable from the command line, see
-# run_parametric_predictive.sh); these are the fallback defaults.
+# Fallback z-space box (after the PIT every reference prior is N(0, 1)); cfg.playground overrides it.
 Z_MU_RANGE = (-1.0, 1.0)
 Z_SIGMA_RANGE = (0.5, 2.0)
 PARAM_Z_STAN_DIR = "outputs/paper/results/kilpisjarvi/param/stan"
@@ -495,13 +490,10 @@ def plot_posterior_predictive(cfg: DictConfig) -> None:
     K = sum(1 for name in model.prior_init.names if name.startswith("beta"))
 
     y_obs = model.observations.reshape(-1)   # y_centered[K:]
-    # y_centered is the full series (length T); y_obs is the target part (length T-K)
-    # Reconstruct y_full from the module-level y_centered
+    # y_centered is the full series (length T); y_obs is the target part (length T-K).
     y_full = y_centered
 
-    # Posterior under the z-scale parametric worst-case prior, sampled with
-    # Stan by run_parametric_predictive.sh from the Stan data main()
-    # exports. The R sampler saves post-warmup draws only, hence warmup=0.
+    # Stan posterior under the z-scale worst-case prior; the R sampler saves post-warmup draws only.
     mu_z_range, sigma_z_range = _z_box_from_cfg(cfg)
     corner_draws_path = os.path.join(
         get_original_cwd(), PARAM_Z_STAN_DIR, f"draws_param_z{_z_box_tag(mu_z_range, sigma_z_range)}.json"

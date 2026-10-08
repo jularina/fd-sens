@@ -407,10 +407,7 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
 
 
     def _halton_centers(self, X: np.ndarray, num_centers: int) -> np.ndarray:
-        """
-        Quasi-uniform centers via a scrambled Halton sequence mapped through
-        the empirical quantiles of X (dimension-wise).
-        """
+        """Quasi-uniform centers from a scrambled Halton sequence mapped through X's per-dimension quantiles."""
         d = X.shape[1]
         sampler = Halton(d=d, scramble=True, seed=27)
         u = sampler.random(n=num_centers)

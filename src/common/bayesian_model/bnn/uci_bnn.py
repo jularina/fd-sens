@@ -10,10 +10,7 @@ except ImportError:  # pragma: no cover
     get_original_cwd = None
 
 
-# The *_prior.p datasets in samples.pt that correspond to actual network
-# weights/biases of the 3-layer densenet of Fortuin et al. (2022). `noise_std`
-# is excluded: it is an observation-noise nuisance parameter, not a network
-# weight/bias covered by the per-node reference prior.
+# *_prior.p groups for the weights/biases of Fortuin et al.'s (2022) densenet; noise_std excluded.
 DEFAULT_PARAM_GROUPS: Tuple[str, ...] = (
     "net.module.0.weight_prior",
     "net.module.0.bias_prior",

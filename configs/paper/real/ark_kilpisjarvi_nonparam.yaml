@@ -86,13 +86,7 @@ model:
 
 optimize:
   nonparametric:
-    # Every component is first mapped to z = Phi^{-1}(F_ref(theta)) (see
-    # run_parametric.py's _to_z_space), so all 7 reference-
-    # prior marginals become exactly N(0, 1) regardless of the original
-    # family (Gaussian alpha/beta1..5, Half-Cauchy sigma). The same kernel
-    # family, number of centres, centre-selection procedure and lengthscale-
-    # selection rule below therefore apply identically and fairly to every
-    # component -- no per-group override needed.
+    # All 7 components are PIT-mapped to z ~ N(0, 1), so the kernel settings below apply to each.
     basis_funcs_type: MaternBasisFunction
     basis_funcs_kwargs:
       num_basis_functions: 300
