@@ -1,3 +1,14 @@
+# Hydra: no outputs/<date>/<time> run directory, .hydra/ subdir or log file.
+defaults:
+  - _self_
+  - override hydra/hydra_logging: disabled
+  - override hydra/job_logging: disabled
+
+hydra:
+  output_subdir: null
+  run:
+    dir: .
+
 data:
   base_prior:
     _target_: src.distributions.chi_squared.ChiSquared

@@ -1,3 +1,14 @@
+# Hydra: no outputs/<date>/<time> run directory, .hydra/ subdir or log file.
+defaults:
+  - _self_
+  - override hydra/hydra_logging: disabled
+  - override hydra/job_logging: disabled
+
+hydra:
+  output_subdir: null
+  run:
+    dir: .
+
 data:
   dataset: boston
   samples_path: /Users/arinaodv/Desktop/folder/study_phd/code/bnn_priors/results/exp_uci_boston_gaussian_heinit/1_20260909/samples.pt
