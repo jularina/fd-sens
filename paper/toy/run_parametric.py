@@ -1,4 +1,4 @@
-from src.parametric.corner_points import *
+from src.parametric.optimization import *
 from src.common.utils.files_operations import *
 from src.common.utils.distributions import DISTRIBUTION_MAP
 from src.common.bayesian_model.base import BayesianModel

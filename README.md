@@ -47,7 +47,7 @@ src/
     utils/            config loading, JSON I/O, distribution registry
   parametric/     FDsens: exponential-family candidate priors
     fisher.py         PosteriorFDParametric: FD as a convex quadratic form in the natural parameters
-    corner_points.py  corner enumeration, convex QP, black-box baseline, Gaussian-copula perturbations
+    optimization.py   corner enumeration, convex QP, black-box baseline, Gaussian-copula perturbations
   nonparametric/  FDsens+: kernel exponential family (sieve) neighbourhoods
     basis_functions.py  Matern/RBF bases and the BASIS_FUNCTIONS_REGISTRY
     fisher.py           prior/posterior FD quadratic forms in the basis coefficients
@@ -74,8 +74,8 @@ The abstract base [`BayesianModel`](src/common/bayesian_model/base.py) defines t
 
 ### 3. Optimisation
 
-- [`OptimizationCornerPointsUnivariateGaussian`](src/parametric/corner_points.py) / [`OptimizationCornerPointsMultivariateGaussian`](src/parametric/corner_points.py) — corner-point search over a box of Gaussian prior hyperparameters (toy experiments).
-- [`OptimizationCornerPointsCompositePrior`](src/parametric/corner_points.py) — composite independent-marginal priors: corner enumeration of the convex quadratic form (full or per component), convex QP for the infimum, black-box dual annealing baseline, and Gaussian-copula perturbations.
+- [`OptimizationCornerPointsUnivariateGaussian`](src/parametric/optimization.py) / [`OptimizationCornerPointsMultivariateGaussian`](src/parametric/optimization.py) — corner-point search over a box of Gaussian prior hyperparameters (toy experiments).
+- [`OptimizationCornerPointsCompositePrior`](src/parametric/optimization.py) — composite independent-marginal priors: corner enumeration of the convex quadratic form (full or per component), convex QP for the infimum, black-box dual annealing baseline, and Gaussian-copula perturbations.
 - [`OptimisationNonparametricBase`](src/nonparametric/optimization.py) — FDsens+ worst-case prior through the generalised eigenvalue problem.
 - [`compute_group_omega_max`](src/nonparametric/node_sensitivity.py) — FDsens+ per-parameter sensitivities for factorised priors.
 

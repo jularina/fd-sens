@@ -7,7 +7,7 @@ import time
 
 from src.common.utils.files_operations import load_plot_config
 from src.parametric.fisher import PosteriorFDParametric
-from src.parametric.corner_points import (
+from src.parametric.optimization import (
     OptimizationCornerPointsCompositePrior
 )
 from paper.sbi.plots_parametric import plot_gaussian_copula_grid_pair

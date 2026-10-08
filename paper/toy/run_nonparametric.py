@@ -1,7 +1,7 @@
 from src.nonparametric.optimization import OptimisationNonparametricBase
 from src.common.distributions.gaussian import Gaussian, MultivariateGaussian
 import numpy as np
-from src.parametric.corner_points import *
+from src.parametric.optimization import *
 from src.common.utils.files_operations import *
 from paper.toy.plots_nonparametric import *
 from src.nonparametric.fisher import PriorFDNonParametric
