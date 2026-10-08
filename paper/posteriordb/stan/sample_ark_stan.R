@@ -3,7 +3,7 @@ library(jsonlite)
 
 # Samples an AR(K) Stan model and saves its post-warmup draws as a JSON list
 # of chains ({"alpha": [...], "beta[1]": [...], ..., "sigma": [...]} per
-# chain), the format paper/posteriordb/run_ark_kilpisjarvi.py's
+# chain), the format paper/posteriordb/run_parametric.py's
 # _load_corner_draws_json / _stack_corner_chains read.
 #
 # Usage: Rscript sample_ark_stan.R <stan_file> <data_json> <out_json> [seed]

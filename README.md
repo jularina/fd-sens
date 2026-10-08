@@ -146,27 +146,28 @@ flags:
 ## Paper experiments
 
 The `paper/` directory contains the experiment scripts, organized into one folder per experimental setting.
-Scripts with a `_nonparam` suffix belong to the nonparametric (FDsens+) paper, which uses kernel exponential family
-neighbourhoods solved through a generalised eigenvalue problem; the others belong to the parametric (FDsens) paper.
+In each folder, `run_parametric.py` belongs to the parametric (FDsens) paper and `run_nonparametric.py` to the
+nonparametric (FDsens+) paper, which uses kernel exponential family neighbourhoods solved through a generalised
+eigenvalue problem.
 
 ### `paper/toy/`
 Toy Gaussian experiments and finite-sample complexity comparisons.
-- `run_toy_fisher.py` — sensitivity analysis on univariate/multivariate Gaussian models; generates FD sensitivity curves and comparison plots against the mean, KL and Wasserstein-2 measures.
-- `run_toy_fisher_nonparam.py` — FDsens+ on the Gaussian location model: worst-case priors across radii (1d/2d), runtimes, sensitivity vs number of centres, closed-form estimation errors, kernel and centre choices, and the parametric vs nonparametric comparison.
+- `run_parametric.py` — sensitivity analysis on univariate/multivariate Gaussian models; generates FD sensitivity curves and comparison plots against the mean, KL and Wasserstein-2 measures.
+- `run_nonparametric.py` — FDsens+ on the Gaussian location model: worst-case priors across radii (1d/2d), runtimes, sensitivity vs number of centres, closed-form estimation errors, kernel and centre choices, and the parametric vs nonparametric comparison.
 
 ### `paper/ising/`
 Generalised Bayesian inference for the Ising model with pseudolikelihood and discrete Fisher divergence losses.
-- `run_ising_fisher.py` — `main()` computes FD learning-rate sensitivity grids for the three learning-rate calibration methods; `create_combined_plots()` produces the paper figures.
+- `run_parametric.py` — `main()` computes FD learning-rate sensitivity grids for the three learning-rate calibration methods; `create_combined_plots()` produces the paper figures.
 
 ### `paper/posteriordb/`
 Real-data experiments using models from the PosteriorDB benchmark.
-- `run_ark_kilpisjarvi.py` — z-scale prior sensitivity and posterior predictives for the Kilpisjarvi AR(5) model; run end to end with `run_kilpisjarvi_param_predictive.sh` (requires R with `rstan`). The optimiser runtime comparison (full corner enumeration, per-component decomposition, black-box dual annealing) runs separately with `playground.stage=timing` and is replotted from the saved timings with `playground.stage=plot_timing`.
-- `run_ark_kilpisjarvi_nonparam.py` — FDsens vs FDsens+ per-parameter sensitivity shares for the Kilpisjarvi AR(5) model in z-scale.
+- `run_parametric.py` — z-scale prior sensitivity and posterior predictives for the Kilpisjarvi AR(5) model; run end to end with `run_parametric_predictive.sh` (requires R with `rstan`). The optimiser runtime comparison (full corner enumeration, per-component decomposition, black-box dual annealing) runs separately with `playground.stage=timing` and is replotted from the saved timings with `playground.stage=plot_timing`.
+- `run_nonparametric.py` — FDsens vs FDsens+ per-parameter sensitivity shares for the Kilpisjarvi AR(5) model in z-scale.
 
 ### `paper/sbi/`
 Experiments on the Turin channel model fitted via simulation-based inference (SBI).
-- `run_turin_fisher.py` — FD sensitivity to Gaussian-copula prior dependence for the Turin SBI model.
+- `run_parametric.py` — FD sensitivity to Gaussian-copula prior dependence for the Turin SBI model.
 
 ### `paper/bnn/`
 Bayesian neural networks on UCI regression datasets (posterior samples from the `bnn_priors` code of Fortuin et al., 2022).
-- `run_bnn_uci_fisher_nonparam.py` — per-parameter FDsens+ sensitivity: Boston weight heatmap, all-dataset runs, and the layer-wise sensitivity table.
+- `run_nonparametric.py` — per-parameter FDsens+ sensitivity: Boston weight heatmap, all-dataset runs, and the layer-wise sensitivity table.

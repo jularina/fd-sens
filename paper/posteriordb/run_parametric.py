@@ -63,7 +63,7 @@ y_centered = y - np.mean(y)
 # every reference prior is N(0, 1), and candidates are N(mu_z, sigma_z^2) with
 # mu_z in [-z_mu_max, z_mu_max], sigma_z in [z_sigma_min, z_sigma_max]. The box
 # is set by cfg.playground (overridable from the command line, see
-# run_kilpisjarvi_param_predictive.sh); these are the fallback defaults.
+# run_parametric_predictive.sh); these are the fallback defaults.
 Z_MU_RANGE = (-1.0, 1.0)
 Z_SIGMA_RANGE = (0.5, 2.0)
 PARAM_Z_STAN_DIR = "outputs/paper/results/kilpisjarvi/param/stan"
@@ -146,7 +146,7 @@ def compute_z_scale_parametric_sensitivity(
     """
     Per component, the posterior-based FD_z sup over the shared Gaussian-in-z
     box (attained at one of its 4 vertices) -- same quantity as
-    run_ark_kilpisjarvi_nonparam.compute_parametric_sensitivity, computed from the parametric model's own posterior draws (columns alpha,
+    run_nonparametric.compute_parametric_sensitivity, computed from the parametric model's own posterior draws (columns alpha,
     beta1..K, sigma, matching base_prior's component order).
 
     Returns {name: (mu_z, sigma_z, fd_z_sup)}.
@@ -548,7 +548,7 @@ def plot_posterior_predictive(cfg: DictConfig) -> None:
     y_full = y_centered
 
     # Posterior under the z-scale parametric worst-case prior, sampled with
-    # Stan by run_kilpisjarvi_param_predictive.sh from the Stan data main()
+    # Stan by run_parametric_predictive.sh from the Stan data main()
     # exports. The R sampler saves post-warmup draws only, hence warmup=0.
     mu_z_range, sigma_z_range = _z_box_from_cfg(cfg)
     corner_draws_path = os.path.join(

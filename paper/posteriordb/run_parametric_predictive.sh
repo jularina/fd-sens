@@ -11,7 +11,7 @@
 #      kilpisjarvi-acf-comparison.pdf.
 #
 # Box via positional args (defaults = paper box, as in configs/paper/real/ark_kilpisjarvi.yaml):
-#   bash paper/posteriordb/run_kilpisjarvi_param_predictive.sh [MU_Z_MAX SIGMA_Z_MIN SIGMA_Z_MAX]
+#   bash paper/posteriordb/run_parametric_predictive.sh [MU_Z_MAX SIGMA_Z_MIN SIGMA_Z_MAX]
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -20,7 +20,7 @@ cd "$REPO_ROOT"
 PYTHON="${PYTHON:-$REPO_ROOT/.venv/bin/python}"
 export PYTHONPATH="$REPO_ROOT:$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
-SCRIPT="paper/posteriordb/run_ark_kilpisjarvi.py"
+SCRIPT="paper/posteriordb/run_parametric.py"
 STAN_DIR="paper/posteriordb/stan"
 OUT_DIR="outputs/paper/results/kilpisjarvi/param/stan"
 STAN_SEED=27
@@ -29,7 +29,7 @@ MU_Z_MAX="${1:-1}"
 SIGMA_Z_MIN="${2:-0.5}"
 SIGMA_Z_MAX="${3:-2}"
 BOX_ARGS=(playground.z_mu_max="$MU_Z_MAX" playground.z_sigma_min="$SIGMA_Z_MIN" playground.z_sigma_max="$SIGMA_Z_MAX")
-# Same as _z_box_tag in run_ark_kilpisjarvi.py.
+# Same as _z_box_tag in run_parametric.py.
 TAG="$("$PYTHON" -c "import sys; m, a, b = map(float, sys.argv[1:]); print(f'_mu{m:g}_sig{a:g}-{b:g}')" \
   "$MU_Z_MAX" "$SIGMA_Z_MIN" "$SIGMA_Z_MAX")"
 
