@@ -3,7 +3,7 @@ from src.common.distributions.gaussian import Gaussian, MultivariateGaussian
 import numpy as np
 from src.parametric.corner_points import *
 from src.common.utils.files_operations import *
-from src.nonparametric.plots.toy import *
+from paper.toy.plots_nonparametric import *
 from src.nonparametric.fisher import PriorFDNonParametric
 from src.parametric.fisher import PosteriorFDParametric
 from src.nonparametric.fisher import PosteriorFDNonParametric

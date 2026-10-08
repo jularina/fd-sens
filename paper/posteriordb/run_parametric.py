@@ -10,7 +10,7 @@ import json
 from src.common.utils.files_operations import load_plot_config, save_to_serializable_json
 from src.parametric.fisher import PosteriorFDParametric
 from src.parametric.corner_points import OptimizationCornerPointsCompositePrior
-from src.parametric.plots.posteriordb import (
+from paper.posteriordb.plots_parametric import (
     plot_acf_comparison,
     plot_complexity_bar,
     plot_component_sensitivity_bar,

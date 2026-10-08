@@ -2,7 +2,7 @@ from src.parametric.corner_points import *
 from src.common.utils.files_operations import *
 from src.common.utils.distributions import DISTRIBUTION_MAP
 from src.common.bayesian_model.base import BayesianModel
-from src.parametric.plots.toy import *
+from paper.toy.plots_parametric import *
 from src.parametric.fisher import PosteriorFDParametric
 
 import warnings

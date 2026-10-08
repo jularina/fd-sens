@@ -44,20 +44,20 @@ src/
     distributions/    priors with scores and exponential-family decompositions
     losses/           likelihoods / generalised-Bayes losses and their gradients
     fisher.py         PosteriorFDBase: reference-posterior samples, scores and quadratic-form helpers
-    plots.py          shared matplotlib style and saving
     utils/            config loading, JSON I/O, distribution registry
   parametric/     FDsens: exponential-family candidate priors
     fisher.py         PosteriorFDParametric: FD as a convex quadratic form in the natural parameters
     corner_points.py  corner enumeration, convex QP, black-box baseline, Gaussian-copula perturbations
-    plots/            toy, Ising, posteriordb and SBI figures
   nonparametric/  FDsens+: kernel exponential family (sieve) neighbourhoods
     basis_functions.py  Matern/RBF bases and the BASIS_FUNCTIONS_REGISTRY
     fisher.py           prior/posterior FD quadratic forms in the basis coefficients
     optimization.py     worst case via the generalised eigenvalue problem
     node_sensitivity.py per-parameter sensitivity for factorised priors (BNN, Kilpisjarvi)
     loaders.py          per-parameter view of the Kilpisjarvi model
-    plots/              toy, BNN and illustrative figures
 ```
+
+Plotting lives with the experiments in `paper/`: each folder has `plots_parametric.py` / `plots_nonparametric.py`
+next to its `run_*.py`, and `paper/plot_utils.py` holds the shared matplotlib style.
 
 ### 1. Bayesian model — `src/common/bayesian_model/`
 
@@ -171,3 +171,6 @@ Experiments on the Turin channel model fitted via simulation-based inference (SB
 ### `paper/bnn/`
 Bayesian neural networks on UCI regression datasets (posterior samples from the `bnn_priors` code of Fortuin et al., 2022).
 - `run_nonparametric.py` — per-parameter FDsens+ sensitivity: Boston weight heatmap, all-dataset runs, and the layer-wise sensitivity table.
+
+### `paper/illustrative/`
+- `run_nonparametric.py` — schematic of the sieve approximation and the Monte Carlo constraint estimate (`sieve_and_mc.pdf`); run with `python -m paper.illustrative.run_nonparametric`.

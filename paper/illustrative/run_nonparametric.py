@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 from src.common.utils.files_operations import load_plot_config
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _radial_profile(theta, harmonics, seed, mean=1.0):

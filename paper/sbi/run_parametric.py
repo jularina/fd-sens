@@ -10,7 +10,7 @@ from src.parametric.fisher import PosteriorFDParametric
 from src.parametric.corner_points import (
     OptimizationCornerPointsCompositePrior
 )
-from src.parametric.plots.toy import plot_gaussian_copula_grid_pair
+from paper.sbi.plots_parametric import plot_gaussian_copula_grid_pair
 
 warnings.filterwarnings("ignore", category=UserWarning, module="hydra._internal.hydra")
 

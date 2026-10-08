@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator, ScalarFormatter
 from typing import Dict, List
-from src.common.plots import apply_plot_rc, save_fig
+from paper.plot_utils import apply_plot_rc, save_fig
 
 
 def _palette(plot_cfg, n: int) -> List[str]:

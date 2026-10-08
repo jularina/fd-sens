@@ -7,7 +7,7 @@ from hydra.utils import instantiate, get_original_cwd
 from omegaconf import DictConfig
 
 from src.common.utils.files_operations import load_plot_config
-from src.parametric.plots.ising import *
+from paper.ising.plots_parametric import *
 from src.parametric.fisher import PosteriorFDParametric
 from src.common.losses.ising.ising_gradients import IsingGradients
 

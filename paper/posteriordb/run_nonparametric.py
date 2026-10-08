@@ -13,7 +13,7 @@ from omegaconf import DictConfig, OmegaConf
 from src.nonparametric.basis_functions import BASIS_FUNCTIONS_REGISTRY
 from src.common.utils.files_operations import load_plot_config
 from src.nonparametric.node_sensitivity import compute_group_omega_max
-from src.common.plots import apply_plot_rc, save_fig
+from paper.plot_utils import apply_plot_rc, save_fig
 from paper.posteriordb.run_parametric import _to_z_space, _fd_z_posterior_gaussian_in_z
 
 warnings.filterwarnings("ignore", category=UserWarning)

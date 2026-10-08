@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Dict, Tuple, List
 from src.common.utils.distributions import DISTRIBUTION_MAP as _DIST_MAP_EXTPROJ
-from src.common.plots import apply_plot_rc, save_fig
+from paper.plot_utils import apply_plot_rc, save_fig
 
 
 def _make_pdf(family: str, params: Dict[str, float]):

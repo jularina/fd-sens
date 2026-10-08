@@ -1,4 +1,4 @@
-"""Plot style helpers shared by the parametric and nonparametric figures."""
+"""Plot style helpers shared by the paper figures."""
 import os
 
 import matplotlib.pyplot as plt
@@ -20,3 +20,20 @@ def save_fig(fig, output_dir: str, filename: str, plot_cfg):
     path = os.path.join(output_dir, filename)
     fig.savefig(path, format=filename.split(".")[-1], bbox_inches="tight")
     plt.close(fig)
+
+
+def make_figure(plot_cfg):
+    fig, ax = plt.subplots(
+        figsize=(
+            plot_cfg.plot.figure.size.width,
+            plot_cfg.plot.figure.size.height,
+        )
+    )
+
+    fig.subplots_adjust(
+        left=0.28,
+        right=0.99,
+        bottom=0.24,
+        top=0.99,
+    )
+    return fig, ax
