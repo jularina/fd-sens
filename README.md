@@ -1,6 +1,6 @@
-# fd-sens (Python)
+# fd-sens
 
-Fisher-divergence (FD) global sensitivity analysis for sampling-based Bayesian inference, in Python.
+Fisher-divergence (FD) global sensitivity analysis for sampling-based Bayesian inference.
 
 - **FDsens** (parametric): sensitivity to prior hyperparameters within an exponential family, or to the learning rate of
   a generalised posterior. Methodology: [*A computationally-tractable measure of global sensitivity for sampling-based
@@ -8,8 +8,7 @@ Fisher-divergence (FD) global sensitivity analysis for sampling-based Bayesian i
 - **FDsens+** (nonparametric): sensitivity over an FD ball of priors around the reference prior, approximated by a kernel
   exponential family sieve and solved exactly through a generalised eigenvalue problem.
 
-Both only need samples from the reference posterior and score (gradient-of-log-density) evaluations: no refitting per
-candidate prior. See [`GETTING_STARTED.md`](GETTING_STARTED.md) for the method and [`configs/README.md`](configs/README.md)
+See [`GETTING_STARTED.md`](GETTING_STARTED.md) for the method and [`configs/README.md`](configs/README.md)
 for writing configs. An R/Stan implementation of FDsens is available at [fd-sens-r](https://github.com/jularina/fd-sens-r).
 
 ## Installation
@@ -22,9 +21,6 @@ git clone https://github.com/jularina/fd-sens.git
 cd fd-sens
 pdm install            # add -G test to also install pytest
 ```
-
-All commands below are run from the repository root with the root on the Python path, e.g.
-`PYTHONPATH=. pdm run python examples/parametric_prior_sensitivity.py`.
 
 ## Quickstart (Gaussian location model)
 
