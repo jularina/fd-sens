@@ -10,10 +10,8 @@
 #   3. kilpisjarvi-posterior-predictive-{ref,corner}.pdf and
 #      kilpisjarvi-acf-comparison.pdf.
 #
-# Box via positional args (defaults = configs/paper/real/ark_kilpisjarvi.yaml):
+# Box via positional args (defaults = paper box, as in configs/paper/real/ark_kilpisjarvi.yaml):
 #   bash tests/posteriordb/run_kilpisjarvi_param_predictive.sh [MU_Z_MAX SIGMA_Z_MIN SIGMA_Z_MAX]
-# e.g.
-#   bash tests/posteriordb/run_kilpisjarvi_param_predictive.sh 2 0.25 4
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

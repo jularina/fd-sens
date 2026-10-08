@@ -1,22 +1,20 @@
 import os
 import numpy as np
-import matplotlib.pyplot as plt
-
-from src.utils.files_operations import load_plot_config
-from src.plots.paper.posterior_db_paper_funcs import _apply_plot_rc, _save_fig
+from scipy.stats import norm as scipy_norm
 import hydra
 from hydra.utils import instantiate, get_original_cwd
 from omegaconf import DictConfig
 import json
 
-from src.discrepancies.posterior_fisher import PosteriorFDParametric as PosteriorFDBase
-from src.plots.paper.posterior_db_paper_funcs import *
-from src.optimization.corner_points_fisher import (
-    OptimizationCornerPointsCompositePrior
+from src.utils.files_operations import load_plot_config, save_to_serializable_json
+from src.plots.paper.posterior_db_paper_funcs import (
+    plot_acf_comparison,
+    plot_component_sensitivity_bar,
+    plot_posterior_predictive_with_data,
+    plot_priors_z_scale_one_panel,
 )
-from src.plots.paper.sbi_paper_funcs import *
 from src.distributions.gaussian import Gaussian
-from src.distributions.inverse_gamma import InverseGamma
+from src.distributions.cauchy import HalfCauchy
 
 # ---------------------------------------------------------------------------
 # Kilpisjarvi dataset
@@ -61,85 +59,6 @@ def _gaussian_from_eta(e1, e2):
     return {"mu": float(e1 * sigma ** 2), "sigma": sigma}
 
 
-def _inv_gamma_from_eta(e1, e2):
-    return {"alpha": float(-e1 - 1.0), "beta": float(-e2)}
-
-
-def _corner_prior_dists_from_eta(eta: np.ndarray, K: int) -> dict:
-    """
-    Rebuilds the per-component candidate prior distributions (alpha, beta1..K
-    Gaussian; sigma InverseGamma) implied by a natural-parameter vector eta
-    -- e.g. eta_star, the FD-optimal worst-case corner found within the
-    declared box (cfg.fd.optimize.prior.Composite) -- using the same block
-    layout as main(): [alpha(0:2), beta1(2:4), ..., betaK, sigma(-2:)].
-    """
-    dists = {"alpha": Gaussian(**_gaussian_from_eta(*eta[0:2]))}
-    for k in range(K):
-        dists[f"beta{k + 1}"] = Gaussian(**_gaussian_from_eta(*eta[2 * (k + 1):2 * (k + 1) + 2]))
-    dists["sigma"] = InverseGamma(**_inv_gamma_from_eta(*eta[2 * (K + 1):2 * (K + 1) + 2]))
-    return dists
-
-
-def _param_reweight_posterior(
-    base_prior_dists: dict,
-    candidate_prior_dists: dict,
-    posterior_full: np.ndarray,
-    K: int,
-    rng: np.random.Generator,
-) -> tuple[np.ndarray, float, float]:
-    """
-    Self-normalised importance-sample (SNIS) the reference posterior draws
-    into a resample representing the posterior under the FD-optimal
-    worst-case corner prior -- the parametric analogue of the nonparametric
-    script's _kef_reweight_posterior. Since posterior(theta) propto
-    prior(theta) * likelihood(theta) and the likelihood is unchanged, the
-    importance weights depend only on the candidate/base prior density
-    ratio, available here in closed form (Gaussian/InverseGamma log_pdf)
-    because the parametric families are conjugate -- no re-sampling or
-    re-optimisation needed, unlike the nonparametric KEF case.
-
-    Returns (resampled draws, ESS, ESS fraction).
-    """
-    names_in_order = ["alpha"] + [f"beta{k + 1}" for k in range(K)] + ["sigma"]
-    log_w = np.zeros(posterior_full.shape[0])
-    for idx, name in enumerate(names_in_order):
-        theta_col = posterior_full[:, idx]
-        log_w += (
-            np.asarray(candidate_prior_dists[name].log_pdf(theta_col)).reshape(-1)
-            - np.asarray(base_prior_dists[name].log_pdf(theta_col)).reshape(-1)
-        )
-    log_w -= log_w.max()
-    w = np.exp(log_w)
-    w /= w.sum()
-    ess = 1.0 / np.sum(w ** 2)
-    ess_frac = ess / len(w)
-
-    resample_idx = rng.choice(len(w), size=len(w), replace=True, p=w)
-    return posterior_full[resample_idx], ess, ess_frac
-
-
-def plot_time_series(output_dir: str, plot_cfg, prefix: str = "kilpisjarvi") -> None:
-    _apply_plot_rc(plot_cfg)
-
-    fig, ax = plt.subplots(
-        figsize=(plot_cfg.plot.figure.size.width, plot_cfg.plot.figure.size.height),
-        dpi=plot_cfg.plot.figure.dpi,
-    )
-
-    color = plot_cfg.plot.color_palette.colors[0]
-    ax.plot(x_years, y, color=color, linewidth=1.0, zorder=2)
-    ax.scatter(x_years, y, color=color, s=14, zorder=3)
-
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
-    ax.set_xlabel("Year")
-    ax.set_ylabel("Temperature (°C)")
-
-    _save_fig(fig, output_dir, f"{prefix}_time_series.pdf", plot_cfg)
-    print(f"Saved plot to {os.path.join(output_dir, prefix + '_time_series.pdf')}")
-
-
 # Shared z-space parametric neighbourhood (identical for every component), as
 # in run_ark_kilpisjarvi_param_nonparam.py: after the PIT z = Phi^{-1}(F_ref(x))
 # every reference prior is N(0, 1), and candidates are N(mu_z, sigma_z^2) with
@@ -149,6 +68,35 @@ def plot_time_series(output_dir: str, plot_cfg, prefix: str = "kilpisjarvi") -> 
 Z_MU_RANGE = (-1.0, 1.0)
 Z_SIGMA_RANGE = (0.5, 2.0)
 PARAM_Z_STAN_DIR = "outputs/paper/results/kilpisjarvi/param/stan"
+_PIT_EPS = 1e-8
+
+
+def _to_z_space(prior_dist, x: np.ndarray) -> np.ndarray:
+    """
+    Probability-integral transform z = Phi^{-1}(F_ref(x)), so that z ~ N(0, 1) under the reference prior.
+    Gaussian components use the closed form (x - mu) / sigma; Half-Cauchy uses its CDF, clipped for stability.
+    """
+    x = np.asarray(x, dtype=float)
+    if isinstance(prior_dist, Gaussian):
+        return (x - prior_dist.mu) / prior_dist.sigma
+    if isinstance(prior_dist, HalfCauchy):
+        u = (2.0 / np.pi) * np.arctan(np.maximum(x, 0.0) / prior_dist.gamma)
+        u = np.clip(u, _PIT_EPS, 1.0 - _PIT_EPS)
+        return scipy_norm.ppf(u)
+    raise NotImplementedError(f"No reference-prior CDF implemented for {type(prior_dist).__name__}.")
+
+
+def _fd_z_posterior_gaussian_in_z(
+    mu_z_cand: float, sigma_z_cand: float, z_post_mean: float, z_post_meansq: float,
+) -> float:
+    """
+    Exact E_{z~posterior_z}[(score_ref_z(z) - score_cand_z(z))^2] for a reference N(0, 1) and candidate
+    N(mu_z_cand, sigma_z_cand^2). The score difference a*z + b is affine in z, so the expectation only needs
+    the posterior's first two z-moments.
+    """
+    a = 1.0 / sigma_z_cand ** 2 - 1.0
+    b = -mu_z_cand / sigma_z_cand ** 2
+    return float(a ** 2 * z_post_meansq + 2.0 * a * b * z_post_mean + b ** 2)
 
 
 def _z_box_from_cfg(cfg) -> tuple[tuple[float, float], tuple[float, float]]:
@@ -173,9 +121,6 @@ def _export_param_z_stan_data(worst: dict, base_prior, y_full: np.ndarray, K: in
     per component, z_j ~ N(mu_z_j, sigma_z_j^2) pushed back through the
     reference PIT.
     """
-    from src.utils.files_operations import save_to_serializable_json
-    from tests.posteriordb.run_ark_kilpisjarvi_nonparam import _PIT_EPS
-
     ref = dict(zip(base_prior.names, base_prior.components))
     names = list(base_prior.names)
     y_full = np.asarray(y_full, dtype=float).reshape(-1)
@@ -209,9 +154,6 @@ def compute_z_scale_parametric_sensitivity(
 
     Returns {name: (mu_z, sigma_z, fd_z_sup)}.
     """
-    # Local import: run_ark_kilpisjarvi_nonparam imports from this module.
-    from tests.posteriordb.run_ark_kilpisjarvi_nonparam import _to_z_space, _fd_z_posterior_gaussian_in_z
-
     corners = [(mu, sig) for mu in mu_z_range for sig in sigma_z_range]
     worst = {}
     for idx, (name, ref) in enumerate(zip(base_prior.names, base_prior.components)):
@@ -593,143 +535,6 @@ def plot_posterior_predictive(cfg: DictConfig) -> None:
     )
 
 
-@hydra.main(version_base="1.1", config_path="../../configs/paper/real/", config_name="ark_kilpisjarvi")
-def plot_posterior_predictive_optimised(cfg: DictConfig) -> None:
-    """
-    Posterior predictive check under the FD-optimal worst-case corner prior,
-    i.e. eta_star as actually found by OptimizationCornerPointsCompositePrior
-    within the declared box (cfg.fd.optimize.prior.Composite) -- unlike
-    plot_posterior_predictive() above, which compares against
-    kilpisjarvi-reference-draws-corner.json, a fixed posterior obtained by
-    re-running the sampler under cfg.data.candidate_prior. That candidate
-    prior is a hand-picked, unconstrained stress-test prior with no relation
-    to eta_star or to the box/eta ranges the sensitivity numbers are
-    actually computed from, so it isn't a fair "worst case within the
-    stated neighbourhood" comparison.
-
-    Here, since alpha/beta1..5/sigma are conjugate exponential families, the
-    posterior under eta_star can be obtained from the reference posterior by
-    closed-form self-normalised importance sampling (SNIS) on the prior
-    density ratio candidate/base -- exactly mirroring
-    run_ark_kilpisjarvi_nonparam.py's _kef_reweight_posterior, but exact
-    (no basis-function approximation) since these are conjugate families.
-    """
-    prefix = cfg.playground.get("output_prefix", "kilpisjarvi_param")
-    plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
-    output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
-    plot_cfg = load_plot_config(plot_config_path)
-
-    model = instantiate(cfg.model, data_config=cfg.data)
-    K = sum(1 for name in model.prior_init.names if name.startswith("beta"))
-
-    fisher_estimator = PosteriorFDBase(model=model)
-    optimizer = OptimizationCornerPointsCompositePrior(
-        fisher_estimator,
-        cfg.fd.optimize.prior.Composite,
-        cfg.fd.optimize.loss.GaussianARLogLikelihood,
-    )
-    qf_corners, eta_star = optimizer.evaluate_all_prior_corners()
-    print(f"FD-optimal worst-case corner eta_star (within declared box): {eta_star}")
-
-    base_prior = instantiate(cfg.data.base_prior)
-    base_prior_dists = dict(zip(base_prior.names, base_prior.components))
-    candidate_prior_dists = _corner_prior_dists_from_eta(eta_star, K)
-
-    ref_samples = model.posterior_samples_init  # (N, 2+K): alpha, beta[1..K], sigma
-    y_full = y_centered
-    y_mean_offset = float(np.mean(y))
-    x_pred_years = x_years[K:]
-    mode, seed = "one_step", 27
-
-    rng = np.random.default_rng(int(cfg.data.get("seed", 0)))
-    corner_samples_is, ess, ess_frac = _param_reweight_posterior(
-        base_prior_dists, candidate_prior_dists, ref_samples, K, rng
-    )
-    print(
-        f"SNIS reweighting to eta_star posterior: ESS={ess:.1f}/{len(ref_samples)} "
-        f"({100.0 * ess_frac:.1f}%)"
-        + ("  [LOW ESS -- reweighting unreliable]" if ess_frac < 0.05 else "")
-    )
-
-    print_predictive_variance_decomposition(y_full, ref_samples, K, name="reference posterior")
-    print_predictive_variance_decomposition(
-        y_full, corner_samples_is, K, name="FD-optimal worst-case posterior (SNIS-reweighted)"
-    )
-
-    y_rep_ref = _ar_posterior_predictive(y_full=y_full, samples=ref_samples, K=K, mode=mode, seed=seed)
-    ref_mean, ref_lo, ref_hi = _summarise_bands(y_rep_ref)
-
-    y_rep_corner = _ar_posterior_predictive(y_full=y_full, samples=corner_samples_is, K=K, mode=mode, seed=seed)
-    corner_mean, corner_lo, corner_hi = _summarise_bands(y_rep_corner)
-
-    all_values = (
-        list(y)
-        + list(ref_mean + y_mean_offset)
-        + list(ref_lo + y_mean_offset)
-        + list(ref_hi + y_mean_offset)
-        + list(corner_mean + y_mean_offset)
-        + list(corner_lo + y_mean_offset)
-        + list(corner_hi + y_mean_offset)
-    )
-    global_ylim = (min(all_values), max(all_values))
-
-    plot_posterior_predictive_with_data(
-        plot_cfg=plot_cfg,
-        output_dir=output_dir,
-        x_years=x_years,
-        y_uncentered=y,
-        x_pred_years=x_pred_years,
-        pred_mean=ref_mean + y_mean_offset,
-        pred_lo=ref_lo + y_mean_offset,
-        pred_hi=ref_hi + y_mean_offset,
-        pred_label=r"$\tilde{x}_{\mathrm{ref}} \pm 95\%$ CI",
-        filename=f"{prefix}_posterior_predictive_ref_optimised.pdf",
-        pred_color="#7c397d",
-        ylim=global_ylim,
-    )
-    plot_posterior_predictive_with_data(
-        plot_cfg=plot_cfg,
-        output_dir=output_dir,
-        x_years=x_years,
-        y_uncentered=y,
-        x_pred_years=x_pred_years,
-        pred_mean=corner_mean + y_mean_offset,
-        pred_lo=corner_lo + y_mean_offset,
-        pred_hi=corner_hi + y_mean_offset,
-        pred_label=r"$\tilde{x} \pm 95\%$ CI",
-        filename=f"{prefix}_posterior_predictive_corner_optimised.pdf",
-        pred_color="#5b9bd5",
-        ylim=global_ylim,
-        show_ylabel=False,
-    )
-
-    max_lag = 5
-    acf_ref = _mean_acf(y_rep_ref, max_lag)
-    acf_corner = _mean_acf(y_rep_corner, max_lag)
-
-    plot_acf_comparison(
-        plot_cfg=plot_cfg,
-        output_dir=output_dir,
-        acf_ref=acf_ref,
-        acf_corner=acf_corner,
-        ref_color="#7c397d",
-        corner_color="#5b9bd5",
-        ref_label=r"$\tilde{x}_{\mathrm{ref}}$",
-        corner_label=r"$\tilde{x}$",
-        filename=f"{prefix}_acf_comparison_optimised.pdf",
-    )
-
-    print(f"Saved optimised posterior-predictive plots to {output_dir}")
-
-
 if __name__ == "__main__":
     main()
     plot_posterior_predictive()
-    # plot_posterior_predictive_optimised()
-
-    # repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    # plot_config_path = os.path.join(repo_root, "configs/plots/overleaf_plots_settings.yaml")
-    # output_dir = os.path.join(repo_root, "outputs/paper/plots/fisher/kilpisjarvi")
-    #
-    # plot_cfg = load_plot_config(plot_config_path)
-    # plot_time_series(output_dir=output_dir, plot_cfg=plot_cfg)
