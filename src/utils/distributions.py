@@ -3,7 +3,6 @@ from src.distributions.log_normal import LogNormal
 from src.distributions.cauchy import Cauchy, HalfCauchy
 from src.distributions.uniform import Uniform
 from src.distributions.gamma import Gamma
-from src.distributions.laplace import Laplace
 from src.distributions.chi_squared import ChiSquared
 from src.distributions.beta import Beta
 from src.distributions.inverse_gamma import InverseGamma
@@ -16,7 +15,6 @@ DISTRIBUTION_MAP = {
     "HalfCauchy": HalfCauchy,
     "Uniform": Uniform,
     "Gamma": Gamma,
-    "Laplace": Laplace,
     "ChiSquared": ChiSquared,
     "Beta": Beta,
     "InverseGamma": InverseGamma,

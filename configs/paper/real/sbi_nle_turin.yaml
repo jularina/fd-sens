@@ -184,11 +184,6 @@ model:
   _target_: src.bayesian_model.sbi.turin.TurinBayesianModel
 
 fd:
-  kernel:
-    _target_: src.kernels.inverse_multiquadric.InverseMultivariateMultiquadricKernel
-    lengthscale: null
-    alpha: 0.5
-    heuristic: True
   optimize:
     prior:
       Composite:

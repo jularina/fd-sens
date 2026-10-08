@@ -18,59 +18,10 @@ data:
   observations_num: null
   posterior_samples_num: null
   prior_samples_num: null
-  loss_type: pseudolikelihood
-  beta_refs:
-    matsubara: 0.6
-    syring: 0.279
-    lyddon: 0.635
-#  loss_type: dfd
-#  beta_refs:
-#    matsubara: 0.12
-#    syring: 0.018
-#    lyddon: 0.017854
-#  loss_type: ksd
-#  beta_refs:
-#    matsubara: 0.39
-#    syring: 0.33
-#    lyddon: 2.34
 
 model:
   _target_: src.bayesian_model.ising.ising.IsingBayesianModel
 
-fd:
-  kernel:
-    _target_: src.kernels.inverse_multiquadric.InverseMultivariateMultiquadricKernel
-    lengthscale: null
-    alpha: 0.5
-    heuristic: True
-  optimize:
-    prior:
-      Gamma:
-        parameters_box_range:
-              ranges:
-                alpha: [1.0, 3.0]
-                theta: [1.5, 2.5]
-              nums:
-                alpha: 26
-                theta: 11
-
-      nonparametric:
-        basis_funcs_type:  RBFBasisFunction # PolynomialBasisFunction # SigmoidBasisFunction  # RBFBasisFunction
-        basis_funcs_kwargs: { "num_basis_functions": 10, "method": "farthest", "lengthscale": null, "scale_multiplier": 1} # polynomial {"degree":3}  # sigmoid { "num_basis_functions": 15, "method": "farthest", "scale":null, "scale_multiplier": 1}   # for rbf { "num_basis_functions": 15, "method": "farthest", "lengthscale": null, "scale_multiplier": 1}
-        radius_lower_bound: null
-        scale_samples: False
-
-    loss:
-      IsingLikelihoodGivenGrads:
-        parameters_box_range:
-          ranges:
-            lr: [ 0.01, 2.5 ]
-          nums:
-            lr: 31
-
 flags:
   plots:
     output_dir: outputs/paper/plots/fisher/ising
-
-playground:
-  output_prefix: ising

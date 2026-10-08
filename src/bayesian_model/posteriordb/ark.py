@@ -1,15 +1,9 @@
-import copy
 import warnings
 from abc import ABC
 from typing import Any, Dict, List, Tuple
 import numpy as np
 import pandas as pd
 from posteriordb import PosteriorDatabase
-
-from src.distributions.composite import CompositeProduct
-from src.utils.distributions import DISTRIBUTION_MAP
-from src.utils.files_operations import instantiate_from_target_str
-from src.utils.distributions import is_basedistribution_like
 
 
 class ArkBayesianModel(ABC):
@@ -38,32 +32,6 @@ class ArkBayesianModel(ABC):
         self.observations_num = self.observations.shape[0]
         self.x_bar: np.ndarray = np.mean(self.observations, axis=0)
         self.m = self.posterior_samples_init.shape[0]
-
-    def back_to_prior_init(self, *, deep: bool = True):
-        """
-        Reset the current prior to the initial/base prior.
-
-        Args:
-            deep: If True (default), use a deep copy so future mutations of
-                  `self.prior` do not affect `self.prior_init`.
-        Returns:
-            self (for chaining)
-        """
-        self.prior = copy.deepcopy(self.prior_init) if deep else self.prior_init
-        return self
-
-    def back_to_prior_candidate(self, *, deep: bool = True):
-        """
-        Reset the current prior to the candidate prior.
-
-        Args:
-            deep: If True (default), use a deep copy so future mutations of
-                  `self.prior` do not affect `self.prior_candidate`.
-        Returns:
-            self (for chaining)
-        """
-        self.prior = copy.deepcopy(self.prior_candidate) if deep else self.prior_candidate
-        return self
 
     def _prepare_observations(self, datavals: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray, int]:
         """
@@ -154,7 +122,6 @@ class ArkBayesianModel(ABC):
         datavals = posterior.data.values()
         observations, x, K = self._prepare_observations(datavals)
 
-        t = posterior.reference_draws()
         reference_df = pd.DataFrame(posterior.reference_draws())
         posterior_samples, colnames = self._prepare_posterior_draws(
             reference_df, warmup=self.warmup
@@ -165,55 +132,6 @@ class ArkBayesianModel(ABC):
 
     def sample_from_base_prior(self, n_samples: int = 1000) -> np.ndarray:
         return self.prior_init.sample(n_samples)
-
-    def set_composite_prior_parameters(self, components: Dict[str, Any], combine_rule: str = "product", reset_from_init: bool = True,) -> None:
-        if combine_rule != "product":
-            raise NotImplementedError("Only product composites are supported right now.")
-
-        base = self.prior_init if reset_from_init else self.prior
-
-        if not isinstance(base, CompositeProduct):
-            raise TypeError("Expected CompositeProduct as base prior.")
-
-        base_names = list(base.names)
-        base_map = {n: copy.deepcopy(c) for n, c in zip(base.names, base.components)}
-        new_map: Dict[str, Any] = dict(base_map)
-
-        for name, spec in components.items():
-            if is_basedistribution_like(spec):
-                new_map[name] = spec
-                continue
-
-            if isinstance(spec, dict) and "_target_" in spec:
-                kwargs = {k: v for k, v in spec.items() if k != "_target_"}
-                new_map[name] = instantiate_from_target_str(spec["_target_"], kwargs)
-                continue
-
-            if isinstance(spec, dict) and "family" in spec:
-                fam = spec["family"]
-                params = spec.get("params", {k: v for k, v in spec.items() if k != "family"})
-                cls = DISTRIBUTION_MAP.get(fam)
-                if cls is None:
-                    raise ValueError(f"Unknown family '{fam}'. Available: {list(DISTRIBUTION_MAP.keys())}")
-                new_map[name] = cls(**params)
-                continue
-
-            if isinstance(spec, dict) and name in base_map:
-                cls = base_map[name].__class__
-                new_map[name] = cls(**spec)
-                continue
-
-            raise ValueError(
-                f"Component '{name}' must be a BaseDistribution instance, "
-                f"a dict with '_target_', a dict with 'family'/params, or bare params matching a base component."
-            )
-
-        ordered_map: Dict[str, Any] = {n: new_map[n] for n in base_names if n in new_map}
-        for n, v in new_map.items():
-            if n not in ordered_map:
-                ordered_map[n] = v
-
-        self.prior = CompositeProduct(distributions=ordered_map)
 
     def set_lr_parameter(self, lr: float) -> None:
         self.loss_lr = lr

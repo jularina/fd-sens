@@ -84,11 +84,6 @@ model:
   _target_: src.bayesian_model.posteriordb.ark.ArkBayesianModel
 
 fd:
-  kernel:
-    _target_: src.kernels.inverse_multiquadric.InverseMultivariateMultiquadricKernel
-    lengthscale: null
-    alpha: 0.5
-    heuristic: True
   optimize:
     prior:
       Composite:

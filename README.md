@@ -14,7 +14,6 @@ A Python-based toolkit for **global Bayesian sensitivity analysis** using the **
   - Cauchy, Half-Cauchy
   - Uniform
   - Chi-squared
-  - Inverse-Wishart
   - Composite product of independent marginals
   - Extensible to custom distributions
 
@@ -53,14 +52,12 @@ FD is computed separately for the prior and the posterior.
 - [`PriorFDBase`](src/discrepancies/prior_fisher.py) — FD between prior samples and a candidate prior; uses the exponential family score decomposition.
 - [`PosteriorFDBase`](src/discrepancies/posterior_fisher.py) — FD for the posterior, combining the reference prior score with the candidate prior's natural statistics evaluated on posterior samples.
 
-The low-level [`FisherDivergenceBase`](src/discrepancies/fisher.py) computes the mean squared score difference and is used internally by both classes above.
-
 ### 3. Optimizer — `src/optimization/`
 
 Given a discrepancy object, the optimizer searches for the worst-case prior (or loss learning rate) over a user-specified parameter box.
 
-- [`OptimizationCornerPointsUnivariateGaussianConjugate`](src/optimization/corner_points_fisher.py) — exact closed-form corner-point search for univariate conjugate Gaussian models.
-- [`OptimizationCornerPointsCompositePrior`](src/optimization/corner_points_fisher.py) — global search (differential evolution / dual annealing) for composite independent-marginal priors; supports Gaussian, FGM, and Frank copula perturbations.
+- [`OptimizationCornerPointsUnivariateGaussian`](src/optimization/corner_points_fisher.py) / [`OptimizationCornerPointsMultivariateGaussian`](src/optimization/corner_points_fisher.py) — corner-point search over a box of Gaussian prior hyperparameters (toy experiments).
+- [`OptimizationCornerPointsCompositePrior`](src/optimization/corner_points_fisher.py) — composite independent-marginal priors: corner enumeration of the convex quadratic form (full or per component), convex QP for the infimum, black-box dual annealing baseline, and Gaussian-copula perturbations.
 
 ---
 
@@ -131,22 +128,19 @@ flags:
 The `tests/` directory is organized into four folders, one per experimental setting.
 Each folder contains scripts named with the `_fisher` suffix for the FD-based experiments.
 
-### `tests/paper/`
+### `tests/toy/`
 Toy Gaussian experiments and finite-sample complexity comparisons.
-- `run_toy_fisher.py` — sensitivity analysis on univariate/multivariate Gaussian models; generates FD sensitivity curves and comparison plots against competing methods.
-- `run_comparison_fisher.py` — side-by-side comparison of FD-based sensitivity against other divergences on toy models.
+- `run_toy_fisher.py` — sensitivity analysis on univariate/multivariate Gaussian models; generates FD sensitivity curves and comparison plots against the mean, KL and Wasserstein-2 measures.
 
 ### `tests/ising/`
-Experiments on the Ising model with different loss functions (pseudolikelihood, FD-Bayes).
-- `run_ising_fisher.py` — computes and plots FD sensitivity over the inverse temperature parameter across loss types.
+Generalised Bayesian inference for the Ising model with pseudolikelihood and discrete Fisher divergence losses.
+- `run_ising_fisher.py` — `main()` computes FD learning-rate sensitivity grids for the three learning-rate calibration methods; `create_combined_plots()` produces the paper figures.
 
 ### `tests/posteriordb/`
 Real-data experiments using models from the PosteriorDB benchmark.
-- `run_ark_fisher.py` — FD sensitivity analysis for the ARK (autoregressive kernel) model.
-- `run_ark_kilpisjarvi.py` — FD sensitivity analysis for the Kilpisjarvi dataset model.
+- `run_ark_fisher.py` — optimisation runtime comparison (convex corner enumeration, per-component decomposition, black-box dual annealing) for the arK model.
+- `run_ark_kilpisjarvi.py` — z-scale prior sensitivity and posterior predictives for the Kilpisjarvi AR(5) model; run end to end with `run_kilpisjarvi_param_predictive.sh` (requires R with `rstan`).
 
 ### `tests/sbi/`
 Experiments on the Turin channel model fitted via simulation-based inference (SBI).
-- `run_turin_fisher.py` — FD sensitivity analysis for the Turin SBI model.
-- `run_turin_fisher_fgm.py` — Turin model with FGM copula prior; plots pairwise copula grids.
-- `run_turin_fisher_frank.py` — Turin model with Frank copula prior.
+- `run_turin_fisher.py` — FD sensitivity to Gaussian-copula prior dependence for the Turin SBI model.

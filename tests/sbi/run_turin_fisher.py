@@ -6,15 +6,11 @@ from omegaconf import DictConfig
 import time
 
 from src.utils.files_operations import load_plot_config
-from src.discrepancies.posterior_fisher import PosteriorFDParametric as PosteriorFDBase
-from src.plots.paper.sbi_paper_funcs import *
+from src.discrepancies.posterior_fisher import PosteriorFDParametric
 from src.optimization.corner_points_fisher import (
     OptimizationCornerPointsCompositePrior
 )
-from src.plots.paper.toy_paper_fisher_funcs import (
-    plot_gaussian_copula_grid_pair,
-    plot_gaussian_copula_fd_decomposition,
-)
+from src.plots.paper.toy_paper_fisher_funcs import plot_gaussian_copula_grid_pair
 
 warnings.filterwarnings("ignore", category=UserWarning, module="hydra._internal.hydra")
 
@@ -27,7 +23,7 @@ def main(cfg: DictConfig) -> None:
     plot_cfg = load_plot_config(plot_config_path)
 
     model = instantiate(cfg.model, data_config=cfg.data)
-    fisher_estimator = PosteriorFDBase(model=model)
+    fisher_estimator = PosteriorFDParametric(model=model)
     optimizer = OptimizationCornerPointsCompositePrior(fisher_estimator,
                                                        cfg.fd.optimize.prior.Composite,
                                                        cfg.fd.optimize.loss.GaussianLogLikelihoodWithGivenGrads,
@@ -106,23 +102,6 @@ def main(cfg: DictConfig) -> None:
         show_grid_0=False,
         mark_x_values=marked_x_values,
         mark_x_red_idx=0,  # index in marked_x_values[1] that gets red star; others are black crosses
-    )
-
-    plot_gaussian_copula_fd_decomposition(
-        copula_grid=copula_grid_g0,
-        plot_cfg=plot_cfg,
-        output_dir=output_dir,
-        prefix=prefix,
-        filename=f"{prefix}_copula_fd_decomposition_g0.pdf",
-        label=r"$(G_0, \nu)$",
-    )
-    plot_gaussian_copula_fd_decomposition(
-        copula_grid=copula_grid_T,
-        plot_cfg=plot_cfg,
-        output_dir=output_dir,
-        prefix=prefix,
-        filename=f"{prefix}_copula_fd_decomposition_T.pdf",
-        label=r"$(T, \nu)$",
     )
 
 

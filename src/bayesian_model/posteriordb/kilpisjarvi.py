@@ -59,22 +59,14 @@ class KilpisjarviBayesianModel:
 
     def _prepare_observations(self) -> np.ndarray:
         """
-        Build observation matrix from hardcoded data with centered y.
-        Sets loss data via set_data appropriate to loss type.
-        For GaussianARLogLikelihood: set_data(y, K) where K is inferred from prior names.
-        For GaussianLinearRegressionLogLikelihood: set_data(x, y).
+        Build observation matrix from hardcoded data with centered y and pass it to the
+        GaussianARLogLikelihood via set_data(y, K), where K is inferred from prior names.
         """
-        from src.losses.gaussian_log_likelihood import GaussianARLogLikelihood
-        x = np.asarray(_DATA["x"], dtype=float)
         y = np.asarray(_DATA["y"], dtype=float)
         y_centered = y - y.mean()
-        if isinstance(self.loss, GaussianARLogLikelihood):
-            K = sum(1 for name in self.prior_init.names if name.startswith("beta"))
-            self.loss.set_data(y_centered, K)
-            return y_centered[K:].reshape(-1, 1)
-        else:
-            self.loss.set_data(x, y_centered)
-            return np.column_stack([x, y_centered])
+        K = sum(1 for name in self.prior_init.names if name.startswith("beta"))
+        self.loss.set_data(y_centered, K)
+        return y_centered[K:].reshape(-1, 1)
 
     def _norm_warmup(self, warmup, n_chains: int):
         if isinstance(warmup, (list, tuple)):

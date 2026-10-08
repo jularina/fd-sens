@@ -8,8 +8,6 @@ from scipy.optimize import differential_evolution, dual_annealing
 from dataclasses import dataclass
 
 from src.distributions.gaussian import Gaussian, MultivariateGaussian
-from src.distributions.gamma import Gamma
-from src.optimization.corners import get_corners
 
 
 @dataclass
@@ -53,17 +51,10 @@ class OptimizationCornerPointsBase:
         self.param_nums: Dict[str, int] = prior_config["parameters_box_range"]["nums"]
         self.param_names = list(self.param_ranges.keys())
 
-        self.lr_ranges: Dict[str, Tuple[float, float]] = loss_config["parameters_box_range"]["ranges"]["lr"]
-        self.lr_nums: Dict[str, int] = loss_config["parameters_box_range"]["nums"]["lr"]
-
         self.Lambda_prior, self.b_prior, self.c_prior = self.posterior_estimator.compute_fisher_quadratic_form_prior_only()
 
         self.parameter_grid = self._generate_full_parameter_grid()
         self.distribution_corner_points: List[Dict[str, float]] = self._generate_corner_points()
-        self.lr_grid = self._generate_full_lr_grid()
-        self.lr_corners = self._generate_lr_corners()
-
-        self.Lambda_loss, self.b_loss, self.c_loss = self.posterior_estimator.compute_fisher_quadratic_form_lr_only()
 
     def _generate_corner_points(self):
         eta_list = []
@@ -82,14 +73,6 @@ class OptimizationCornerPointsBase:
 
     def _generate_full_parameter_grid(self) -> Dict:
         pass
-
-    def _generate_full_lr_grid(self):
-        lr_grid = np.linspace(self.lr_ranges[0], self.lr_ranges[-1], self.lr_nums).tolist()
-
-        return lr_grid
-
-    def _generate_lr_corners(self):
-        return [self.lr_ranges[0], self.lr_ranges[-1]]
 
     def evaluate_all_prior_corners(self) -> Tuple:
         results = []
@@ -119,36 +102,6 @@ class OptimizationCornerPointsBase:
 
         results.sort(key=lambda x: x[2], reverse=True)
         self.model.back_to_prior_candidate()
-
-        return results
-
-    def evaluate_all_lr_corners(self) -> List:
-        results = []
-
-        for lr_corner in self.lr_corners:
-            self.model.set_lr_parameter(lr_corner)
-            lr = self.model.loss_lr
-            est = lr**2 * self.Lambda_loss + self.b_loss * lr + self.c_loss
-            results.append((lr_corner, est))
-            print(f"Corner: {lr_corner} => Estimated obj: {est:.6f}")
-
-        results.sort(key=lambda x: x[1], reverse=True)
-        self.model.back_to_lr_init()
-
-        return results
-
-    def evaluate_full_lr_grid(self) -> List:
-        results = []
-
-        for lr in self.lr_grid:
-            self.model.set_lr_parameter(lr)
-            lr = self.model.loss_lr
-            est = lr**2 * self.Lambda_loss + self.b_loss * lr + self.c_loss
-            results.append((lr, est))
-            print(f"Corner: {lr} => Estimated obj: {est:.6f}")
-
-        results.sort(key=lambda x: x[1], reverse=True)
-        self.model.back_to_lr_init()
 
         return results
 
@@ -202,32 +155,6 @@ class OptimizationCornerPointsUnivariateGaussian(OptimizationCornerPointsBase):
             }
 
         return parameter_grid
-
-
-class OptimizationCornerPointsUnivariateGaussianConjugate(OptimizationCornerPointsUnivariateGaussian):
-    def __init__(
-        self,
-        posterior_estimator,
-        prior_config: Dict,
-        loss_config: Dict,
-        distribution_cls=Gaussian,
-    ):
-        """
-        Same grid/corner structure as OptimizationCornerPointsUnivariateGaussian but
-        evaluates the prior objective using the exact conjugate-Gaussian closed-form FD
-        instead of the quadratic-form approximation.
-        """
-        super().__init__(
-            posterior_estimator=posterior_estimator,
-            prior_config=prior_config,
-            loss_config=loss_config,
-            distribution_cls=distribution_cls,
-        )
-
-    def _evaluate_prior_qf(self, eta_tilde: np.ndarray) -> float:
-        # model.prior has already been set via set_prior_parameters; align prior_candidate
-        self.model.prior_candidate = self.model.prior
-        return self.posterior_estimator.estimate_fisher_for_gaussians()
 
 
 class OptimizationCornerPointsMultivariateGaussian(OptimizationCornerPointsBase):
@@ -323,10 +250,6 @@ class OptimizationCornerPointsCompositePrior:
         self.posterior_estimator = posterior_estimator
         self.eta_components_cfg: List[Dict[str, Any]] = list(config["eta_components"])
 
-        # Loss lr
-        self.loss_lr_corners = loss_config["parameters_box_range"]["ranges"]["lr"]
-        self.A_loss, self.b_loss, self.c_loss = self.posterior_estimator.compute_fisher_quadratic_form_lr_only()
-
         # Prior
         self.A_prior, self.b_prior, self.c_prior = self.posterior_estimator.compute_fisher_quadratic_form_prior_only()
 
@@ -345,19 +268,6 @@ class OptimizationCornerPointsCompositePrior:
 
     def _evaluate_prior_qf(self, eta_tilde: np.ndarray) -> float:
         return float(eta_tilde @ self.A_prior @ eta_tilde + self.b_prior @ eta_tilde + self.c_prior)
-
-    def _create_eta_corners_through_prior(self, comp_cfg):
-        """
-        Prefer analytic corners when available, else fall back to grid + hull.
-        Returns: [{"params": lambda_dict, "eta": eta_vec}, ...]
-        """
-        fam = comp_cfg["family"]
-        ranges_cfg = comp_cfg["parameters_box_range"]["ranges"]
-        ranges_tuples = {k: (float(v[0]), float(v[1])) for k, v in ranges_cfg.items()}
-        recs = get_corners(fam, ranges_tuples)
-        recs = [{"params": r["params"], "eta": np.asarray(r["eta"], dtype=float).ravel()} for r in recs]
-
-        return recs
 
     def _create_eta_corners(self):
         """
@@ -397,18 +307,6 @@ class OptimizationCornerPointsCompositePrior:
         print(f"Largest sensitivity {results[0][1]}.")
 
         return results, results[0][0]
-
-    def evaluate_all_lr_corners(self) -> List:
-        results = []
-        for lr in self.loss_lr_corners:
-            est = lr**2 * self.A_loss + self.b_loss * lr + self.c_loss
-            results.append((lr, est))
-            print(f"Lr: {lr} => Estimated FD: {est:.6f}")
-
-        results.sort(key=lambda x: x[1], reverse=True)
-        print(f"Lr corner with the largest sensitivity {results[0][1]}: {results[0][0]}.")
-
-        return results
 
     def _component_qf(self, name: str, eta_j: np.ndarray) -> float:
         """
@@ -868,327 +766,3 @@ class OptimizationCornerPointsCompositePrior:
         )
         lambda_star, val_star = max(results, key=lambda x: x[1])
         return results, float(lambda_star), float(val_star)
-
-    def _evaluate_fgm_copula_fd_black_box(
-            self,
-            x: np.ndarray,
-            idx_g0: int = 0,
-            idx_nu: int = 2,
-    ) -> float:
-        lam = float(np.asarray(x, dtype=float).reshape(-1)[0])
-        return float(
-            self.posterior_estimator.fd_fgm_copula_given_lambda(
-                lam,
-                idx_g0=idx_g0,
-                idx_nu=idx_nu,
-            )
-        )
-
-    def black_box_optimize_fgm_copula(
-        self,
-        lambda_range=(-1.0, 1.0),
-        seed: int = 0,
-        maxiter: int = 200,
-        popsize: int = 15,
-        tol: float = 1e-6,
-        polish: bool = True,
-        workers: int = 1,
-        updating: str = "immediate",
-    ) -> BlackBoxCopulaOptResult:
-        """
-        Solve:
-            sup_{lambda in Gamma} FD_fgm(lambda)
-            inf_{lambda in Gamma} FD_fgm(lambda)
-
-        using a black-box global optimiser (differential evolution).
-        """
-        lo, hi = map(float, lambda_range)
-        bounds = [(lo, hi)]
-
-        res_sup = differential_evolution(
-            func=lambda x: -self._evaluate_fgm_copula_fd_black_box(x),
-            bounds=bounds,
-            seed=seed,
-            maxiter=maxiter,
-            popsize=popsize,
-            tol=tol,
-            polish=polish,
-            workers=workers,
-            updating=updating,
-            disp=False,
-        )
-        lambda_sup = float(np.asarray(res_sup.x).reshape(-1)[0])
-        val_sup = float(self._evaluate_fgm_copula_fd_black_box(np.array([lambda_sup])))
-
-        res_inf = differential_evolution(
-            func=lambda x: self._evaluate_fgm_copula_fd_black_box(x),
-            bounds=bounds,
-            seed=seed + 1,
-            maxiter=maxiter,
-            popsize=popsize,
-            tol=tol,
-            polish=polish,
-            workers=workers,
-            updating=updating,
-            disp=False,
-        )
-        lambda_inf = float(np.asarray(res_inf.x).reshape(-1)[0])
-        val_inf = float(self._evaluate_fgm_copula_fd_black_box(np.array([lambda_inf])))
-
-        if lo <= 0.0 <= hi:
-            lambda_inf = 0.0
-            val_inf = 0.0
-
-        return BlackBoxCopulaOptResult(
-            lambda_sup=lambda_sup,
-            val_sup=val_sup,
-            lambda_inf=lambda_inf,
-            val_inf=val_inf,
-            S_hat=float(val_sup - val_inf),
-            nfev_sup=int(getattr(res_sup, "nfev", -1)),
-            nfev_inf=int(getattr(res_inf, "nfev", -1)),
-        )
-
-    def evaluate_fgm_copula_grid(
-        self,
-        *,
-        lambda_range=(-1.0, 1.0),
-        n_grid: int = 101,
-        idx_g0: int = 0,
-        idx_nu: int = 2,
-    ) -> List[Tuple[float, float]]:
-        """
-        Evaluate the FGM copula FD objective on a 1D grid.
-
-        Returns
-        -------
-        List[Tuple[float, float]]
-            Pairs (lambda, FD(lambda)), sorted by lambda.
-        """
-        lo, hi = map(float, lambda_range)
-        grid = np.linspace(lo, hi, int(n_grid))
-
-        results = []
-        for lam in grid:
-            val = self._evaluate_fgm_copula_fd_black_box(
-                np.array([lam], dtype=float),
-                idx_g0=idx_g0,
-                idx_nu=idx_nu,
-            )
-            results.append((float(lam), float(val)))
-
-        return results
-
-    def evaluate_fgm_copula_grid_and_argmax(
-        self,
-        *,
-        lambda_range=(-1.0, 1.0),
-        n_grid: int = 101,
-        idx_g0: int = 0,
-        idx_nu: int = 2,
-    ) -> Tuple[List[Tuple[float, float]], float, float]:
-        """
-        Evaluate the FGM copula FD objective on a grid and return the maximiser.
-
-        Returns
-        -------
-        results : list of (lambda, value)
-        lambda_star : float
-        val_star : float
-        """
-        results = self.evaluate_fgm_copula_grid(
-            lambda_range=lambda_range,
-            n_grid=n_grid,
-            idx_g0=idx_g0,
-            idx_nu=idx_nu,
-        )
-        lambda_star, val_star = max(results, key=lambda x: x[1])
-        return results, float(lambda_star), float(val_star)
-
-    def _evaluate_frank_copula_fd_black_box(
-            self,
-            x: np.ndarray,
-            idx_g0: int = 0,
-            idx_nu: int = 2,
-    ) -> float:
-        lam = float(np.asarray(x, dtype=float).reshape(-1)[0])
-        return float(
-            self.posterior_estimator.fd_frank_copula_given_lambda(
-                lam,
-                idx_g0=idx_g0,
-                idx_nu=idx_nu,
-            )
-        )
-
-    def black_box_optimize_frank_copula(
-        self,
-        lambda_range=(-0.1, 0.1),
-        seed: int = 0,
-        maxiter: int = 200,
-        popsize: int = 15,
-        tol: float = 1e-6,
-        polish: bool = True,
-        workers: int = 1,
-        updating: str = "immediate",
-    ) -> BlackBoxCopulaOptResult:
-        """
-        Solve:
-            sup_{theta in Gamma} FD_frank(theta)
-            inf_{theta in Gamma} FD_frank(theta)
-
-        using a black-box global optimiser (differential evolution).
-        FD is extended by continuity: FD(0) = 0.
-        """
-        lo, hi = map(float, lambda_range)
-        bounds = [(lo, hi)]
-
-        res_sup = differential_evolution(
-            func=lambda x: -self._evaluate_frank_copula_fd_black_box(x),
-            bounds=bounds,
-            seed=seed,
-            maxiter=maxiter,
-            popsize=popsize,
-            tol=tol,
-            polish=polish,
-            workers=workers,
-            updating=updating,
-            disp=False,
-        )
-        lambda_sup = float(np.asarray(res_sup.x).reshape(-1)[0])
-        val_sup = float(self._evaluate_frank_copula_fd_black_box(np.array([lambda_sup])))
-
-        res_inf = differential_evolution(
-            func=lambda x: self._evaluate_frank_copula_fd_black_box(x),
-            bounds=bounds,
-            seed=seed + 1,
-            maxiter=maxiter,
-            popsize=popsize,
-            tol=tol,
-            polish=polish,
-            workers=workers,
-            updating=updating,
-            disp=False,
-        )
-        lambda_inf = float(np.asarray(res_inf.x).reshape(-1)[0])
-        val_inf = float(self._evaluate_frank_copula_fd_black_box(np.array([lambda_inf])))
-
-        # θ=0 gives FD=0 (independence); enforce exact infimum if 0 is in range
-        if lo <= 0.0 <= hi:
-            lambda_inf = 0.0
-            val_inf = 0.0
-
-        return BlackBoxCopulaOptResult(
-            lambda_sup=lambda_sup,
-            val_sup=val_sup,
-            lambda_inf=lambda_inf,
-            val_inf=val_inf,
-            S_hat=float(val_sup - val_inf),
-            nfev_sup=int(getattr(res_sup, "nfev", -1)),
-            nfev_inf=int(getattr(res_inf, "nfev", -1)),
-        )
-
-    def evaluate_frank_copula_grid(
-        self,
-        *,
-        lambda_range=(-0.1, 0.1),
-        n_grid: int = 101,
-        idx_g0: int = 0,
-        idx_nu: int = 2,
-    ) -> List[Tuple[float, float]]:
-        """
-        Evaluate the Frank copula FD objective on a 1D grid.
-
-        Returns
-        -------
-        List[Tuple[float, float]]
-            Pairs (theta, FD(theta)), sorted by theta.
-        """
-        lo, hi = map(float, lambda_range)
-        grid = np.linspace(lo, hi, int(n_grid))
-
-        results = []
-        for lam in grid:
-            val = self._evaluate_frank_copula_fd_black_box(
-                np.array([lam], dtype=float),
-                idx_g0=idx_g0,
-                idx_nu=idx_nu,
-            )
-            results.append((float(lam), float(val)))
-
-        return results
-
-    def evaluate_frank_copula_grid_and_argmax(
-        self,
-        *,
-        lambda_range=(-0.1, 0.1),
-        n_grid: int = 101,
-        idx_g0: int = 0,
-        idx_nu: int = 2,
-    ) -> Tuple[List[Tuple[float, float]], float, float]:
-        """
-        Evaluate the Frank copula FD objective on a grid and return the maximiser.
-
-        Returns
-        -------
-        results : list of (theta, value)
-        lambda_star : float
-        val_star : float
-        """
-        results = self.evaluate_frank_copula_grid(
-            lambda_range=lambda_range,
-            n_grid=n_grid,
-            idx_g0=idx_g0,
-            idx_nu=idx_nu,
-        )
-        lambda_star, val_star = max(results, key=lambda x: x[1])
-        return results, float(lambda_star), float(val_star)
-
-
-class OptimizationCornerPointsGamma(OptimizationCornerPointsBase):
-    def __init__(
-        self,
-        posterior_estimator,
-        prior_config: Dict,
-        loss_config: Dict,
-        distribution_cls=Gamma,
-    ):
-        """
-        Grid/corner quadratic form generation and optimization for gamma.
-        """
-        super().__init__(posterior_estimator=posterior_estimator, prior_config=prior_config,
-                         loss_config=loss_config, distribution_cls=distribution_cls)
-
-    def _generate_alpha_grid(self) -> List:
-        alpha_ranges = self.param_ranges['alpha']
-        alpha_num = self.param_nums['alpha']
-        alpha_grid = np.linspace(alpha_ranges[0], alpha_ranges[-1], alpha_num).tolist()
-
-        return alpha_grid
-
-    def _generate_theta_grid(self) -> List[np.ndarray]:
-        theta_ranges = self.param_ranges['theta']
-        theta_num = self.param_nums['theta']
-        theta_grid = np.linspace(theta_ranges[0], theta_ranges[-1], theta_num).tolist()
-
-        return theta_grid
-
-    def _generate_full_parameter_grid(self) -> Dict:
-        alpha_grid = self._generate_alpha_grid()
-        theta_grid = self._generate_theta_grid()
-        parameter_grid = {}
-
-        for alpha, theta in itertools.product(alpha_grid, theta_grid):
-            try:
-                dist = self.distribution_cls(alpha=alpha, theta=theta)
-            except Exception as e:
-                print(f"Exception: {e} while initializing the distribution with alpha={alpha}, theta={theta}.")
-                continue
-
-            augmented_eta = dist.augmented_natural_parameters()
-            eta = dist.natural_parameters()
-            parameter_grid[(alpha, theta)] = {
-                "augmented_natural_parameters": augmented_eta,
-                "natural_parameters": eta,
-                "distribution": dist
-            }
-        return parameter_grid
