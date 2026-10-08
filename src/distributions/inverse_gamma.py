@@ -1,7 +1,7 @@
 import math
 
 import numpy as np
-from typing import Union, Dict
+from typing import Union
 
 from .base import BaseDistribution
 
@@ -101,6 +101,3 @@ class InverseGamma(BaseDistribution):
         x = np.asarray(x, dtype=np.float64).reshape(-1, 1)
         return np.zeros_like(x, dtype=np.float64)
 
-    @property
-    def parameters_dict(self) -> Dict[str, float]:
-        return {"alpha": self.alpha, "beta": self.beta}

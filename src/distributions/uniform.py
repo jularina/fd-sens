@@ -1,8 +1,7 @@
 import warnings
 import numpy as np
-from typing import Union, Dict
+from typing import Union
 from .base import BaseDistribution
-
 
 
 class Uniform(BaseDistribution):
@@ -86,6 +85,3 @@ class Uniform(BaseDistribution):
     def grad_sufficient_statistics(self, x: np.ndarray) -> np.ndarray:
         raise NotImplementedError("Uniform distribution has no standard sufficient statistic gradients.")
 
-    @property
-    def parameters_dict(self) -> Dict[str, float]:
-        return {"low": self.low, "high": self.high}

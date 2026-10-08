@@ -26,31 +26,6 @@ class BayesianModel(ABC):
         self.m: int = data_config.posterior_samples_num
         self.m_prior: int = data_config.prior_samples_num
 
-    def back_to_prior_init(self, *, deep: bool = True):
-        """
-        Reset the current prior to the initial/base prior.
-
-        Args:
-            deep: If True (default), use a deep copy so future mutations of
-                  `self.prior` do not affect `self.prior_init`.
-        Returns:
-            self (for chaining)
-        """
-        self.prior = copy.deepcopy(self.prior_init) if deep else self.prior_init
-        return self
-
-    def back_to_lr_init(self, *, deep: bool = True):
-        """
-        Reset the current lr to the initial/base prior.
-
-        Args:
-            deep: If True (default), use a deep copy so future mutations of
-                  `self.loss_lr` do not affect `self.loss_lr_init`.
-        Returns:
-            self (for chaining)
-        """
-        self.loss_lr = copy.deepcopy(self.loss_lr_init) if deep else self.loss_lr_init
-        return self
 
     def back_to_prior_candidate(self, *, deep: bool = True):
         """
@@ -106,37 +81,11 @@ class BayesianModel(ABC):
         """
         self.loss_lr = lr
 
-    def prior_score(self, x: ArrayLike) -> np.ndarray:
-        """Compute gradient of log prior."""
-        return self.prior.grad_log_pdf(x)
-
-    def reference_prior_score(self, x: ArrayLike) -> np.ndarray:
-        """Compute gradient of reference log prior."""
-        return self.prior_init.grad_log_pdf(x)
-
-    def reference_loss_score(self, x: ArrayLike, multiply_by_lr: bool = True) -> np.ndarray:
-        """Compute gradient of reference log loss."""
-        grad = self.loss.grad_log_pdf(x, self.x_bar, self.observations_num)
-        return self.loss_lr_init * grad if multiply_by_lr else grad
 
     def loss_score(self, x: ArrayLike, multiply_by_lr: bool = True) -> np.ndarray:
         """Compute gradient of log likelihood (scaled by learning rate)."""
         grad = self.loss.grad_log_pdf(x, self.x_bar, self.observations_num)
         return self.loss_lr * grad if multiply_by_lr else grad
-
-    def posterior_score(self, x: ArrayLike) -> np.ndarray:
-        """Compute posterior score (prior + likelihood)."""
-        prior_grad = self.prior_score(x)
-        loss_grad = self.loss_score(x)
-        return prior_grad + loss_grad
-
-    def jacobian_sufficient_statistics(self, x: np.ndarray) -> np.ndarray:
-        """Return Jacobian of sufficient statistics."""
-        return self.prior.grad_sufficient_statistics(x)
-
-    def grad_log_base_measure(self, x: np.ndarray) -> np.ndarray:
-        """Gradient of log base measure."""
-        return self.prior.grad_log_base_measure(x)
 
 
 class BayesianModelExtended(BayesianModel):

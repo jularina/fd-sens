@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Union, Dict
+from typing import Union
 from scipy.special import betaln
 from .base import BaseDistribution
 
@@ -116,6 +116,3 @@ class Beta(BaseDistribution):
 
         return grad
 
-    @property
-    def parameters_dict(self) -> Dict[str, float]:
-        return {"alpha": self.alpha, "beta": self.beta}

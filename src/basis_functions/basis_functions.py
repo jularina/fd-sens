@@ -1,7 +1,7 @@
 from scipy.spatial.distance import pdist
 from abc import ABC, abstractmethod
 import numpy as np
-from typing import Optional, Literal, Sequence
+from typing import Optional, Literal
 from scipy.spatial.distance import cdist
 from sklearn.cluster import KMeans
 from numpy.linalg import eigh

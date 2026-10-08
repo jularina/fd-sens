@@ -130,31 +130,9 @@ class ArkBayesianModel(ABC):
 
         return observations, x, posterior_samples, ordered_names, K
 
-    def sample_from_base_prior(self, n_samples: int = 1000) -> np.ndarray:
-        return self.prior_init.sample(n_samples)
-
-    def set_lr_parameter(self, lr: float) -> None:
-        self.loss_lr = lr
-
-    def prior_score(self, x: np.ndarray) -> np.ndarray:
-        return self.prior.grad_log_pdf(x)
-
-    def reference_prior_score(self, x) -> np.ndarray:
-        return self.prior_init.grad_log_pdf(x)
 
     def loss_score(self, x: np.ndarray, multiply_by_lr: bool = True) -> np.ndarray:
         grad = self.loss.grad_log_pdf(x)
         return self.loss_lr * grad if multiply_by_lr else grad
 
-    def reference_loss_score(self, x, multiply_by_lr: bool = True) -> np.ndarray:
-        grad = self.loss.grad_log_pdf(x)
-        return self.loss_lr_init * grad if multiply_by_lr else grad
 
-    def posterior_score(self, x: np.ndarray) -> np.ndarray:
-        return self.prior_score(x) + self.loss_score(x)
-
-    def jacobian_sufficient_statistics(self, x: np.ndarray) -> np.ndarray:
-        return self.prior.grad_sufficient_statistics(x)
-
-    def grad_log_base_measure(self, x: np.ndarray) -> np.ndarray:
-        return self.prior.grad_log_base_measure(x)

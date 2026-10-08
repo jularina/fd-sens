@@ -19,14 +19,6 @@ def load_numpy_array(path: str) -> np.ndarray:
     return arr
 
 
-def instantiate_from_target_str(target: str, kwargs: Dict[str, Any]):
-    module_name, cls_name = target.rsplit(".", 1)
-    import importlib
-    module = importlib.import_module(module_name)
-    cls = getattr(module, cls_name)
-    return cls(**kwargs)
-
-
 def _to_serialisable(obj: Any):
     if isinstance(obj, np.ndarray):
         return obj.tolist()

@@ -40,35 +40,9 @@ class TurinBayesianModel(ABC):
 
         return observations, posterior_samples, likelihood_grads, prior_samples
 
-    def sample_from_base_prior(self, n_samples: int = 1000) -> np.ndarray:
-        return self.prior_init.sample(n_samples)
-
-    def set_lr_parameter(self, lr: float) -> None:
-        self.loss_lr = lr
-
-    def prior_score(self, x: np.ndarray) -> np.ndarray:
-        return self.prior.grad_log_pdf(x)
-
-    def reference_prior_score(self, x) -> np.ndarray:
-        """Compute gradient of reference log prior."""
-        return self.prior_init.grad_log_pdf(x)
 
     def loss_score(self, x: np.ndarray, multiply_by_lr: bool = True) -> np.ndarray:
         grad = self.loss.grad_log_pdf()
         return self.loss_lr * grad if multiply_by_lr else grad
 
-    def reference_loss_score(self, x: np.ndarray, multiply_by_lr: bool = True) -> np.ndarray:
-        """Compute gradient of reference log loss."""
-        grad = self.loss.grad_log_pdf()
-        return self.loss_lr_init * grad if multiply_by_lr else grad
 
-    def posterior_score(self, x: np.ndarray) -> np.ndarray:
-        prior = self.prior_score(x)
-        loss = self.loss_score(x)
-        return prior + loss
-
-    def jacobian_sufficient_statistics(self, x: np.ndarray) -> np.ndarray:
-        return self.prior.grad_sufficient_statistics(x)
-
-    def grad_log_base_measure(self, x: np.ndarray) -> np.ndarray:
-        return self.prior.grad_log_base_measure(x)

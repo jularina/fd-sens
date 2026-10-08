@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Union, Dict
+from typing import Union
 from .base import BaseDistribution
 
 
@@ -83,6 +83,3 @@ class ChiSquared(BaseDistribution):
         grad = np.zeros_like(x)
         return grad[:, None]
 
-    @property
-    def parameters_dict(self) -> Dict[str, float]:
-        return {"k": self.k}

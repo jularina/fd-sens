@@ -1,6 +1,6 @@
 import numpy as np
 
-from bayesian_model.base import BayesianModelExtended
+from src.bayesian_model.base import BayesianModelExtended
 
 
 class IsingBayesianModel(BayesianModelExtended):
@@ -16,6 +16,3 @@ class IsingBayesianModel(BayesianModelExtended):
         grad = self.loss.grad_log_pdf()
         return self.loss_lr * grad if multiply_by_lr else grad
 
-    def reference_loss_score(self, x: np.ndarray, multiply_by_lr: bool = True) -> np.ndarray:
-        grad = self.loss.grad_log_pdf()
-        return self.loss_lr_init * grad if multiply_by_lr else grad

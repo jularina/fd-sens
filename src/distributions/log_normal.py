@@ -1,7 +1,6 @@
 import numpy as np
 from typing import Union
 from .base import BaseDistribution
-from typing import Dict
 
 
 class LogNormal(BaseDistribution):
@@ -76,6 +75,3 @@ class LogNormal(BaseDistribution):
         grad[mask] = -1.0 / x[mask]
         return grad[:, None]
 
-    @property
-    def parameters_dict(self) -> Dict[str, float]:
-        return {"mu": self.mu, "sigma": self.sigma}
