@@ -10,10 +10,10 @@ import hydra
 from hydra.utils import instantiate, get_original_cwd
 from omegaconf import DictConfig, OmegaConf
 
-from src.utils.basis_functions import BASIS_FUNCTIONS_REGISTRY
-from src.utils.files_operations import load_plot_config
-from src.optimization.bnn_node_sensitivity import compute_group_omega_max
-from src.plots.paper.posterior_db_paper_funcs import _apply_plot_rc, _save_fig
+from src.nonparametric.basis_functions import BASIS_FUNCTIONS_REGISTRY
+from src.common.utils.files_operations import load_plot_config
+from src.nonparametric.node_sensitivity import compute_group_omega_max
+from src.common.plots import apply_plot_rc, save_fig
 from paper.posteriordb.run_ark_kilpisjarvi import _to_z_space, _fd_z_posterior_gaussian_in_z
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -173,7 +173,7 @@ def plot_component_sensitivity_bar_param_vs_nonparam(
     filename: str,
 ) -> None:
     """Two stacked bars, FDsens above FDsens+, with 0%/100% tick labels only under the bottom bar."""
-    _apply_plot_rc(plot_cfg)
+    apply_plot_rc(plot_cfg)
     os.makedirs(output_dir, exist_ok=True)
 
     fig, axes = plt.subplots(
@@ -185,7 +185,7 @@ def plot_component_sensitivity_bar_param_vs_nonparam(
     _draw_component_sensitivity_stack(axes[1], percentages_nonparam, r"\texttt{FDsens+}")
     axes[0].tick_params(axis="x", labelbottom=False)
     fig.tight_layout(h_pad=0.0, pad=0.3)
-    _save_fig(fig, output_dir, filename, plot_cfg)
+    save_fig(fig, output_dir, filename, plot_cfg)
     plt.close(fig)
     print(f"Saved plot to {os.path.join(output_dir, filename)}")
 

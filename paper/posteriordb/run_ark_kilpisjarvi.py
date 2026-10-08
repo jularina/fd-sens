@@ -6,15 +6,15 @@ from hydra.utils import instantiate, get_original_cwd
 from omegaconf import DictConfig
 import json
 
-from src.utils.files_operations import load_plot_config, save_to_serializable_json
-from src.plots.paper.posterior_db_paper_funcs import (
+from src.common.utils.files_operations import load_plot_config, save_to_serializable_json
+from src.parametric.plots.posteriordb import (
     plot_acf_comparison,
     plot_component_sensitivity_bar,
     plot_posterior_predictive_with_data,
     plot_priors_z_scale_one_panel,
 )
-from src.distributions.gaussian import Gaussian
-from src.distributions.cauchy import HalfCauchy
+from src.common.distributions.gaussian import Gaussian
+from src.common.distributions.cauchy import HalfCauchy
 
 # ---------------------------------------------------------------------------
 # Kilpisjarvi dataset

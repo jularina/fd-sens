@@ -5,12 +5,12 @@ from hydra.utils import instantiate, get_original_cwd
 from omegaconf import DictConfig
 import time
 
-from src.utils.files_operations import load_plot_config
-from src.discrepancies.posterior_fisher import PosteriorFDParametric
-from src.optimization.corner_points_fisher import (
+from src.common.utils.files_operations import load_plot_config
+from src.parametric.fisher import PosteriorFDParametric
+from src.parametric.corner_points import (
     OptimizationCornerPointsCompositePrior
 )
-from src.plots.paper.toy_paper_fisher_funcs import plot_gaussian_copula_grid_pair
+from src.parametric.plots.toy import plot_gaussian_copula_grid_pair
 
 warnings.filterwarnings("ignore", category=UserWarning, module="hydra._internal.hydra")
 

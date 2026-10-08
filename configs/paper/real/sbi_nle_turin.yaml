@@ -11,176 +11,176 @@ hydra:
 
 data:
   base_prior:
-    _target_: src.distributions.composite.CompositeProduct
+    _target_: src.common.distributions.composite.CompositeProduct
     distributions:
       theta_1:
-        _target_: src.distributions.uniform.Uniform
+        _target_: src.common.distributions.uniform.Uniform
         low: 1e-9
         high: 1e-8
       theta_2:
-        _target_: src.distributions.uniform.Uniform
+        _target_: src.common.distributions.uniform.Uniform
         low: 1e-9
         high: 1e-8
       theta_3:
-        _target_: src.distributions.uniform.Uniform
+        _target_: src.common.distributions.uniform.Uniform
         low: 1e7
         high: 5e9
       theta_4:
-        _target_: src.distributions.uniform.Uniform
+        _target_: src.common.distributions.uniform.Uniform
         low: 1e-10
         high: 1e-9
 #      theta_1:
-#        _target_: src.distributions.uniform.Uniform
+#        _target_: src.common.distributions.uniform.Uniform
 #        low: 0.0
 #        high: 1.0
 #      theta_2:
-#        _target_: src.distributions.uniform.Uniform
+#        _target_: src.common.distributions.uniform.Uniform
 #        low: 0.0
 #        high: 1.0
 #      theta_3:
-#        _target_: src.distributions.uniform.Uniform
+#        _target_: src.common.distributions.uniform.Uniform
 #        low: 0.0
 #        high: 1.0
 #      theta_4:
-#        _target_: src.distributions.uniform.Uniform
+#        _target_: src.common.distributions.uniform.Uniform
 #        low: 0.0
 #        high: 1.0
 #      theta_1:
-#        _target_: src.distributions.gaussian.Gaussian
+#        _target_: src.common.distributions.gaussian.Gaussian
 #        mu: 0
 #        sigma: 1
 #
 #      theta_2:
-#        _target_: src.distributions.gaussian.Gaussian
+#        _target_: src.common.distributions.gaussian.Gaussian
 #        mu: 0
 #        sigma: 1
 #
 #      theta_3:
-#        _target_: src.distributions.gaussian.Gaussian
+#        _target_: src.common.distributions.gaussian.Gaussian
 #        mu: 0
 #        sigma: 1
 #
 #      theta_4:
-#        _target_: src.distributions.gaussian.Gaussian
+#        _target_: src.common.distributions.gaussian.Gaussian
 #        mu: 0
 #        sigma: 1
 
   candidate_prior:
-    _target_: src.distributions.composite.CompositeProduct
+    _target_: src.common.distributions.composite.CompositeProduct
     distributions:
 #      theta_1:
-#        _target_: src.distributions.log_normal.LogNormal
+#        _target_: src.common.distributions.log_normal.LogNormal
 #        mu_log: -19.57
 #        sigma_log: 0.58
 #      theta_2:
-#        _target_: src.distributions.log_normal.LogNormal
+#        _target_: src.common.distributions.log_normal.LogNormal
 #        mu_log: -19.57
 #        sigma_log: 0.58
 #      theta_3:
-#        _target_: src.distributions.log_normal.LogNormal
+#        _target_: src.common.distributions.log_normal.LogNormal
 #        mu_log: 19.23
 #        sigma_log: 1.55
 #      theta_3:
-#        _target_: src.distributions.gamma.Gamma
+#        _target_: src.common.distributions.gamma.Gamma
 #        alpha: 4.48148
 #        theta: 1.22727e9
 #      theta_4:
-#        _target_: src.distributions.log_normal.LogNormal
+#        _target_: src.common.distributions.log_normal.LogNormal
 #        mu_log: -21.87
 #        sigma_log: 0.58
 
 #      theta_1:
-#        _target_: src.distributions.uniform.Uniform
+#        _target_: src.common.distributions.uniform.Uniform
 #        low: 1e-9
 #        high: 1e-8
 #      theta_2:
-#        _target_: src.distributions.uniform.Uniform
+#        _target_: src.common.distributions.uniform.Uniform
 #        low: 1e-9
 #        high: 1e-8
 #      theta_3:
-#        _target_: src.distributions.uniform.Uniform
+#        _target_: src.common.distributions.uniform.Uniform
 #        low: 1e7
 #        high: 5e9
 #      theta_4:
-#        _target_: src.distributions.uniform.Uniform
+#        _target_: src.common.distributions.uniform.Uniform
 #        low: 1e-10
 #        high: 1e-9
 #
 #      theta_1:
-#        _target_: src.distributions.uniform.Uniform
+#        _target_: src.common.distributions.uniform.Uniform
 #        low: 1.0
 #        high: 10.0
 #      theta_2:
-#        _target_: src.distributions.uniform.Uniform
+#        _target_: src.common.distributions.uniform.Uniform
 #        low: 1.0
 #        high: 10.0
 #      theta_3:
-#        _target_: src.distributions.uniform.Uniform
+#        _target_: src.common.distributions.uniform.Uniform
 #        low: 1.0
 #        high: 500.0
 #      theta_4:
-#        _target_: src.distributions.uniform.Uniform
+#        _target_: src.common.distributions.uniform.Uniform
 #        low: 1.0
 #        high: 10.0
 
 #      theta_1:
-#        _target_: src.distributions.log_normal.LogNormal
+#        _target_: src.common.distributions.log_normal.LogNormal
 #        mu_log: 0
 #        sigma_log: 1
 #
 #      theta_2:
-#        _target_: src.distributions.log_normal.LogNormal
+#        _target_: src.common.distributions.log_normal.LogNormal
 #        mu_log: 1.151
 #        sigma_log: 0.576
 #
 #      theta_3:
-#        _target_: src.distributions.log_normal.LogNormal
+#        _target_: src.common.distributions.log_normal.LogNormal
 #        mu_log: 3.107
 #        sigma_log: 1.554
 #
 #      theta_4:
-#        _target_: src.distributions.log_normal.LogNormal
+#        _target_: src.common.distributions.log_normal.LogNormal
 #        mu_log: 1.151
 #        sigma_log: 0.576
 
 #      theta_1:
-#        _target_: src.distributions.gaussian.Gaussian
+#        _target_: src.common.distributions.gaussian.Gaussian
 #        mu: 0
 #        sigma: 1
 #
 #      theta_2:
-#        _target_: src.distributions.gaussian.Gaussian
+#        _target_: src.common.distributions.gaussian.Gaussian
 #        mu: 0
 #        sigma: 1
 #
 #      theta_3:
-#        _target_: src.distributions.gaussian.Gaussian
+#        _target_: src.common.distributions.gaussian.Gaussian
 #        mu: 0
 #        sigma: 1
 #
 #      theta_4:
-#        _target_: src.distributions.gaussian.Gaussian
+#        _target_: src.common.distributions.gaussian.Gaussian
 #        mu: 0
 #        sigma: 1
       theta_1:
-        _target_: src.distributions.beta.Beta
+        _target_: src.common.distributions.beta.Beta
         alpha: 1.0
         beta: 1.5
       theta_2:
-        _target_: src.distributions.beta.Beta
+        _target_: src.common.distributions.beta.Beta
         alpha: 1.0
         beta: 1.5
       theta_3:
-        _target_: src.distributions.beta.Beta
+        _target_: src.common.distributions.beta.Beta
         alpha: 1.0
         beta: 1.5
       theta_4:
-        _target_: src.distributions.beta.Beta
+        _target_: src.common.distributions.beta.Beta
         alpha: 1.5
         beta: 1.0
   true_dgp: null
   loss:
-    _target_: src.losses.gaussian_log_likelihood.GaussianLogLikelihoodWithGivenGrads
+    _target_: src.common.losses.gaussian_log_likelihood.GaussianLogLikelihoodWithGivenGrads
   loss_lr: 1.0
   loss_lr_init: 1.0
   observations_path: null # from pre-saved archive
@@ -192,7 +192,7 @@ data:
   archive_path: "/Users/arinaodv/Desktop/folder/study_phd/code/cost-aware-sbi/sims/turin/mixture/nle/0/ckpt_with_z_scored_priors_likelihood_grads.tar" #ckpt_with_normalized_likelihood_grads_multiple_mcmc_chains.tar
 
 model:
-  _target_: src.bayesian_model.sbi.turin.TurinBayesianModel
+  _target_: src.common.bayesian_model.sbi.turin.TurinBayesianModel
 
 fd:
   optimize:

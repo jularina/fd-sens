@@ -6,10 +6,10 @@ from hydra.utils import instantiate, get_original_cwd
 from omegaconf import DictConfig
 import time
 
-from src.discrepancies.posterior_fisher import PosteriorFDParametric
-from src.utils.files_operations import load_plot_config
-from src.plots.paper.posterior_db_paper_funcs import plot_complexity_bar
-from src.optimization.corner_points_fisher import OptimizationCornerPointsCompositePrior
+from src.parametric.fisher import PosteriorFDParametric
+from src.common.utils.files_operations import load_plot_config
+from src.parametric.plots.posteriordb import plot_complexity_bar
+from src.parametric.corner_points import OptimizationCornerPointsCompositePrior
 
 warnings.filterwarnings("ignore", category=UserWarning, module="hydra._internal.hydra")
 

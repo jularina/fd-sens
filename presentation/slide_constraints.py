@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from mpl_toolkits.mplot3d import Axes3D
 
-from src.utils.files_operations import load_plot_config
+from src.common.utils.files_operations import load_plot_config
 
 
 # ------------------------------------------------------------

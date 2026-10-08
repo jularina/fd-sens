@@ -11,15 +11,15 @@ hydra:
 
 data:
   base_prior:
-    _target_: src.distributions.chi_squared.ChiSquared
+    _target_: src.common.distributions.chi_squared.ChiSquared
     k: 3
   candidate_prior:
-    _target_: src.distributions.gamma.Gamma
+    _target_: src.common.distributions.gamma.Gamma
     alpha: 2.0
     theta: 2.5
   true_dgp: null
   loss:
-    _target_: src.losses.ising.ising_likelihood.IsingLikelihoodGivenGrads
+    _target_: src.common.losses.ising.ising_likelihood.IsingLikelihoodGivenGrads
   loss_lr: 1.0
   loss_lr_init: 1.0
   observations_path: /Users/arinaodv/Desktop/folder/study_phd/code/Discrete-Fisher-Bayes/Ising/samplesForKSDSensitivityAnalysis/PseudoBayes_size=6_theta=5.0_dnum=1000_pnum=2000_data.npy
@@ -31,7 +31,7 @@ data:
   prior_samples_num: null
 
 model:
-  _target_: src.bayesian_model.ising.ising.IsingBayesianModel
+  _target_: src.common.bayesian_model.ising.ising.IsingBayesianModel
 
 flags:
   plots:

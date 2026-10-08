@@ -11,74 +11,74 @@ hydra:
 
 data:
   base_prior:
-    _target_: src.distributions.composite.CompositeProduct
+    _target_: src.common.distributions.composite.CompositeProduct
     distributions:
       alpha:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 10
       beta1:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 10
       beta2:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 10
       beta3:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 10
       beta4:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 10
       beta5:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 10
       sigma:
-        _target_: src.distributions.cauchy.HalfCauchy
+        _target_: src.common.distributions.cauchy.HalfCauchy
         gamma: 2.5
   candidate_prior:
-    _target_: src.distributions.composite.CompositeProduct
+    _target_: src.common.distributions.composite.CompositeProduct
     distributions:
       alpha:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 10
       beta1:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 10
       beta2:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 10
       beta3:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 10
       beta4:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 10
       beta5:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 10
       sigma:
-#        _target_: src.distributions.cauchy.HalfCauchy
+#        _target_: src.common.distributions.cauchy.HalfCauchy
 #        gamma: 2.5
-        _target_: src.distributions.log_normal.LogNormal
+        _target_: src.common.distributions.log_normal.LogNormal
         mu_log: 1.0
         sigma_log: 1.5
-#        _target_: src.distributions.gaussian.Gaussian
+#        _target_: src.common.distributions.gaussian.Gaussian
 #        mu: 0
 #        sigma: 3.5
   true_dgp: null
   loss:
-    _target_: src.losses.gaussian_log_likelihood.GaussianARLogLikelihood
+    _target_: src.common.losses.gaussian_log_likelihood.GaussianARLogLikelihood
   loss_lr: 1
   observations_path: null # from posteriordb
   posterior_samples_path: null # from posteriordb
@@ -92,7 +92,7 @@ data:
   pdb_model_name: arK-arK
 
 model:
-  _target_: src.bayesian_model.posteriordb.ark.ArkBayesianModel
+  _target_: src.common.bayesian_model.posteriordb.ark.ArkBayesianModel
 
 fd:
   optimize:

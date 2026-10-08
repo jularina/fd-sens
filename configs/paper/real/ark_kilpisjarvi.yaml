@@ -11,69 +11,69 @@ hydra:
 
 data:
   base_prior:
-    _target_: src.distributions.composite.CompositeProduct
+    _target_: src.common.distributions.composite.CompositeProduct
     distributions:
       alpha:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 5
       beta1:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 5
       beta2:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 5
       beta3:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 5
       beta4:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 5
       beta5:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 0
         sigma: 5
       sigma:
-        _target_: src.distributions.cauchy.HalfCauchy
+        _target_: src.common.distributions.cauchy.HalfCauchy
         gamma: 1
   candidate_prior:
-    _target_: src.distributions.composite.CompositeProduct
+    _target_: src.common.distributions.composite.CompositeProduct
     distributions:
       alpha:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: -2
         sigma: 1
       beta1:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 2
         sigma: 1
       beta2:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 2
         sigma: 1
       beta3:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 2
         sigma: 1
       beta4:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: -2
         sigma: 1
       beta5:
-        _target_: src.distributions.gaussian.Gaussian
+        _target_: src.common.distributions.gaussian.Gaussian
         mu: 2
         sigma: 1
       sigma:
-        _target_: src.distributions.inverse_gamma.InverseGamma
+        _target_: src.common.distributions.inverse_gamma.InverseGamma
         alpha: 3.0
         beta: 1.0
   true_dgp: null
   loss:
-    _target_: src.losses.gaussian_log_likelihood.GaussianARLogLikelihood
+    _target_: src.common.losses.gaussian_log_likelihood.GaussianARLogLikelihood
   loss_lr: 1
   observations_path: null
   posterior_samples_path: null
@@ -86,7 +86,7 @@ data:
   posterior_draws_corner_prior: "/Users/arinaodv/Desktop/folder/study_phd/code/posteriordb/posterior_database/reference_posteriors/draws/draws/kilpisjarvi-reference-draws-corner.json"
 
 model:
-  _target_: src.bayesian_model.posteriordb.kilpisjarvi.KilpisjarviBayesianModel
+  _target_: src.common.bayesian_model.posteriordb.kilpisjarvi.KilpisjarviBayesianModel
 
 flags:
   plots:

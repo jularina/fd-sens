@@ -1,9 +1,9 @@
-from src.optimization.corner_points_fisher import *
-from src.utils.files_operations import *
-from src.utils.distributions import DISTRIBUTION_MAP
-from src.bayesian_model.base import BayesianModel
-from src.plots.paper.toy_paper_fisher_funcs import *
-from src.discrepancies.posterior_fisher import PosteriorFDParametric
+from src.parametric.corner_points import *
+from src.common.utils.files_operations import *
+from src.common.utils.distributions import DISTRIBUTION_MAP
+from src.common.bayesian_model.base import BayesianModel
+from src.parametric.plots.toy import *
+from src.parametric.fisher import PosteriorFDParametric
 
 import warnings
 import hydra

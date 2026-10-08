@@ -34,7 +34,7 @@ data:
     - X8
 
 model:
-  _target_: src.bayesian_model.bnn.uci_bnn.BNNPosteriorSamples
+  _target_: src.common.bayesian_model.bnn.uci_bnn.BNNPosteriorSamples
 
 optimize:
   nonparametric:

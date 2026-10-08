@@ -5,7 +5,7 @@ import hydra
 from hydra.utils import get_original_cwd
 from omegaconf import DictConfig
 
-from src.utils.files_operations import load_plot_config
+from src.common.utils.files_operations import load_plot_config
 
 
 # ------------------------------------------------------------

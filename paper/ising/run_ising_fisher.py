@@ -6,10 +6,10 @@ import numpy as np
 from hydra.utils import instantiate, get_original_cwd
 from omegaconf import DictConfig
 
-from src.utils.files_operations import load_plot_config
-from src.plots.paper.ising_model_paper_funcs import *
-from src.discrepancies.posterior_fisher import PosteriorFDParametric as PosteriorFDBase
-from src.losses.ising.ising_gradients import IsingGradients
+from src.common.utils.files_operations import load_plot_config
+from src.parametric.plots.ising import *
+from src.parametric.fisher import PosteriorFDParametric
+from src.common.losses.ising.ising_gradients import IsingGradients
 
 warnings.filterwarnings("ignore", category=UserWarning, module="hydra._internal.hydra")
 
@@ -33,7 +33,7 @@ def main(cfg: DictConfig, dnum=1000, pnum=5000, epsilon=0.4) -> None:
             cfg.data.pseudoliklelhood_grads_path = f"{SAMPLES_DIR}/{LOSS_TO_FILE_NAME[loss]}_size=6_theta=5.0_dnum={dnum}_pnum={pnum}_{loss}_grads_{method}.npy"
             model = instantiate(cfg.model, data_config=cfg.data)
             start_time = time.time()
-            fisher_estimator = PosteriorFDBase(model=model)
+            fisher_estimator = PosteriorFDParametric(model=model)
             print(f"[{loss}/{method}] Initial Fisher: {fisher_estimator.estimate_fisher_lr_only():.4f}")
             print(f"Time: {time.time() - start_time}")
 
@@ -43,7 +43,7 @@ def main(cfg: DictConfig, dnum=1000, pnum=5000, epsilon=0.4) -> None:
             grid = np.sort(np.concatenate([np.linspace(left, right, 999), [beta_ref]]))
             for lr in grid:
                 model.set_lr_parameter(lr)
-                fisher_estimator = PosteriorFDBase(model=model)
+                fisher_estimator = PosteriorFDParametric(model=model)
                 fisher = fisher_estimator.estimate_fisher_lr_only()
                 results[lr] = fisher
                 print(f"Lr: {lr}, FD: {fisher:.4f}")

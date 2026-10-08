@@ -12,10 +12,10 @@ import hydra
 from hydra.utils import instantiate, get_original_cwd
 from omegaconf import OmegaConf
 
-from src.utils.basis_functions import BASIS_FUNCTIONS_REGISTRY
-from src.utils.files_operations import save_to_serializable_json, load_results_json, load_plot_config
-from src.optimization.bnn_node_sensitivity import compute_group_omega_max
-from src.plots.paper.bnn_paper_funcs import plot_bnn_weight_heatmaps
+from src.nonparametric.basis_functions import BASIS_FUNCTIONS_REGISTRY
+from src.common.utils.files_operations import save_to_serializable_json, load_results_json, load_plot_config
+from src.nonparametric.node_sensitivity import compute_group_omega_max
+from src.nonparametric.plots.bnn import plot_bnn_weight_heatmaps
 
 warnings.filterwarnings("ignore", category=UserWarning)
 

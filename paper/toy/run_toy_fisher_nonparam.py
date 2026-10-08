@@ -1,13 +1,14 @@
-from src.optimization.nonparametric_fisher import OptimisationNonparametricBase
-from src.distributions.gaussian import Gaussian, MultivariateGaussian
+from src.nonparametric.optimization import OptimisationNonparametricBase
+from src.common.distributions.gaussian import Gaussian, MultivariateGaussian
 import numpy as np
-from src.optimization.corner_points_fisher import *
-from src.utils.files_operations import *
-from src.plots.paper.toy_paper_fisher_funcs import *
-from src.discrepancies.prior_fisher import PriorFDNonParametric
-from src.discrepancies.posterior_fisher import PosteriorFDParametric, PosteriorFDNonParametric
-from src.utils.basis_functions import BASIS_FUNCTIONS_REGISTRY
-from src.basis_functions.basis_functions import rbf_gaussian_gram_closed_form
+from src.parametric.corner_points import *
+from src.common.utils.files_operations import *
+from src.nonparametric.plots.toy import *
+from src.nonparametric.fisher import PriorFDNonParametric
+from src.parametric.fisher import PosteriorFDParametric
+from src.nonparametric.fisher import PosteriorFDNonParametric
+from src.nonparametric.basis_functions import BASIS_FUNCTIONS_REGISTRY
+from src.nonparametric.basis_functions import rbf_gaussian_gram_closed_form
 from scipy.linalg import eigh as scipy_eigh
 
 import warnings
@@ -665,7 +666,7 @@ def _diff_center_methods(
     # then show the exact value and worst-case density, not the plug-in ones.
     sensitivity_label_key = "estimatedSensitivityMeasure"
     if basis_funcs_type == "RBFBasisFunction":
-        from src.optimization.bnn_node_sensitivity import _ac_whitening_transform
+        from src.nonparametric.node_sensitivity import _ac_whitening_transform
 
         mu_post, sigma_post2 = model.compute_posterior_params()
 

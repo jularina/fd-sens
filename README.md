@@ -36,28 +36,49 @@ A Python-based toolkit for **global Bayesian sensitivity analysis** using the **
 
 ## Main components
 
-Analysis is structured around three building blocks that are composed in each experiment script.
+`src/` is split into three packages. `parametric` and `nonparametric` both build on `common` and never import each other.
 
-### 1. Bayesian model — `src/bayesian_model/`
+```
+src/
+  common/         shared by both methods
+    bayesian_model/   reference models (Gaussian location, Ising, arK, Kilpisjarvi, Turin, BNN)
+    distributions/    priors with scores and exponential-family decompositions
+    losses/           likelihoods / generalised-Bayes losses and their gradients
+    fisher.py         PosteriorFDBase: reference-posterior samples, scores and quadratic-form helpers
+    plots.py          shared matplotlib style and saving
+    utils/            config loading, JSON I/O, distribution registry
+  parametric/     FDsens: exponential-family candidate priors
+    fisher.py         PosteriorFDParametric: FD as a convex quadratic form in the natural parameters
+    corner_points.py  corner enumeration, convex QP, black-box baseline, Gaussian-copula perturbations
+    plots/            toy, Ising, posteriordb and SBI figures
+  nonparametric/  FDsens+: kernel exponential family (sieve) neighbourhoods
+    basis_functions.py  Matern/RBF bases and the BASIS_FUNCTIONS_REGISTRY
+    fisher.py           prior/posterior FD quadratic forms in the basis coefficients
+    optimization.py     worst case via the generalised eigenvalue problem
+    node_sensitivity.py per-parameter sensitivity for factorised priors (BNN, Kilpisjarvi)
+    loaders.py          per-parameter view of the Kilpisjarvi model
+    plots/              toy, BNN and illustrative figures
+```
 
-The abstract base [`BayesianModel`](src/bayesian_model/base.py) defines the interface: it holds a prior and a likelihood, exposes score functions, and handles posterior/prior sampling. Concrete subclasses implement model-specific closed-form posteriors:
+### 1. Bayesian model — `src/common/bayesian_model/`
 
-- [`SimpleGaussianModel`](src/bayesian_model/gaussian.py) — univariate Gaussian likelihood with Gaussian or Log-normal prior.
-- [`MultivariateGaussianModel`](src/bayesian_model/gaussian.py) — multivariate Gaussian likelihood with Gaussian prior on the mean.
+The abstract base [`BayesianModel`](src/common/bayesian_model/base.py) defines the interface: it holds a prior and a likelihood, exposes score functions, and handles posterior/prior sampling. Concrete subclasses implement model-specific closed-form posteriors:
 
-### 2. Fisher Divergence — `src/discrepancies/`
+- [`SimpleGaussianModel`](src/common/bayesian_model/gaussian.py) — univariate Gaussian likelihood with Gaussian or Log-normal prior.
+- [`MultivariateGaussianModel`](src/common/bayesian_model/gaussian.py) — multivariate Gaussian likelihood with Gaussian prior on the mean.
 
-FD is computed separately for the prior and the posterior.
+### 2. Fisher divergence
 
-- [`PriorFDBase`](src/discrepancies/prior_fisher.py) — FD between prior samples and a candidate prior; uses the exponential family score decomposition.
-- [`PosteriorFDBase`](src/discrepancies/posterior_fisher.py) — FD for the posterior, combining the reference prior score with the candidate prior's natural statistics evaluated on posterior samples.
+- [`PosteriorFDBase`](src/common/fisher.py) — holds the reference-posterior samples and scores shared by both estimators.
+- [`PosteriorFDParametric`](src/parametric/fisher.py) — FD between the reference and a candidate exponential-family prior, as a quadratic form in its natural parameters; also learning-rate and Gaussian-copula perturbations.
+- [`PriorFDNonParametric`](src/nonparametric/fisher.py) / [`PosteriorFDNonParametric`](src/nonparametric/fisher.py) — constraint and objective quadratic forms in the kernel-exponential-family coefficients.
 
-### 3. Optimizer — `src/optimization/`
+### 3. Optimisation
 
-Given a discrepancy object, the optimizer searches for the worst-case prior (or loss learning rate) over a user-specified parameter box.
-
-- [`OptimizationCornerPointsUnivariateGaussian`](src/optimization/corner_points_fisher.py) / [`OptimizationCornerPointsMultivariateGaussian`](src/optimization/corner_points_fisher.py) — corner-point search over a box of Gaussian prior hyperparameters (toy experiments).
-- [`OptimizationCornerPointsCompositePrior`](src/optimization/corner_points_fisher.py) — composite independent-marginal priors: corner enumeration of the convex quadratic form (full or per component), convex QP for the infimum, black-box dual annealing baseline, and Gaussian-copula perturbations.
+- [`OptimizationCornerPointsUnivariateGaussian`](src/parametric/corner_points.py) / [`OptimizationCornerPointsMultivariateGaussian`](src/parametric/corner_points.py) — corner-point search over a box of Gaussian prior hyperparameters (toy experiments).
+- [`OptimizationCornerPointsCompositePrior`](src/parametric/corner_points.py) — composite independent-marginal priors: corner enumeration of the convex quadratic form (full or per component), convex QP for the infimum, black-box dual annealing baseline, and Gaussian-copula perturbations.
+- [`OptimisationNonparametricBase`](src/nonparametric/optimization.py) — FDsens+ worst-case prior through the generalised eigenvalue problem.
+- [`compute_group_omega_max`](src/nonparametric/node_sensitivity.py) — FDsens+ per-parameter sensitivities for factorised priors.
 
 ---
 
@@ -78,15 +99,15 @@ Experiments are configured via YAML files loaded by Hydra. Below is an example f
 ```yaml
 data:
   base_prior:
-    _target_: src.distributions.gaussian.Gaussian
+    _target_: src.common.distributions.gaussian.Gaussian
     mu: 2
     sigma: 4
   true_dgp:
-    _target_: src.distributions.gaussian.Gaussian
+    _target_: src.common.distributions.gaussian.Gaussian
     mu: 3
     sigma: 2
   loss:
-    _target_: src.losses.gaussian_log_likelihood.GaussianLogLikelihood
+    _target_: src.common.losses.gaussian_log_likelihood.GaussianLogLikelihood
     mu: 3
     sigma: 2
   loss_lr: 1.0
@@ -95,7 +116,7 @@ data:
   prior_samples_num: 1000
 
 model:
-  _target_: src.bayesian_model.gaussian.SimpleGaussianModel
+  _target_: src.common.bayesian_model.gaussian.SimpleGaussianModel
 
 fd:
   optimize:
