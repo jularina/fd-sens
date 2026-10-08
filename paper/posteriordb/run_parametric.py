@@ -8,7 +8,7 @@ from omegaconf import DictConfig
 import json
 
 from src.common.utils.files_operations import load_plot_config, save_to_serializable_json
-from src.parametric.fisher import PosteriorFDParametric
+from src.parametric.fisher_divergence import PosteriorFDParametric
 from src.parametric.optimization import OptimizationCornerPointsCompositePrior
 from paper.posteriordb.plots_parametric import (
     plot_acf_comparison,

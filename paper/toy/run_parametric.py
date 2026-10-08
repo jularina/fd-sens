@@ -3,7 +3,7 @@ from src.common.utils.files_operations import *
 from src.common.utils.distributions import DISTRIBUTION_MAP
 from src.common.bayesian_model.base import BayesianModel
 from paper.toy.plots_parametric import *
-from src.parametric.fisher import PosteriorFDParametric
+from src.parametric.fisher_divergence import PosteriorFDParametric
 
 import warnings
 import hydra

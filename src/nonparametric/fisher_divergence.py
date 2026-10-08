@@ -1,5 +1,5 @@
 from src.common.bayesian_model.base import BayesianModel
-from src.common.fisher import PosteriorFDBase
+from src.common.fisher_divergence import PosteriorFDBase
 from src.nonparametric.basis_functions import BaseBasisFunction
 
 from typing import Tuple

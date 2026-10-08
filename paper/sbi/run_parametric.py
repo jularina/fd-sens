@@ -6,7 +6,7 @@ from omegaconf import DictConfig
 import time
 
 from src.common.utils.files_operations import load_plot_config
-from src.parametric.fisher import PosteriorFDParametric
+from src.parametric.fisher_divergence import PosteriorFDParametric
 from src.parametric.optimization import (
     OptimizationCornerPointsCompositePrior
 )

@@ -4,9 +4,9 @@ import numpy as np
 from src.parametric.optimization import *
 from src.common.utils.files_operations import *
 from paper.toy.plots_nonparametric import *
-from src.nonparametric.fisher import PriorFDNonParametric
-from src.parametric.fisher import PosteriorFDParametric
-from src.nonparametric.fisher import PosteriorFDNonParametric
+from src.nonparametric.fisher_divergence import PriorFDNonParametric
+from src.parametric.fisher_divergence import PosteriorFDParametric
+from src.nonparametric.fisher_divergence import PosteriorFDNonParametric
 from src.nonparametric.basis_functions import BASIS_FUNCTIONS_REGISTRY
 from src.nonparametric.basis_functions import rbf_gaussian_gram_closed_form
 from scipy.linalg import eigh as scipy_eigh

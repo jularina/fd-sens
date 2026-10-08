@@ -4,7 +4,7 @@ import numpy as np
 from scipy.stats import norm
 
 from src.common.bayesian_model.base import BayesianModel
-from src.common.fisher import PosteriorFDBase
+from src.common.fisher_divergence import PosteriorFDBase
 
 
 class PosteriorFDParametric(PosteriorFDBase):

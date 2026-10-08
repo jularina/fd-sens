@@ -39,21 +39,21 @@ A Python-based toolkit for **global Bayesian sensitivity analysis** using the **
 
 ```
 src/
-  common/         shared by both methods
-    bayesian_model/   reference models (Gaussian location, Ising, arK, Kilpisjarvi, Turin, BNN)
-    distributions/    priors with scores and exponential-family decompositions
-    losses/           likelihoods / generalised-Bayes losses and their gradients
-    fisher.py         PosteriorFDBase: reference-posterior samples, scores and quadratic-form helpers
-    utils/            config loading, JSON I/O, distribution registry
-  parametric/     FDsens: exponential-family candidate priors
-    fisher.py         PosteriorFDParametric: FD as a convex quadratic form in the natural parameters
-    optimization.py   corner enumeration, convex QP, black-box baseline, Gaussian-copula perturbations
-  nonparametric/  FDsens+: kernel exponential family (sieve) neighbourhoods
-    basis_functions.py  Matern/RBF bases and the BASIS_FUNCTIONS_REGISTRY
-    fisher.py           prior/posterior FD quadratic forms in the basis coefficients
-    optimization.py     worst case via the generalised eigenvalue problem
-    node_sensitivity.py per-parameter sensitivity for factorised priors (BNN, Kilpisjarvi)
-    loaders.py          per-parameter view of the Kilpisjarvi model
+  common/                   shared by both methods
+    bayesian_model/         reference models (Gaussian location, Ising, Kilpisjarvi, Turin, BNN)
+    distributions/          priors with scores and exponential-family decompositions
+    losses/                 likelihoods / generalised-Bayes losses and their gradients
+    fisher_divergence.py    PosteriorFDBase: reference-posterior samples, scores, quadratic-form helpers
+    utils/                  config loading, JSON I/O, distribution registry
+  parametric/               FDsens: exponential-family candidate priors
+    fisher_divergence.py    PosteriorFDParametric: FD as a convex quadratic form in the natural parameters
+    optimization.py         corner enumeration, convex QP, black-box baseline, Gaussian-copula perturbations
+  nonparametric/            FDsens+: kernel exponential family (sieve) neighbourhoods
+    basis_functions.py      Matern/RBF bases and the BASIS_FUNCTIONS_REGISTRY
+    fisher_divergence.py    prior/posterior FD quadratic forms in the basis coefficients
+    optimization.py         worst case via the generalised eigenvalue problem
+    node_sensitivity.py     per-parameter sensitivity for factorised priors (BNN, Kilpisjarvi)
+    loaders.py              per-parameter view of the Kilpisjarvi model
 ```
 
 Plotting lives with the experiments in `paper/`: each folder has `plots_parametric.py` / `plots_nonparametric.py`
@@ -68,9 +68,9 @@ The abstract base [`BayesianModel`](src/common/bayesian_model/base.py) defines t
 
 ### 2. Fisher divergence
 
-- [`PosteriorFDBase`](src/common/fisher.py) — holds the reference-posterior samples and scores shared by both estimators.
-- [`PosteriorFDParametric`](src/parametric/fisher.py) — FD between the reference and a candidate exponential-family prior, as a quadratic form in its natural parameters; also learning-rate and Gaussian-copula perturbations.
-- [`PriorFDNonParametric`](src/nonparametric/fisher.py) / [`PosteriorFDNonParametric`](src/nonparametric/fisher.py) — constraint and objective quadratic forms in the kernel-exponential-family coefficients.
+- [`PosteriorFDBase`](src/common/fisher_divergence.py) — holds the reference-posterior samples and scores shared by both estimators.
+- [`PosteriorFDParametric`](src/parametric/fisher_divergence.py) — FD between the reference and a candidate exponential-family prior, as a quadratic form in its natural parameters; also learning-rate and Gaussian-copula perturbations.
+- [`PriorFDNonParametric`](src/nonparametric/fisher_divergence.py) / [`PosteriorFDNonParametric`](src/nonparametric/fisher_divergence.py) — constraint and objective quadratic forms in the kernel-exponential-family coefficients.
 
 ### 3. Optimisation
 
