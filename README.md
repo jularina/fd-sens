@@ -13,7 +13,7 @@ for writing configs. An R/Stan implementation of FDsens is available at [fd-sens
 
 ## Installation
 
-The package is not on PyPI; clone the repository and install its dependencies with [PDM](https://pdm-project.org)
+Clone the repository and install its dependencies with [PDM](https://pdm-project.org)
 (Python 3.12):
 
 ```sh
@@ -23,9 +23,6 @@ pdm install            # add -G test to also install pytest
 ```
 
 ## Quickstart (Gaussian location model)
-
-Reference model: $\theta \sim \mathcal N(0, 2^2)$, $y_i \sim \mathcal N(\theta, 1)$. Take draws from the reference
-posterior with any sampler (Stan, PyMC, NumPyro, ...) and measure sensitivity to the prior's hyperparameters:
 
 ```python
 import numpy as np
@@ -43,7 +40,7 @@ model = PosteriorSamplesModel(
     base_prior=Gaussian(mu=0.0, sigma=2.0),         # reference prior
     candidate_prior=Gaussian(mu=0.0, sigma=1.0),    # candidate family (its parameter values are not used)
 )
-result = prior_sensitivity(model, natural_box={"theta": {"eta_1": [-1.0, 1.0], "eta_2": [-2.0, -0.05]}})
+result = prior_sensitivity(model, natural_box={"theta": {"eta_1": [-1.0, 1.0], "eta_2": [-2.0, -0.05]}}) # `eta_1 = mu / s^2` and `eta_2 = -1 / (2 s^2)` are the natural parameters
 print(result)
 #> FD prior sensitivity
 #>   optimisation: quadratic_corner
@@ -52,10 +49,7 @@ print(result)
 #>   maximum FD:  31.2854 at lambda_max = [-1. -2.]
 ```
 
-`eta_1 = mu / s^2` and `eta_2 = -1 / (2 s^2)` are the natural parameters of the candidate $\mathcal N(\mu, s^2)$ (see
-[Exponential-family priors](#exponential-family-priors)). `result.sensitivity` is the largest change in the posterior
-over the box, `result.lambda_max` the worst-case prior that produces it (here $\mathcal N(-0.25, 0.5^2)$), and the
-minimum sits at the reference prior, $\eta = (0, -1/8)$.
+`result.sensitivity` is the global sensitivity, `result.lambda_max` the worst-case prior that produces it.
 
 The full script is [`examples/parametric_prior_sensitivity.py`](examples/parametric_prior_sensitivity.py).
 
@@ -90,25 +84,24 @@ PosteriorSamplesModel(posterior_samples, base_prior, candidate_prior=None, loss_
 
 Models can also be built from a config, see [Config-driven use](#config-driven-use).
 
-### Prior sensitivity (FDsens)
+### Parametric prior sensitivity (FDsens)
+
+#### Exponential-family priors
 
 ```python
 prior_sensitivity(model, natural_box, method="quadratic", independent=False, **black_box_kwargs)
 ```
 
-- `natural_box`: one entry per parameter, in column order: `{name: {"eta_1": (lower, upper), "eta_2": (lower, upper)}}`,
+- `natural_box`: one entry per parameter: `{name: {"eta_1": (lower, upper), "eta_2": (lower, upper)}}`,
   the box $\Gamma$ of candidate natural parameters.
 - `method="quadratic"` (default): the FD is a convex quadratic form in the natural parameters, so the maximum is found by
-  enumerating the box corners and the minimum by a convex QP. Cost grows as $4^d$ corners.
+  enumerating the box corners and the minimum by a convex QP.
 - `method="black_box"`: the same exponential-family FD optimised globally (`scipy` dual annealing) instead of through
-  the quadratic form; pass e.g. `maxiter=150, n_restarts=5`. For candidates outside the exponential families, use
-  [`prior_sensitivity_black_box`](#non-exponential-family-priors-black-box) instead.
+  the quadratic form; pass e.g. `maxiter=150, n_restarts=5`.
 - `independent=True`: when the priors factorise over parameters, the sensitivity is the sum of per-parameter
-  sensitivities, each solved on its own 2-d box ($4d$ corners instead of $4^d$). `result.components` holds each block's
+  sensitivities, each solved on its own 2-d box. `result.components` holds each block's
   `sensitivity`, `fd_min`, `fd_max`, `lambda_min`, `lambda_max` and `sensitivity_share`; see
   [`examples/parametric_independent_components.py`](examples/parametric_independent_components.py).
-
-#### Exponential-family priors
 
 Each candidate component is a one-dimensional exponential family with two natural parameters:
 
@@ -122,7 +115,7 @@ Each candidate component is a one-dimensional exponential family with two natura
 Reference priors need not be exponential families or match the candidate family (e.g. `HalfCauchy`, `Uniform`,
 `ChiSquared` from [`src/common/distributions/`](src/common/distributions)).
 
-#### Non-exponential-family priors (black box)
+#### Non-exponential-family priors
 
 ```python
 prior_sensitivity_black_box(model, score_prior_candidate, lower, upper, score_prior_ref=None,
@@ -136,11 +129,6 @@ parametrisation is natural for the family:
   `(m, d)` array, for hyperparameters `lam` (a 1-d array);
 - `lower` / `upper`: the box on `lam`;
 - `score_prior_ref(draws)`: the reference prior's score; defaults to the `grad_log_pdf` of the model's reference prior (`base_prior`).
-
-The FD is evaluated directly from the scores and its maximum and minimum are found by global optimisation
-(`method="dual_annealing"` or `"differential_evolution"`, with `n_restarts` restarts). There is no convexity guarantee,
-so the result is only as good as the optimiser; increase `maxiter` / `n_restarts` if in doubt. For example, a Student-t
-candidate with varying location, scale and degrees of freedom:
 
 ```python
 def student_t_score(draws, lam):
@@ -159,8 +147,7 @@ See [`examples/parametric_black_box_prior_sensitivity.py`](examples/parametric_b
 lr_sensitivity(model, lower, upper, lr_ref=None)
 ```
 
-With the prior fixed, $\mathrm{FD}(\lambda) = (\lambda - \lambda_\mathrm{ref})^2\,\mathbb E\|\nabla_\theta \ell\|^2$, so no
-optimisation is needed. The model needs `loss_grad`; see
+The model needs `loss_grad`; see
 [`examples/parametric_lr_sensitivity.py`](examples/parametric_lr_sensitivity.py).
 
 ### Nonparametric prior sensitivity (FDsens+)
@@ -177,10 +164,7 @@ nonparametric_prior_sensitivity(model, radius, basis="MaternBasisFunction", basi
 - `independent=True`: for factorised priors, solves one problem per parameter (`radius` may then be one value per
   parameter); `result.components` holds the per-parameter results.
 
-The result also contains `lambda_sup`, the coefficients of the worst-case prior
-$\pi_K(\theta) \propto \pi_\mathrm{ref}(\theta)\exp(\sum_k \lambda_k \kappa(\bar\theta_k, \theta))$, and the fitted
-`basis_function` (its `centers` and `evaluate`). See
-[`examples/nonparametric_prior_sensitivity.py`](examples/nonparametric_prior_sensitivity.py).
+See [`examples/nonparametric_prior_sensitivity.py`](examples/nonparametric_prior_sensitivity.py).
 
 ### Config-driven use
 
@@ -204,7 +188,7 @@ PYTHONPATH=. pdm run python examples/from_config.py --config-name gaussian_locat
      non-exponential-family candidate, its score function and a hyperparameter box, then `prior_sensitivity_black_box(...)`;
    - learning rate (FDsens): an interval, then `lr_sensitivity(...)`;
    - nonparametric prior perturbations (FDsens+): a radius and a kernel, then `nonparametric_prior_sensitivity(...)`.
-4. **Read the result**: `sensitivity` is $\widehat S_m^{\mathrm{FD}}$; `lambda_max` / `lambda_min` (FDsens) or `lambda_sup`
+4. **Read the result**: `sensitivity` is global sensitivity; `lambda_max` / `lambda_min` (FDsens) or `lambda_sup`
    (FDsens+) describe the worst-case and least-sensitive choices; `components` gives per-parameter shares when
    `independent=True`.
 
@@ -213,21 +197,11 @@ PYTHONPATH=. pdm run python examples/from_config.py --config-name gaussian_locat
 | Script | Analysis |
 | --- | --- |
 | [`examples/parametric_prior_sensitivity.py`](examples/parametric_prior_sensitivity.py) | FDsens prior sensitivity (Quickstart) |
-| [`examples/parametric_independent_components.py`](examples/parametric_independent_components.py) | FDsens decomposition over independent prior components (Normal mean, Gamma scale) |
-| [`examples/parametric_black_box_prior_sensitivity.py`](examples/parametric_black_box_prior_sensitivity.py) | FDsens for a non-exponential-family candidate (Student-t), black-box |
+| [`examples/parametric_independent_components.py`](examples/parametric_independent_components.py) | FDsens decomposition over independent prior components |
+| [`examples/parametric_black_box_prior_sensitivity.py`](examples/parametric_black_box_prior_sensitivity.py) | FDsens for a non-exponential-family candidate |
 | [`examples/parametric_lr_sensitivity.py`](examples/parametric_lr_sensitivity.py) | FDsens learning-rate sensitivity |
 | [`examples/nonparametric_prior_sensitivity.py`](examples/nonparametric_prior_sensitivity.py) | FDsens+ sensitivity over an FD ball |
 | [`examples/from_config.py`](examples/from_config.py) | Both, from [`configs/examples/`](configs/examples) |
-
-### Tests
-
-```sh
-pdm install -G test
-pdm run pytest
-```
-
-The tests check the estimators against closed forms on a conjugate Gaussian model, the optimisers against brute-force
-search, and that every config's `_target_` and basis names resolve.
 
 ## Contributing
 
@@ -237,38 +211,6 @@ from `BaseDistribution` and implement `sample`, `pdf`, `log_pdf`, `grad_log_pdf`
 [`src/common/utils/distributions.py`](src/common/utils/distributions.py). New kernels go in
 [`src/nonparametric/basis_functions.py`](src/nonparametric/basis_functions.py) with `evaluate` / `gradient` returning
 `(m, d, K)` arrays, and an entry in `BASIS_FUNCTIONS_REGISTRY`.
-
-## Reproducing the papers
-
-The `paper/` directory contains the experiment scripts, organized into one folder per experimental setting.
-In each folder, `run_parametric.py` belongs to the parametric (FDsens) paper and `run_nonparametric.py` to the
-nonparametric (FDsens+) paper, which uses kernel exponential family neighbourhoods solved through a generalised
-eigenvalue problem.
-
-### `paper/toy/`
-Toy Gaussian experiments and finite-sample complexity comparisons.
-- `run_parametric.py` — sensitivity analysis on univariate/multivariate Gaussian models; generates FD sensitivity curves and comparison plots against the mean, KL and Wasserstein-2 measures.
-- `run_nonparametric.py` — FDsens+ on the Gaussian location model: worst-case priors across radii (1d/2d), runtimes, sensitivity vs number of centres, closed-form estimation errors, kernel and centre choices, and the parametric vs nonparametric comparison.
-
-### `paper/ising/`
-Generalised Bayesian inference for the Ising model with pseudolikelihood and discrete Fisher divergence losses.
-- `run_parametric.py` — `main()` computes FD learning-rate sensitivity grids for the three learning-rate calibration methods; `create_combined_plots()` produces the paper figures.
-
-### `paper/posteriordb/`
-Real-data experiments using models from the PosteriorDB benchmark.
-- `run_parametric.py` — z-scale prior sensitivity and posterior predictives for the Kilpisjarvi AR(5) model; run end to end with `run_parametric_predictive.sh` (requires R with `rstan`). The optimiser runtime comparison (full corner enumeration, per-component decomposition, black-box dual annealing) runs separately with `playground.stage=timing` and is replotted from the saved timings with `playground.stage=plot_timing`.
-- `run_nonparametric.py` — FDsens vs FDsens+ per-parameter sensitivity shares for the Kilpisjarvi AR(5) model in z-scale.
-
-### `paper/sbi/`
-Experiments on the Turin channel model fitted via simulation-based inference (SBI).
-- `run_parametric.py` — FD sensitivity to Gaussian-copula prior dependence for the Turin SBI model.
-
-### `paper/bnn/`
-Bayesian neural networks on UCI regression datasets (posterior samples from the `bnn_priors` code of Fortuin et al., 2022).
-- `run_nonparametric.py` — per-parameter FDsens+ sensitivity: Boston weight heatmap, all-dataset runs, and the layer-wise sensitivity table.
-
-### `paper/illustrative/`
-- `run_nonparametric.py` — schematic of the sieve approximation and the Monte Carlo constraint estimate (`sieve_and_mc.pdf`); run with `python -m paper.illustrative.run_nonparametric`.
 
 ## Citing
 
