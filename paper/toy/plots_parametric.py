@@ -975,6 +975,37 @@ def compute_global_ylim_time(results: Dict[str, Any], logy: bool = False) -> Tup
     return ymin, ymax
 
 
+def exact_comparison_targets(d: int) -> Dict[str, float]:
+    """Exact values of the compared measures in dimension d: the errors are relative to these."""
+    dist = make_experiment_distributions(d)
+    mu_ref, Sigma_ref = dist["ref"]
+    mu_cand, Sigma_cand = dist["cand"]
+    return {
+        "fd": fisher_divergence_gaussians_ref_expectation(mu_ref, Sigma_ref, mu_cand, Sigma_cand),
+        "mean": float(np.linalg.norm(mu_cand, ord=2)),
+        "wim": w2_gaussian(mu_ref, Sigma_ref, mu_cand, Sigma_cand),
+        "kl": kl_gaussian(mu_ref, Sigma_ref, mu_cand, Sigma_cand),
+    }
+
+
+def to_relative_errors(results: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert results holding absolute errors |rho - rho_hat_m| into relative errors |rho - rho_hat_m| / |rho|.
+
+    The stored results are absolute; the target rho is a fixed constant per dimension, so dividing the mean error and
+    its bootstrap CI half-width by |rho| is exact.
+    """
+    out = dict(results)
+    out["error_mean"] = {method: {} for method in results["error_mean"]}
+    out["error_ci"] = {method: {} for method in results["error_ci"]}
+    for d in results["dims"]:
+        targets = exact_comparison_targets(d)
+        for method in results["error_mean"]:
+            scale = abs(float(targets[method]))
+            out["error_mean"][method][d] = [v / scale for v in results["error_mean"][method][d]]
+            out["error_ci"][method][d] = [v / scale for v in results["error_ci"][method][d]]
+    return out
+
+
 def compute_gaussian_complexity_results(
     ms: List[int],
     dims: List[int],
@@ -982,7 +1013,7 @@ def compute_gaussian_complexity_results(
     seed: int = 0,
     divergence: str = None,
 ) -> Dict[str, Any]:
-    """Compute finite-sample estimation errors and runtimes for the requested divergence(s)."""
+    """Compute finite-sample absolute estimation errors and runtimes for the requested divergence(s)."""
     rng = np.random.default_rng(seed)
 
     methods = ["fd", "mean", "wim", "kl"] if divergence is None else [divergence]
@@ -1030,12 +1061,9 @@ def compute_gaussian_complexity_results(
         mu_cand, Sigma_cand = dist["cand"]
 
         # exact targets
-        fd_true = fisher_divergence_gaussians_ref_expectation(
-            mu_ref, Sigma_ref, mu_cand, Sigma_cand
-        )
+        targets = exact_comparison_targets(d)
+        fd_true, w2_true, kl_true = targets["fd"], targets["wim"], targets["kl"]
         mu_cand_true = mu_cand
-        w2_true = w2_gaussian(mu_ref, Sigma_ref, mu_cand, Sigma_cand)
-        kl_true = kl_gaussian(mu_ref, Sigma_ref, mu_cand, Sigma_cand)
 
         for m in ms:
             print(f"Computing statistics for dim={d}, m={m}.")
@@ -1289,7 +1317,7 @@ def plot_finite_sample_complexity_gaussians(
     xlim: Tuple[float, float] = None,
     show_ci: bool = False,
 ) -> Dict[str, Any]:
-    """Plot finite-sample error curves with identical axes sizes and return the computed results."""
+    """Plot finite-sample relative error curves with identical axes sizes and return the computed results."""
     os.makedirs(output_dir, exist_ok=True)
 
     plt.rcParams.update({
@@ -1307,6 +1335,7 @@ def plot_finite_sample_complexity_gaussians(
             seed=seed,
         )
 
+    results = to_relative_errors(results)
     error_mean = results["error_mean"]
     error_ci = results["error_ci"]
 
@@ -1349,13 +1378,13 @@ def plot_finite_sample_complexity_gaussians(
     ylim_global = ylim if ylim is not None else compute_global_ylim(logy=logy)
 
     all_plot_specs = [
-        ("fd",   r"$\left|\rho(\tilde{\Pi}^\lambda)-\hat{\rho}_m(\tilde{\Pi}^\lambda)\right|$",
+        ("fd",   r"$|\rho(\tilde{\Pi}^\lambda)-\hat{\rho}_m(\tilde{\Pi}^\lambda)| / \rho(\tilde{\Pi}^\lambda)$",
          "comparison_measure_sample_complexity_fd.pdf",   True, True),
-        ("mean", r"$\left\|\rho^{\mathrm{mean}}-\hat{\rho}^{\mathrm{mean}}_m\right\|_2$",
+        ("mean", r"$\frac{\left\|\rho^{\mathrm{mean}}-\hat{\rho}^{\mathrm{mean}}_m\right\|_2}{\left\|\rho^{\mathrm{mean}}\right\|_2}$",
          "comparison_measure_sample_complexity_mean.pdf", False, False),
-        ("wim",  r"$\left|\rho(\tilde{\Pi}^\lambda)-\hat{\rho}_m(\tilde{\Pi}^\lambda)\right|$",
+        ("wim",  r"$\frac{\left|\rho(\tilde{\Pi}^\lambda)-\hat{\rho}_m(\tilde{\Pi}^\lambda)\right|}{\rho(\tilde{\Pi}^\lambda)}$",
          "comparison_measure_sample_complexity_wim.pdf",  False,  False),
-        ("kl",   r"$\left|\rho^{\mathrm{KL}}-\hat{\rho}^{\mathrm{KL}}_m\right|$",
+        ("kl",   r"$\frac{\left|\rho^{\mathrm{KL}}-\hat{\rho}^{\mathrm{KL}}_m\right|}{\rho^{\mathrm{KL}}}$",
          "comparison_measure_sample_complexity_kl.pdf",   False, False),
     ]
     plot_specs = [(m, yl, f, xe, ye) for m, yl, f, xe, ye in all_plot_specs
@@ -1408,6 +1437,9 @@ def plot_finite_sample_complexity_gaussians(
             ylim=ylim,
             xlim=xlim,
         )
+        if method == "fd":
+            # The one-line relative-error label is taller than the axes: centre it on the figure, not the axes.
+            ax.yaxis.label.set_y(0.37)
 
         if method == "wim":
             ax.legend(frameon=False, loc="upper right")
@@ -1422,5 +1454,3 @@ def plot_finite_sample_complexity_gaussians(
                  ylim=ylim_global, show_xlabel=show_xlabel, show_ylabel=show_ylabel)
 
     return results
-
-

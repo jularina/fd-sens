@@ -1,13 +1,36 @@
-from src.parametric.optimization import *
-from src.common.utils.files_operations import *
-from src.common.utils.distributions import DISTRIBUTION_MAP
-from paper.common.bayesian_model.base import BayesianModel
-from paper.toy.plots_parametric import *
-from src.parametric.fisher_divergence import PosteriorFDParametric
-
+import os
 import warnings
+
 import hydra
+import numpy as np
 from hydra.utils import instantiate, get_original_cwd
+
+from paper.common.bayesian_model.base import BayesianModel
+from paper.toy.plots_parametric import (
+    compute_gaussian_complexity_results,
+    compute_global_ylim_error,
+    compute_global_ylim_time,
+    plot_eta_surface,
+    plot_existing_methods_comparison_gaussians,
+    plot_finite_sample_complexity_gaussians,
+    plot_mu_sigma_contour,
+    plot_multi_line_plots,
+    plot_multivariate_joint_prior_densities_by_fd,
+    plot_runtime_complexity_gaussians,
+    to_relative_errors,
+)
+from src.common.utils.distributions import DISTRIBUTION_MAP
+from src.common.utils.files_operations import (
+    convert_dim_keys_to_int,
+    load_plot_config,
+    load_results_json,
+    save_to_serializable_json,
+)
+from src.parametric.fisher_divergence import PosteriorFDParametric
+from src.parametric.optimization import (
+    OptimizationCornerPointsMultivariateGaussian,
+    OptimizationCornerPointsUnivariateGaussian,
+)
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -180,16 +203,6 @@ def comparison_plot_existing_methods(cfg):
 
     comparison_dir = os.path.join(get_original_cwd(), "data/multivariate_gaussian/comparison/")
 
-    combined_results_path = os.path.join(comparison_dir, "finite_sample_results.json")
-    if os.path.exists(combined_results_path):
-        combined_results = load_results_json(combined_results_path)
-        combined_results = convert_dim_keys_to_int(combined_results)
-        error_ylim = compute_global_ylim_error(combined_results, logy=True)
-        time_ylim = compute_global_ylim_time(combined_results, logy=True)
-    else:
-        error_ylim = None
-        time_ylim = None
-
     divergence_configs = {
         "fd": {
             "ms": list(range(500, 10001, 500)),
@@ -212,23 +225,34 @@ def comparison_plot_existing_methods(cfg):
     all_ms = [m for cfg in divergence_configs.values() for m in cfg["ms"]]
     xlim = (min(all_ms), max(all_ms)+1000)
 
+    results_per_divergence = {}
     for divergence, config in divergence_configs.items():
-        ms = config["ms"]
-        dims = config["dims"]
         results_path = os.path.join(comparison_dir, f"finite_sample_results_{divergence}.json")
-
         if os.path.exists(results_path):
-            results = load_results_json(results_path)
-            results = convert_dim_keys_to_int(results)
+            results = convert_dim_keys_to_int(load_results_json(results_path))
         else:
             results = compute_gaussian_complexity_results(
-                ms=ms,
-                dims=dims,
+                ms=config["ms"],
+                dims=config["dims"],
                 n_rep=500,
                 seed=27,
                 divergence=divergence,
             )
             save_to_serializable_json(results, results_path)
+        results_per_divergence[divergence] = results  # absolute errors; the plots show them relative
+
+    # Shared y-limits over the relative errors and runtimes that are actually plotted.
+    all_results = {"dims": sorted({d for cfg in divergence_configs.values() for d in cfg["dims"]})}
+    relative = {div: to_relative_errors(res) for div, res in results_per_divergence.items()}
+    for key in ("error_mean", "error_ci", "time_mean", "time_ci"):
+        all_results[key] = {div: res[key][div] for div, res in relative.items()}
+    error_ylim = compute_global_ylim_error(all_results, logy=True)
+    time_ylim = compute_global_ylim_time(all_results, logy=True)
+
+    for divergence, config in divergence_configs.items():
+        ms = config["ms"]
+        dims = config["dims"]
+        results = results_per_divergence[divergence]
 
         plot_finite_sample_complexity_gaussians(
             output_dir=output_dir,
