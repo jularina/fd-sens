@@ -21,7 +21,7 @@ cd fd-sens
 pdm install            # add -G test to also install pytest
 ```
 
-## Quickstart (Gaussian location model)
+## Quickstart example
 
 ```python
 import numpy as np
@@ -61,6 +61,7 @@ The full script is [`examples/parametric_prior_sensitivity.py`](examples/paramet
 | [`src/nonparametric/`](src/nonparametric) | FDsens+: `nonparametric_prior_sensitivity()`, basis functions, FD quadratic forms and the generalised-eigenvalue solver. |
 | [`examples/`](examples) | Runnable scripts for each analysis. |
 | [`configs/`](configs) | Hydra configs for the paper experiments, see [`configs/README.md`](configs/README.md). |
+| [`interpretation/`](interpretation) | `plots.py`: helpers to turn a result into tables and plots (posterior quantiles, KDE, ECDF, component shares, a JSON summary). |
 | [`tests/`](tests) | Unit tests (`pytest`) for the parametric and nonparametric estimators and for the paper configs. |
 | [`paper/`](paper) | The paper experiments: their config-driven model classes and losses, run scripts and plotting code reproducing the figures of both papers. |
 
@@ -157,16 +158,31 @@ See [`examples/nonparametric_prior_sensitivity.py`](examples/nonparametric_prior
      non-exponential-family candidate, its score function and a hyperparameter box, then `prior_sensitivity_black_box(...)`;
    - learning rate (FDsens): an interval, then `lr_sensitivity(...)`;
    - nonparametric prior perturbations (FDsens+): a radius and a kernel, then `nonparametric_prior_sensitivity(...)`.
-4. **Read the result**: `sensitivity` is global sensitivity; `lambda_max` / `lambda_min` (FDsens) or `lambda_sup`
+4. **Read the result** (and plot it, see [Interpreting a result](#interpreting-a-result)): `sensitivity` is global sensitivity; `lambda_max` / `lambda_min` (FDsens) or `lambda_sup`
    (FDsens+) describe the worst-case and least-sensitive choices; `components` gives per-parameter shares when
    `independent=True`.
+5. 
+### Interpreting a result
+
+[`interpretation/plots.py`](interpretation/plots.py) turns a result into tables and plots:
+
+- `save_sensitivity_result(result, output_dir)`: the result's values as JSON;
+- `plot_quantiles(draws, output_dir, variables=None)`: a posterior-quantile table (`.csv`) and a median/90%-interval
+  plot (`.png`) comparing the fits;
+- `plot_kde(draws, output_dir, variables=None)`: a kernel density comparison, one panel per parameter;
+- `plot_ecdf(draws, output_dir, variables=None)`: an empirical CDF comparison, one panel per parameter;
+- `plot_component_shares(result, output_dir)`: for a result computed with `independent=True` (FDsens or FDsens+), a
+  100%-stacked bar of each parameter's share of the total sensitivity.
+
+[`examples/parametric_prior_sensitivity.py`](examples/parametric_prior_sensitivity.py) and
+[`examples/parametric_independent_components.py`](examples/parametric_independent_components.py) use them.
 
 ### Examples
 
 | Script | Analysis |
 | --- | --- |
-| [`examples/parametric_prior_sensitivity.py`](examples/parametric_prior_sensitivity.py) | FDsens prior sensitivity (Quickstart) |
-| [`examples/parametric_independent_components.py`](examples/parametric_independent_components.py) | FDsens decomposition over independent prior components |
+| [`examples/parametric_prior_sensitivity.py`](examples/parametric_prior_sensitivity.py) | FDsens prior sensitivity (Quickstart), with quantile, KDE and ECDF plots |
+| [`examples/parametric_independent_components.py`](examples/parametric_independent_components.py) | FDsens decomposition over independent prior components, with a component-share plot |
 | [`examples/parametric_black_box_prior_sensitivity.py`](examples/parametric_black_box_prior_sensitivity.py) | FDsens for a non-exponential-family candidate |
 | [`examples/parametric_lr_sensitivity.py`](examples/parametric_lr_sensitivity.py) | FDsens learning-rate sensitivity |
 | [`examples/nonparametric_prior_sensitivity.py`](examples/nonparametric_prior_sensitivity.py) | FDsens+ sensitivity over an FD ball |
@@ -175,7 +191,7 @@ See [`examples/nonparametric_prior_sensitivity.py`](examples/nonparametric_prior
 
 New distributions are welcome: add a class under [`src/common/distributions/`](src/common/distributions) deriving
 from `BaseDistribution` and implement `sample`, `pdf`, `log_pdf`, `grad_log_pdf`, `natural_parameters`,
-`grad_sufficient_statistics`. 
+`grad_sufficient_statistics`.
 
 New kernels go in
 [`src/nonparametric/basis_functions.py`](src/nonparametric/basis_functions.py) with `evaluate` / `gradient` returning

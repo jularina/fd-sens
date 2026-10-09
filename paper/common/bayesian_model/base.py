@@ -37,7 +37,6 @@ class BayesianModel(ABC):
         self.m: int = data_config.posterior_samples_num
         self.m_prior: int = data_config.prior_samples_num
 
-
     def back_to_prior_candidate(self, *, deep: bool = True):
         """Reset the current prior to the candidate prior (deep-copied by default) and return self."""
         self.prior = copy.deepcopy(self.prior_candidate) if deep else self.prior_candidate
@@ -64,7 +63,6 @@ class BayesianModel(ABC):
     def set_lr_parameter(self, lr: float) -> None:
         """Set the learning rate that scales the loss term."""
         self.loss_lr = lr
-
 
     def loss_score(self, x: ArrayLike, multiply_by_lr: bool = True) -> np.ndarray:
         """Compute gradient of log likelihood (scaled by learning rate)."""

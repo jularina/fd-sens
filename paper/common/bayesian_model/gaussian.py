@@ -63,4 +63,3 @@ class MultivariateGaussianModel(BayesianModelExtended):
         """
         mu_n, Sigma_n = self.compute_posterior_params()
         return np.random.multivariate_normal(mu_n, Sigma_n, size=n_samples)
-

@@ -37,9 +37,6 @@ class TurinBayesianModel(ABC):
 
         return observations, posterior_samples, likelihood_grads, prior_samples
 
-
     def loss_score(self, x: np.ndarray, multiply_by_lr: bool = True) -> np.ndarray:
         grad = self.loss.grad_log_pdf()
         return self.loss_lr * grad if multiply_by_lr else grad
-
-

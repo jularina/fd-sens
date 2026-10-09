@@ -31,7 +31,8 @@ def test_fd_estimate_matches_closed_form(gaussian_location):
     model, y = gaussian_location
     estimator = PosteriorFDParametric(model)
     for eta in [(-1.0, -0.5), (0.5, -0.1), (0.125, -0.03125)]:
-        assert estimator.fd_prior_only_given_eta(np.array(eta)) == pytest.approx(_closed_form_fd(eta, y), rel=0.02, abs=1e-6)
+        assert estimator.fd_prior_only_given_eta(np.array(eta)) == pytest.approx(
+            _closed_form_fd(eta, y), rel=0.02, abs=1e-6)
 
 
 def test_quadratic_corner_maximum_matches_grid(gaussian_location):

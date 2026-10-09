@@ -11,3 +11,4 @@ src/utils/__pycache__/
 *.py[cod]
 __pycache__/
 *.pyc
+interpretation/output/

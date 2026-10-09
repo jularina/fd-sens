@@ -18,4 +18,3 @@ def test_targets_and_basis_names_resolve(path):
         assert hasattr(importlib.import_module(module), attr), target
     for basis in re.findall(r"^\s*(?:basis_funcs_type|basis):\s*(\w+)", text, flags=re.M):
         assert basis in BASIS_FUNCTIONS_REGISTRY, basis
-

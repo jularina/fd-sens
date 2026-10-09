@@ -1,6 +1,7 @@
 """FDsens prior sensitivity decomposed over independent prior components (mean and scale of a Gaussian)."""
 import numpy as np
 
+from interpretation.plots import plot_component_shares, save_sensitivity_result
 from src.common.bayesian_model.samples import PosteriorSamplesModel
 from src.common.distributions.composite import CompositeProduct
 from src.common.distributions.gamma import Gamma
@@ -45,3 +46,8 @@ natural_box = {
 }
 result = prior_sensitivity(model, natural_box, independent=True)
 print(result)
+
+output_dir = "interpretation/output/independent_components"
+save_sensitivity_result(result, output_dir)
+plot_component_shares(result, output_dir)
+print("Wrote the result and component-share plot to", output_dir)

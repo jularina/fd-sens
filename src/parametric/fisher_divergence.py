@@ -94,7 +94,6 @@ class PosteriorFDParametric(PosteriorFDBase):
         diff = float(np.mean(np.sum(self.g * self.g, axis=1)))
         return (self.beta - self.beta_ref)**2 * diff
 
-
     # -------------------------
     # Copula perturbations
     # -------------------------

@@ -152,7 +152,6 @@ class KilpisjarviBayesianModel:
 
         return observations, posterior_samples, ordered_names
 
-
     def loss_score(self, x: ArrayLike, multiply_by_lr: bool = True) -> np.ndarray:
         grad = self.loss.grad_log_pdf(x)
         return self.loss_lr * grad if multiply_by_lr else grad
