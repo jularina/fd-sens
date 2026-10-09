@@ -19,6 +19,8 @@ Clone the repository and install its dependencies with [PDM](https://pdm-project
 git clone https://github.com/jularina/fd-sens.git
 cd fd-sens
 pdm install            # add -G test to also install pytest
+pdm run python examples/parametric_prior_sensitivity.py
+pdm run pytest         # needs -G test
 ```
 
 ## Quickstart example
@@ -161,7 +163,7 @@ See [`examples/nonparametric_prior_sensitivity.py`](examples/nonparametric_prior
 4. **Read the result** (and plot it, see [Interpreting a result](#interpreting-a-result)): `sensitivity` is global sensitivity; `lambda_max` / `lambda_min` (FDsens) or `lambda_sup`
    (FDsens+) describe the worst-case and least-sensitive choices; `components` gives per-parameter shares when
    `independent=True`.
-5. 
+5.
 ### Interpreting a result
 
 [`interpretation/plots.py`](interpretation/plots.py) turns a result into tables and plots:

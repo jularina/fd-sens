@@ -35,3 +35,12 @@ test = [
 testpaths = ["tests"]
 pythonpath = ["."]
 filterwarnings = ["ignore::UserWarning", "ignore::DeprecationWarning"]
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.pdm.build]
+# Packages are imported from the repository root (`src.*`, `interpretation.*`), not from inside src/.
+package-dir = "."
+includes = ["src", "interpretation"]

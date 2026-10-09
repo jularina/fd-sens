@@ -116,7 +116,7 @@ model = instantiate(cfg.model, data_config=cfg.data)
 
 7. **Overriding from the command line:** another config in the same folder is selected with `--config-name`, and any
    existing key can be overridden, e.g.
-   `PYTHONPATH=. pdm run python paper/toy/run_nonparametric.py --config-name univariate_gaussian_nonparam data.observations_num=50`.
+   `pdm run python paper/toy/run_nonparametric.py --config-name univariate_gaussian_nonparam data.observations_num=50`.
 
 `pdm run pytest tests/test_configs.py` checks that every `_target_` and basis name in `configs/` resolves.
 
