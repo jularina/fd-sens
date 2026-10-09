@@ -2,7 +2,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
-from src.common.bayesian_model.posteriordb.kilpisjarvi import KilpisjarviBayesianModel
+from paper.posteriordb.kilpisjarvi import KilpisjarviBayesianModel
 
 
 class KilpisjarviNonparametricLoader:

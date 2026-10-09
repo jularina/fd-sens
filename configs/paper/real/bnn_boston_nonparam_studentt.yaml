@@ -39,7 +39,7 @@ data:
     - LSTAT
 
 model:
-  _target_: src.common.bayesian_model.bnn.uci_bnn.BNNPosteriorSamples
+  _target_: paper.bnn.uci_bnn.BNNPosteriorSamples
 
 optimize:
   nonparametric:

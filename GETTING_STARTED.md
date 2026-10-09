@@ -60,7 +60,7 @@ $$
 
 ## FDsens: parametric neighbourhoods
 
-If the candidate priors form an exponential family $\pi(\theta\mid\eta)\propto h(\theta)\exp(\eta^\top T(\theta))$ and $\Gamma$ is a box of natural parameters $\eta$, the estimated FD is a **convex quadratic form** in $\eta$. Its maximum over the box is attained at a corner, so it is found by enumerating the corners, and its minimum is a convex quadratic programme. When the priors of different parameters are independent, the sensitivity is the sum of per-parameter sensitivities, which keeps the problem small in high dimensions.
+If the candidate priors form an exponential family $\pi(\theta\mid\eta)\propto h(\theta)\exp(\eta^\top T(\theta))$ and $\Gamma$ is a box of natural parameters $\eta$, the estimated FD is a **convex quadratic form** in $\eta$. Its maximum over the box is attained at a corner, so it is found by enumerating the corners, and its minimum is a convex quadratic programme. When the reference prior lies in the box, the minimum is 0 at the reference and is skipped, so the sensitivity is the maximum FD. When the priors of different parameters are independent, the sensitivity is the sum of per-parameter sensitivities, which keeps the problem small in high dimensions.
 
 For learning-rate sensitivity of a generalised posterior $\widetilde\pi^\lambda \propto \exp(-\lambda\,\ell)\,\pi$, the FD reduces to $(\lambda-\lambda_{\mathrm{ref}})^2\,\mathbb E\|\nabla_\theta\ell\|^2$, so no optimisation is needed.
 

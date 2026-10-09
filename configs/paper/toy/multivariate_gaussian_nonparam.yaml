@@ -23,7 +23,7 @@ data:
     mu: [3.0, 3.0]
     cov: [[4.0, 0.0], [0.0, 4.0]]
   loss:
-    _target_: src.common.losses.gaussian_log_likelihood.MultivariateGaussianLogLikelihood
+    _target_: paper.common.losses.gaussian_log_likelihood.MultivariateGaussianLogLikelihood
     mu: [3.0, 3.0]
     cov: [[4.0, 0.0], [0.0, 4.0]]
   loss_lr: 1
@@ -36,7 +36,7 @@ data:
   prior_samples_num: 5000
 
 model:
-  _target_: src.common.bayesian_model.gaussian.MultivariateGaussianModel
+  _target_: paper.common.bayesian_model.gaussian.MultivariateGaussianModel
 
 optimize:
   nonparametric:

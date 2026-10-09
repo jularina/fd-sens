@@ -491,8 +491,12 @@ class OptimizationCornerPointsCompositePrior:
         workers: int = 1,
         updating: str = "immediate",
         n_restarts: int = 1,
+        compute_inf: bool = True,
     ) -> BlackBoxOptResult:
-        """Find the sup and inf of the prior-only FD over the eta box with a global black-box solver."""
+        """Find the sup and inf of the prior-only FD over the eta box with a global black-box solver.
+
+        With compute_inf=False only the sup is searched (e.g. when the inf is known to be 0); eta_inf is then NaN.
+        """
         bounds = self._eta_bounds_full_box()
 
         kwargs = dict(
@@ -505,10 +509,13 @@ class OptimizationCornerPointsCompositePrior:
         eta_sup = np.asarray(res_sup.x, dtype=float)
         val_sup = float(self._evaluate_prior_fd_black_box(eta_sup))
 
-        res_inf = self._run_optimizer(func=self._evaluate_prior_fd_black_box, bounds=bounds,
-                                      **{**kwargs, "seed": seed + n_restarts})
-        eta_inf = np.asarray(res_inf.x, dtype=float)
-        val_inf = float(self._evaluate_prior_fd_black_box(eta_inf))
+        if compute_inf:
+            res_inf = self._run_optimizer(func=self._evaluate_prior_fd_black_box, bounds=bounds,
+                                          **{**kwargs, "seed": seed + n_restarts})
+            eta_inf = np.asarray(res_inf.x, dtype=float)
+            val_inf = float(self._evaluate_prior_fd_black_box(eta_inf))
+        else:
+            res_inf, eta_inf, val_inf = None, np.full(len(bounds), np.nan), 0.0
 
         return BlackBoxOptResult(
             eta_sup=eta_sup,
@@ -517,7 +524,7 @@ class OptimizationCornerPointsCompositePrior:
             val_inf=val_inf,
             S_hat=float(val_sup - val_inf),
             nfev_sup=int(getattr(res_sup, "nfev", -1)),
-            nfev_inf=int(getattr(res_inf, "nfev", -1)),
+            nfev_inf=int(getattr(res_inf, "nfev", -1)) if res_inf is not None else 0,
         )
 
     def _evaluate_copula_fd_black_box(

@@ -180,7 +180,7 @@ data:
         beta: 1.0
   true_dgp: null
   loss:
-    _target_: src.common.losses.gaussian_log_likelihood.GaussianLogLikelihoodWithGivenGrads
+    _target_: paper.common.losses.gaussian_log_likelihood.GaussianLogLikelihoodWithGivenGrads
   loss_lr: 1.0
   loss_lr_init: 1.0
   observations_path: null # from pre-saved archive
@@ -192,7 +192,7 @@ data:
   archive_path: "/Users/arinaodv/Desktop/folder/study_phd/code/cost-aware-sbi/sims/turin/mixture/nle/0/ckpt_with_z_scored_priors_likelihood_grads.tar" #ckpt_with_normalized_likelihood_grads_multiple_mcmc_chains.tar
 
 model:
-  _target_: src.common.bayesian_model.sbi.turin.TurinBayesianModel
+  _target_: paper.sbi.turin.TurinBayesianModel
 
 fd:
   optimize:

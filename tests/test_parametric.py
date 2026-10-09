@@ -133,3 +133,23 @@ def test_black_box_rejects_invalid_box(gaussian_location):
     model, _ = gaussian_location
     with pytest.raises(ValueError):
         prior_sensitivity_black_box(model, _student_t_score, lower=[1.0, 1.0, 2.0], upper=[-1.0, 3.0, 30.0])
+
+
+def test_reference_outside_box_still_minimises(gaussian_location):
+    model, _ = gaussian_location
+    box = {"theta": {"eta_1": [0.5, 1.0], "eta_2": [-0.5, -0.1]}}   # reference eta = (0.125, -0.03125) is outside
+    result = prior_sensitivity(model, box)
+    estimator = PosteriorFDParametric(model)
+    grid = [
+        estimator.fd_prior_only_given_eta(np.array([e1, e2]))
+        for e1, e2 in itertools.product(np.linspace(0.5, 1.0, 21), np.linspace(-0.5, -0.1, 21))
+    ]
+    assert result.fd_min > 0.0
+    assert result.fd_min <= min(grid) + 1e-9
+
+
+def test_independent_reference_inside_box_gives_zero_component_minima(two_independent_locations):
+    box = {name: BOX["theta"] for name in ("a", "b")}
+    result = prior_sensitivity(two_independent_locations, box, independent=True)
+    assert all(c["fd_min"] == 0.0 for c in result.components.values())
+    assert result.sensitivity == pytest.approx(result.fd_max)

@@ -1,10 +1,10 @@
 import numpy as np
 
-from src.common.bayesian_model.base import BayesianModel
+from src.common.bayesian_model.samples import PosteriorSamplesModel
 
 
 class PosteriorFDBase:
-    def __init__(self, model: "BayesianModel"):
+    def __init__(self, model: "PosteriorSamplesModel"):
         """Store posterior samples, reference prior score and loss gradient for Fisher divergence estimation."""
         self.model = model
         self.samples: np.ndarray = self.model.posterior_samples_init

@@ -54,6 +54,26 @@ def _eta_components(natural_box: Dict[str, Dict[str, Sequence[float]]], dim: int
     return comps
 
 
+def _reference_eta_in_box(model, comps: list) -> list:
+    """Per component, the reference prior's natural parameters if it belongs to the candidate family and lies inside
+    the box (so the FD infimum there is 0, attained at the reference), otherwise None."""
+    ref_comps = getattr(model.prior_init, "components", None)
+    cand_comps = getattr(model.prior_candidate, "components", None)
+    if ref_comps is None or cand_comps is None or len(ref_comps) != len(comps):
+        return [None] * len(comps)
+    out = []
+    for ref, cand, comp in zip(ref_comps, cand_comps, comps):
+        eta = None
+        if type(ref) is type(cand):
+            ref_eta = np.asarray(ref.natural_parameters(), dtype=float).reshape(-1)
+            lo = np.array([comp["eta_range"]["eta_1"][0], comp["eta_range"]["eta_2"][0]])
+            hi = np.array([comp["eta_range"]["eta_1"][1], comp["eta_range"]["eta_2"][1]])
+            if ref_eta.shape == lo.shape and np.all(ref_eta >= lo) and np.all(ref_eta <= hi):
+                eta = ref_eta
+        out.append(eta)
+    return out
+
+
 def prior_sensitivity(
     model,
     natural_box: Dict[str, Dict[str, Sequence[float]]],
@@ -61,12 +81,18 @@ def prior_sensitivity(
     independent: bool = False,
     **black_box_kwargs,
 ) -> FDSensitivityResult:
-    """Parametric (FDsens) prior sensitivity over a box of exponential-family natural parameters."""
+    """Parametric (FDsens) prior sensitivity over a box of exponential-family natural parameters.
+
+    When the reference prior belongs to the candidate family and its natural parameters lie inside the box, the FD
+    infimum is 0 at the reference, so only the supremum is computed.
+    """
     if model.prior_candidate is None:
         raise ValueError("Prior sensitivity needs model.candidate_prior (the exponential-family candidate family).")
     dim = model.posterior_samples_init.shape[1]
     comps = _eta_components(natural_box, dim)
     names = [c["name"] for c in comps]
+    ref_etas = _reference_eta_in_box(model, comps)
+    reference_in_box = all(eta is not None for eta in ref_etas)
 
     estimator = PosteriorFDParametric(model=model)
     optimizer = OptimizationCornerPointsCompositePrior(estimator, {"eta_components": comps}, loss_config={})
@@ -74,17 +100,21 @@ def prior_sensitivity(
     if method == "black_box":
         if independent:
             raise ValueError("independent=True is only available with method='quadratic'.")
-        res = optimizer.black_box_optimize_prior_box_global(**black_box_kwargs)
+        res = optimizer.black_box_optimize_prior_box_global(compute_inf=not reference_in_box, **black_box_kwargs)
+        fd_min, eta_min = (0.0, np.concatenate(ref_etas)) if reference_in_box else (res.val_inf, res.eta_inf)
         return FDSensitivityResult(
-            sensitivity=res.S_hat, fd_min=res.val_inf, fd_max=res.val_sup,
-            lambda_min=res.eta_inf, lambda_max=res.eta_sup, analysis="prior", method="black_box",
+            sensitivity=res.val_sup - fd_min, fd_min=fd_min, fd_max=res.val_sup,
+            lambda_min=eta_min, lambda_max=res.eta_sup, analysis="prior", method="black_box",
         )
     if method != "quadratic":
         raise ValueError("method must be 'quadratic' or 'black_box'.")
 
     if not independent:
         corners, eta_max = optimizer.evaluate_all_prior_corners()
-        eta_min, fd_min = optimizer.minimize_prior_full_qp()
+        if reference_in_box:
+            eta_min, fd_min = np.concatenate(ref_etas), 0.0
+        else:
+            eta_min, fd_min = optimizer.minimize_prior_full_qp()
         fd_max = float(corners[0][1])
         return FDSensitivityResult(
             sensitivity=fd_max - fd_min, fd_min=fd_min, fd_max=fd_max,
@@ -92,7 +122,12 @@ def prior_sensitivity(
         )
 
     corners, eta_max = optimizer.evaluate_all_prior_corners_per_component(component_names=names)
-    eta_min, fd_min = optimizer.minimize_prior_per_component_qp(names)
+    eta_min, fd_min = {}, {}
+    if not reference_in_box:
+        eta_min, fd_min = optimizer.minimize_prior_per_component_qp(names)
+    for name, ref_eta in zip(names, ref_etas):
+        if ref_eta is not None:
+            eta_min[name], fd_min[name] = ref_eta, 0.0
     components = {}
     for name in names:
         comp_max = float(corners[name][0][1])

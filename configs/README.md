@@ -1,12 +1,15 @@
-# Writing configs
+# Paper configs
 
-Configs are [Hydra](https://hydra.cc/) YAML files. A config declares the reference model (prior, likelihood or loss,
+The paper experiments in [`paper/`](../paper) are driven by [Hydra](https://hydra.cc/) YAML configs. For your own
+model you do not need any of this: pass your posterior draws to `PosteriorSamplesModel` in Python (see the
+[README](../README.md)).
+
+A config declares the reference model (prior, likelihood or loss,
 data and posterior samples) and the neighbourhood to search. Every `_target_` is the import path of a class, which
 Hydra instantiates with the remaining keys of that block as keyword arguments.
 
 | Folder | Used by |
 | --- | --- |
-| [`examples/`](examples) | [`examples/from_config.py`](../examples/from_config.py); start from these. |
 | [`paper/toy/`](paper/toy), [`paper/real/`](paper/real) | The paper scripts in [`paper/`](../paper). |
 | [`plots/`](plots) | Shared matplotlib settings (`overleaf_plots_settings.yaml`) for the paper figures. |
 
@@ -35,7 +38,7 @@ data:
     mu: 0
     sigma: 1
   loss:                           # likelihood or loss, providing grad_log_pdf
-    _target_: src.common.losses.gaussian_log_likelihood.GaussianLogLikelihood
+    _target_: paper.common.losses.gaussian_log_likelihood.GaussianLogLikelihood
     mu: 0
     sigma: 2
   loss_lr: 1.0                    # current learning rate
@@ -49,7 +52,7 @@ data:
   prior_samples_num: 5000
 
 model:
-  _target_: src.common.bayesian_model.gaussian.SimpleGaussianModel
+  _target_: paper.common.bayesian_model.gaussian.SimpleGaussianModel
 ```
 
 The script then builds the model with
@@ -64,7 +67,7 @@ model = instantiate(cfg.model, data_config=cfg.data)
    `posterior_samples_num` and `prior_samples_num` (use `null` for unused ones). `candidate_prior` is required for
    FDsens prior sensitivity only.
 2. **`model._target_`** is a model class taking `data_config`. Classes deriving from
-   `BayesianModelExtended` ([`src/common/bayesian_model/base.py`](../src/common/bayesian_model/base.py)) load
+   `BayesianModelExtended` ([`paper/common/bayesian_model/base.py`](../paper/common/bayesian_model/base.py)) load
    `observations_path`, `posterior_samples_path` and `prior_samples_path`; when a posterior path is `null` the model
    must implement `sample_posterior()`, and when a prior path is `null` draws come from `base_prior`.
 3. **Paths** are `.npy` files; relative paths are resolved from the directory you launch from. Arrays are
@@ -113,13 +116,13 @@ model = instantiate(cfg.model, data_config=cfg.data)
 
 7. **Overriding from the command line:** another config in the same folder is selected with `--config-name`, and any
    existing key can be overridden, e.g.
-   `PYTHONPATH=. pdm run python examples/from_config.py --config-name gaussian_location_nonparam nonparametric.radius=5`.
+   `PYTHONPATH=. pdm run python paper/toy/run_nonparametric.py --config-name univariate_gaussian_nonparam data.observations_num=50`.
 
 `pdm run pytest tests/test_configs.py` checks that every `_target_` and basis name in `configs/` resolves.
 
-## Using your own model class
+## Adding a model class
 
-If your posterior samples come from an external sampler, you do not need a model class: build a
-`PosteriorSamplesModel` in Python (see the README). To use configs with a new model, subclass `BayesianModelExtended`, implement `sample_posterior()` if it should sample
-its own posterior, and override `loss_score(x, multiply_by_lr=True)` if your loss's `grad_log_pdf` does not take
-`(x, x_bar, n)`; see [`src/common/bayesian_model/gaussian.py`](../src/common/bayesian_model/gaussian.py).
+A config model is a class taking `data_config`, usually a subclass of `BayesianModelExtended`
+([`paper/common/bayesian_model/base.py`](../paper/common/bayesian_model/base.py)). Implement `sample_posterior()` if
+it should sample its own posterior, and override `loss_score(x, multiply_by_lr=True)` if your loss's `grad_log_pdf` does
+not take `(x, x_bar, n)`; see [`paper/common/bayesian_model/gaussian.py`](../paper/common/bayesian_model/gaussian.py).

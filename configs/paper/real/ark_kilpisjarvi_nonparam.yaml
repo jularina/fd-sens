@@ -73,7 +73,7 @@ data:
         beta: 1.0
   true_dgp: null
   loss:
-    _target_: src.common.losses.gaussian_log_likelihood.GaussianARLogLikelihood
+    _target_: paper.common.losses.gaussian_log_likelihood.GaussianARLogLikelihood
   loss_lr: 1
   warmup: 1000
   posterior_draws_path: "/Users/arinaodv/Desktop/folder/study_phd/code/posteriordb/posterior_database/reference_posteriors/draws/draws/kilpisjarvi-reference-draws.json"
@@ -82,7 +82,7 @@ data:
   seed: 0
 
 model:
-  _target_: src.nonparametric.loaders.KilpisjarviNonparametricLoader
+  _target_: paper.posteriordb.loaders.KilpisjarviNonparametricLoader
 
 optimize:
   nonparametric:

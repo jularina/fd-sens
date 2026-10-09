@@ -1,7 +1,7 @@
 import numpy as np
 
 from src.common.utils.typing import ArrayLike
-from src.common.losses.base import BaseLoss
+from paper.common.losses.base import BaseLoss
 
 
 class GaussianLogLikelihood(BaseLoss):

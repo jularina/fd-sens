@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.common.bayesian_model.base import BayesianModelExtended
+from paper.common.bayesian_model.base import BayesianModelExtended
 
 
 class SimpleGaussianModel(BayesianModelExtended):

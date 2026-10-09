@@ -3,12 +3,12 @@ from typing import Tuple, List, Sequence, Dict
 import numpy as np
 from scipy.stats import norm
 
-from src.common.bayesian_model.base import BayesianModel
+from src.common.bayesian_model.samples import PosteriorSamplesModel
 from src.common.fisher_divergence import PosteriorFDBase
 
 
 class PosteriorFDParametric(PosteriorFDBase):
-    def __init__(self, model: "BayesianModel"):
+    def __init__(self, model: "PosteriorSamplesModel"):
         """Fisher divergence at posterior samples for parametric exponential-family candidate priors."""
         super().__init__(model=model)
 

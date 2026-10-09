@@ -3,7 +3,7 @@ from typing import Any, Tuple
 import numpy as np
 import torch
 
-from src.common.losses.gaussian_log_likelihood import GaussianLogLikelihoodWithGivenGrads
+from paper.common.losses.gaussian_log_likelihood import GaussianLogLikelihoodWithGivenGrads
 
 
 class TurinBayesianModel(ABC):

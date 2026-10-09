@@ -1,4 +1,4 @@
-from src.common.bayesian_model.base import BayesianModel
+from src.common.bayesian_model.samples import PosteriorSamplesModel
 from src.common.fisher_divergence import PosteriorFDBase
 from src.nonparametric.basis_functions import BaseBasisFunction
 
@@ -7,7 +7,7 @@ import numpy as np
 
 
 class PriorFDBase:
-    def __init__(self, model: "BayesianModel"):
+    def __init__(self, model: "PosteriorSamplesModel"):
         """Store the prior samples and reference prior score used for prior Fisher divergence computations."""
         self.model = model
         self.samples: np.ndarray = self.model.prior_samples_init
@@ -34,7 +34,7 @@ class PriorFDBase:
 
 
 class PriorFDNonParametric(PriorFDBase):
-    def __init__(self, model: "BayesianModel"):
+    def __init__(self, model: "PosteriorSamplesModel"):
         """Prior Fisher divergence in the nonparametric representation, with the reference prior as base."""
         super().__init__(model=model)
         # ∇_θ log g(θ_i) where g = prior_init is the base measure in the nonparametric family
@@ -66,7 +66,7 @@ class PriorFDNonParametric(PriorFDBase):
 
 
 class PosteriorFDNonParametric(PosteriorFDBase):
-    def __init__(self, model: "BayesianModel"):
+    def __init__(self, model: "PosteriorSamplesModel"):
         """Posterior Fisher divergence in the nonparametric representation, with the reference prior as base."""
         super().__init__(model=model)
         # ∇_θ log g(θ_i) where g = prior_init is the base measure in the nonparametric family
