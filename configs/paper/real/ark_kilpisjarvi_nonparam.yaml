@@ -94,6 +94,16 @@ optimize:
       nu: 3.5
       estimation_samples_source: prior
 
+playground:
+  output_prefix: kilpisjarvi_nonparam
+  # stage: all | sensitivity | optimise | plot_predictive ("all" needs the Stan draws from optimise).
+  stage: sensitivity
+  # z-box whose radius r_j (~0.71, as in the paper) sets the worst-case KEF prior for the posterior predictive.
+  z_mu_max: 0.4
+  z_sigma_min: 0.8
+  z_sigma_max: 1.25
+
 flags:
   plots:
     output_dir: outputs/paper/plots/fisher/kilpisjarvi/param_vs_nonparam
+    predictive_output_dir: outputs/paper/plots/fisher/kilpisjarvi/nonparam
