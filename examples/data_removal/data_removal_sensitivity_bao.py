@@ -7,7 +7,8 @@ gamma_g(theta) = J_g(theta)^T Sigma_g^{-1} (D_g - M_g(theta)) are passed as `dat
 import os
 import time
 
-from interpretation.plots import plot_removal_budget, plot_removal_interactions, save_sensitivity_result
+from interpretation.plots import (plot_removal_budget, plot_removal_interactions, plot_removal_single,
+                                  save_sensitivity_result)
 from paper.bao.bao import BLOCK_NAMES, G, MODELS, block_scores, run_posterior
 from src.common.bayesian_model.samples import PosteriorSamplesModel
 from src.common.utils.files_operations import load_plot_config
@@ -33,8 +34,9 @@ model = PosteriorSamplesModel(posterior_samples=posterior, data_grad=block_score
 result = data_removal_sensitivity(model, max_removed=G - 1, names=BLOCK_NAMES, whiten=True, keep_all=True)
 print(result)
 
-# 4. Interpret: single-block FDs and block interactions, and the optimal removal per budget.
+# 4. Interpret: single-block FDs, block interactions, and the optimal removal per budget.
 save_sensitivity_result(result, OUTPUT_DIR)
-plot_removal_interactions(result, OUTPUT_DIR, plot_cfg=PLOT_CFG)
-plot_removal_budget(result, OUTPUT_DIR, plot_cfg=PLOT_CFG)
+plot_removal_single(result, OUTPUT_DIR, file_stem="bao_removal_single", plot_cfg=PLOT_CFG)
+plot_removal_interactions(result, OUTPUT_DIR, file_stem="bao_removal_interactions", plot_cfg=PLOT_CFG)
+plot_removal_budget(result, OUTPUT_DIR, file_stem="bao_removal_budget", plot_cfg=PLOT_CFG)
 print(f"Saved the result and plots to {OUTPUT_DIR}/")

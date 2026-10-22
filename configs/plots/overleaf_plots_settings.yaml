@@ -49,7 +49,7 @@ plot:
       - "#4d7298" # dark-grey-blue
 #      - "#22577a" # dark-blue
 
-    # Data removal paper, by role (interpretation/plots.py: plot_removal_interactions, plot_removal_budget)
+    # Data removal paper, by role (interpretation/plots.py: plot_removal_*)
     data_removal_colors:
       - "#1f3a5f" # dark blue: optimal removal, single-removal FD bars, reinforcing cross terms
       - "#4b4453" # dark grey-purple: top-k baseline, cancelling cross terms

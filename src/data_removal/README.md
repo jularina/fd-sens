@@ -45,15 +45,17 @@ The minimum FD is 0, attained at the reference (nothing removed), so the sensiti
 
 [`interpretation/plots.py`](../../interpretation/plots.py):
 
-- `plot_removal_interactions(result, output_dir)`: single-removal FDs $A_{ii}$ and the normalised cross terms
-  $A_{ik} / \sqrt{A_{ii} A_{kk}}$;
-- `plot_removal_budget(result, output_dir)`: the optimal FD for each removal size, compared with removing the $k$
-  individually most influential units (and all subsets when `keep_all=True`);
+- `plot_removal_single(result, output_dir)`: the single-removal FDs $A_{ii}$, sorted;
+- `plot_removal_interactions(result, output_dir)`: the normalised cross terms $A_{ik} / \sqrt{A_{ii} A_{kk}}$;
+- `plot_removal_budget(result, output_dir)`: the optimal FD for each budget of at most $K$ units, compared with
+  removing the $K$ individually most influential units (and all subsets when `keep_all=True`), each optimal point
+  labelled with the units it removes;
 - `save_sensitivity_result(result, output_dir)`: the result as JSON.
 
-Both plot functions take `plot_cfg=load_plot_config("configs/plots/overleaf_plots_settings.yaml")`
-(from `src.common.utils.files_operations`). They then use its fonts, LaTeX rendering, dpi, figure size and the
-`data_removal_colors` palette (dark blue, dark grey-purple, grey, graphite, ...). Both write `.pdf` files.
+The plot functions take `plot_cfg=load_plot_config("configs/plots/overleaf_plots_settings.yaml")`
+(from `src.common.utils.files_operations`). Each figure is then drawn at exactly the configured figure size, with
+all text at the configured font size, and uses its LaTeX rendering, dpi and the `data_removal_colors` palette
+(dark blue, dark grey-purple, grey, graphite, ...). They write `.pdf` files.
 
 ## Files
 

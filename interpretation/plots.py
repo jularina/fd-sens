@@ -1,6 +1,7 @@
 """Helpers for interpreting a sensitivity result: compare reference and candidate posterior draws (typically the
 candidate at `lambda_max`) through quantiles, kernel density estimates and empirical CDFs, plot each component's
-share of the sensitivity, plot the FD of data removals (`plot_removal_interactions()`, `plot_removal_budget()`), and
+share of the sensitivity, plot the FD of data removals (`plot_removal_single()`, `plot_removal_interactions()`,
+`plot_removal_budget()`), and
 save the result as JSON.
 
 The draw-comparison functions take `draws`, a dict mapping a fit name to an `(m, d)` array of posterior draws,
@@ -231,23 +232,28 @@ REMOVAL_ROLES = ["main", "contrast", "background", "text", "secondary", "light"]
 
 
 def _removal_style(plot_cfg) -> Dict[str, Any]:
-    """Colours by role, rcParams and base figure size for the data-removal plots, from an optional plot config
-    (e.g. `load_plot_config("configs/plots/overleaf_plots_settings.yaml")`)."""
+    """Colours by role, rcParams, font size and figure size for the data-removal plots, from an optional plot config
+    (e.g. `load_plot_config("configs/plots/overleaf_plots_settings.yaml")`). Every figure is drawn at exactly the
+    configured size, with all text at the configured font size."""
     colors = list(REMOVAL_PALETTE)
-    rc, size, formats = {}, (3.5, 2.0), ["pdf"]
+    rc, size, fs, tight, formats = {}, (3.5, 2.0), 10.0, True, ["pdf"]
     if plot_cfg is not None:
         cfg = plot_cfg.plot
         custom = list(getattr(cfg.color_palette, "data_removal_colors", None) or [])
         colors[:len(custom)] = custom[:len(colors)]
+        fs = float(cfg.font.size)
         rc = {
-            "font.size": cfg.font.size,
+            "font.size": fs,
             "font.family": cfg.font.family,
             "text.usetex": bool(cfg.font.use_tex),
             "text.latex.preamble": r"\usepackage{amsmath}",
             "savefig.dpi": cfg.figure.dpi,
         }
         size = (float(cfg.figure.size.width), float(cfg.figure.size.height))
-    return {"colors": dict(zip(REMOVAL_ROLES, colors)), "rc": rc, "size": size, "formats": formats}
+        tight = bool(getattr(cfg.figure, "tight_layout", True))
+    rc.update({"axes.labelsize": fs, "xtick.labelsize": fs, "ytick.labelsize": fs, "legend.fontsize": fs})
+    return {"colors": dict(zip(REMOVAL_ROLES, colors)), "rc": rc, "size": size, "fs": fs, "tight": tight,
+            "formats": formats}
 
 
 def _tex_safe(text: str) -> str:
@@ -257,9 +263,15 @@ def _tex_safe(text: str) -> str:
     return text
 
 
-def _save_formats(fig, output_dir: str, file_stem: str, formats: Sequence[str]) -> None:
+def _removal_names(names: Sequence[str], style: Dict[str, Any]) -> list:
+    return [_tex_safe(x) for x in names] if style["rc"].get("text.usetex", False) else list(names)
+
+
+def _save_formats(fig, output_dir: str, file_stem: str, style: Dict[str, Any], layout: bool = True) -> None:
+    if layout and style["tight"]:
+        fig.tight_layout()
     os.makedirs(output_dir, exist_ok=True)
-    for fmt in formats:
+    for fmt in style["formats"]:
         fig.savefig(os.path.join(output_dir, f"{file_stem}.{fmt}"), bbox_inches="tight", facecolor="white")
 
 
@@ -270,112 +282,149 @@ def _style_removal_axes(ax, colors: Dict[str, str]) -> None:
         ax.spines[side].set_color(colors["light"])
     ax.grid(True, color=colors["light"], linewidth=0.6, alpha=0.6)
     ax.set_axisbelow(True)
-    ax.tick_params(colors=colors["text"], labelsize="small")
+    ax.tick_params(colors=colors["text"])
 
 
-def plot_removal_interactions(result, output_dir: str, file_stem: str = "removal_interactions", plot_cfg=None):
-    """Write `<file_stem>.pdf` for a data-removal result: the FD of removing each observation (group) alone, A_ii,
-    and the normalised cross terms A_ik / sqrt(A_ii A_kk) (positive: removals reinforce, negative: they cancel).
-
-    With `plot_cfg` (a loaded plot config) the fonts, LaTeX rendering, dpi, figure size and the
-    `data_removal_colors` come from it. Returns the figure."""
-    style = _removal_style(plot_cfg)
-    c = style["colors"]
-    usetex = bool(style["rc"].get("text.usetex", False))
-    A = np.asarray(result.A)
-    names = [_tex_safe(x) if usetex else x for x in result.names]
-    n = len(names)
-    diag = np.diag(A)
-    order = np.argsort(-diag)
-    width, height = style["size"]
-    cmap = LinearSegmentedColormap.from_list("removal", [c["contrast"], "#ffffff", c["main"]])
-
-    with plt.rc_context(style["rc"]):
-        fig, axes = plt.subplots(1, 2, figsize=(2.8 * width, max(1.4 * height, 1.2 + 0.55 * n)),
-                                 gridspec_kw={"width_ratios": [1, 1.4]})
-        axes[0].barh(range(n), diag[order][::-1], color=c["main"], height=0.6)
-        axes[0].set_yticks(range(n), [names[i] for i in order][::-1])
-        for i, v in enumerate(diag[order][::-1]):
-            axes[0].annotate(f"{v:.3g}", (v, i), xytext=(3, 0), textcoords="offset points", va="center",
-                             fontsize="x-small", color=c["text"])
-        axes[0].set_xlabel(r"$A_{ii}$: FD of removing $i$ alone", color=c["text"])
-        _style_removal_axes(axes[0], c)
-        axes[0].grid(False, axis="y")
-        axes[0].set_xlim(0, diag.max() * 1.25 if diag.max() > 0 else 1.0)
-
-        scale = np.sqrt(np.outer(diag, diag))
-        corr = np.divide(A, scale, out=np.zeros_like(A), where=scale > 0)
-        np.fill_diagonal(corr, np.nan)
-        vmax = max(float(np.nanmax(np.abs(corr))) if n > 1 else 1.0, 1e-12)
-        im = axes[1].imshow(corr, cmap=cmap, vmin=-vmax, vmax=vmax)
-        axes[1].set_xticks(range(n), names, rotation=45, ha="right")
-        axes[1].set_yticks(range(n), names)
-        if n <= 15:
-            for i in range(n):
-                for k in range(n):
-                    if i != k:
-                        axes[1].text(k, i, f"{corr[i, k]:.2f}", ha="center", va="center", fontsize="xx-small",
-                                     color="white" if abs(corr[i, k]) > 0.55 * vmax else c["text"])
-        axes[1].tick_params(colors=c["text"], labelsize="small")
-        for spine in axes[1].spines.values():
-            spine.set_color(c["light"])
-        cb = fig.colorbar(im, ax=axes[1], fraction=0.046)
-        cb.set_label(r"$A_{ik}/\sqrt{A_{ii}A_{kk}}$", color=c["text"])
-        cb.outline.set_edgecolor(c["light"])
-        cb.ax.tick_params(colors=c["text"], labelsize="x-small")
-        axes[1].set_title("cross terms: blue = removals reinforce, purple = removals cancel",
-                          fontsize="x-small", color=c["text"], loc="left")
-        fig.tight_layout()
-        _save_formats(fig, output_dir, file_stem, style["formats"])
-    plt.close(fig)
-    return fig
-
-
-def plot_removal_budget(result, output_dir: str, file_stem: str = "removal_budget", plot_cfg=None):
-    """Write `<file_stem>.pdf` for a data-removal result: the sensitivity for each budget of at most K removed
-    observations (groups), labelled with the worst-case removal, against removing the K individually most influential
-    ones (largest A_ii). With `keep_all=True` every evaluated subset is also shown, at its size.
-
-    With `plot_cfg` (a loaded plot config) the fonts, LaTeX rendering, dpi, figure size and the
-    `data_removal_colors` come from it. Returns the figure."""
-    style = _removal_style(plot_cfg)
-    c = style["colors"]
-    usetex = bool(style["rc"].get("text.usetex", False))
+def _budget_curves(result):
+    """Removal sizes K, the size k <= K of the best removal for each budget of at most K units, its FD, and the FD of
+    removing the K units with the largest A_ii."""
     A = np.asarray(result.A)
     diag = np.diag(A)
     ks = np.array(sorted(result.per_size))
     if ks.size == 0:
         raise ValueError("The result has no removals (max_removed = 0), so there is nothing to plot.")
-    # Sensitivity for a budget of at most K removals: the best removal over all sizes k <= K.
     best_k = [max((k for k in ks if k <= K), key=lambda k: result.per_size[k]["fd"]) for K in ks]
     best = np.array([result.per_size[k]["fd"] for k in best_k])
     top_k = np.array([A[np.ix_(idx, idx)].sum() for idx in (np.argsort(-diag)[:k] for k in ks)])
-    width, height = style["size"]
+    return ks, best_k, best, top_k
+
+
+def plot_removal_single(result, output_dir: str, file_stem: str = "removal_single", plot_cfg=None):
+    """Write `<file_stem>.pdf` for a data-removal result: the FD of removing each observation (group) alone, A_ii,
+    sorted from largest to smallest.
+
+    With `plot_cfg` (a loaded plot config) the fonts, LaTeX rendering, dpi, figure size and the
+    `data_removal_colors` come from it. Returns the figure."""
+    style = _removal_style(plot_cfg)
+    c, fs = style["colors"], style["fs"]
+    names = _removal_names(result.names, style)
+    diag = np.diag(np.asarray(result.A))
+    order = np.argsort(-diag)
+    n = len(names)
 
     with plt.rc_context(style["rc"]):
-        fig, ax = plt.subplots(figsize=(1.6 * width, 2.1 * height))
+        fig, ax = plt.subplots(figsize=style["size"])
+        ax.barh(range(n), diag[order][::-1], color=c["main"], height=0.6)
+        ax.set_yticks(range(n), [names[i] for i in order][::-1])
+        for i, v in enumerate(diag[order][::-1]):
+            ax.annotate(f"{v:.2f}", (v, i), xytext=(3, 0), textcoords="offset points", va="center",
+                        fontsize=fs, color=c["text"])
+        ax.set_xlabel(r"$A_{ii}$", color=c["text"])
+        _style_removal_axes(ax, c)
+        ax.grid(False, axis="y")
+        ax.set_xlim(0, diag.max() * 1.35 if diag.max() > 0 else 1.0)  # room for the value labels
+        _save_formats(fig, output_dir, file_stem, style)
+    plt.close(fig)
+    return fig
+
+
+def plot_removal_interactions(result, output_dir: str, file_stem: str = "removal_interactions", plot_cfg=None):
+    """Write `<file_stem>.pdf` for a data-removal result: the normalised cross terms A_ik / sqrt(A_ii A_kk), i > k,
+    as a lower-triangular heatmap (dark blue: removals reinforce, dark grey-purple: they cancel). The values are in
+    `result.A`.
+
+    With `plot_cfg` (a loaded plot config) the fonts, LaTeX rendering, dpi, figure size and the
+    `data_removal_colors` come from it. Returns the figure."""
+    style = _removal_style(plot_cfg)
+    c = style["colors"]
+    names = _removal_names(result.names, style)
+    A = np.asarray(result.A)
+    n = len(names)
+    diag = np.diag(A)
+    scale = np.sqrt(np.outer(diag, diag))
+    corr = np.divide(A, scale, out=np.zeros_like(A), where=scale > 0)
+    if n < 2:
+        raise ValueError("Cross terms need at least two observations (groups).")
+    # The matrix is symmetric: keep the strict lower triangle, rows 1..n-1 against columns 0..n-2.
+    corr[np.triu_indices(n)] = np.nan
+    corr = corr[1:, :-1]
+    vmax = max(float(np.nanmax(np.abs(corr))), 1e-12)
+    cmap = LinearSegmentedColormap.from_list("removal", [c["contrast"], "#ffffff", c["main"]])
+    cmap.set_bad("white")
+
+    with plt.rc_context(style["rc"]):
+        fig, ax = plt.subplots(figsize=style["size"])
+        im = ax.imshow(corr, cmap=cmap, vmin=-vmax, vmax=vmax, aspect="auto")
+        ax.set_xticks(range(n - 1), names[:-1], rotation=45, ha="right", rotation_mode="anchor")
+        ax.set_yticks(range(n - 1), names[1:])
+        ax.tick_params(colors=c["text"])
+        for spine in ax.spines.values():
+            spine.set_color(c["light"])
+        cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        cb.set_label(r"$A_{ik}/\sqrt{A_{ii}A_{kk}}$", color=c["text"])
+        cb.outline.set_edgecolor(c["light"])
+        cb.ax.tick_params(colors=c["text"])
+        _save_formats(fig, output_dir, file_stem, style)
+    plt.close(fig)
+    return fig
+
+
+def _fit_labels_in_axes(fig, ax, labels, tight: bool, max_iter: int = 20) -> None:
+    """Raise the upper y-limit until every annotation in `labels` ends below the top of the axes, redoing the
+    tight layout (which moves the axes) at each step when `tight`."""
+    for _ in range(max_iter):
+        if tight:
+            fig.tight_layout()
+        fig.canvas.draw()
+        top = ax.get_window_extent().y1
+        overflow = max(lab.get_window_extent().y1 for lab in labels) - top
+        if overflow <= 0:
+            return
+        lo, hi = ax.get_ylim()
+        height = ax.get_window_extent().height
+        ax.set_ylim(lo, hi + (hi - lo) * 1.05 * overflow / height)
+
+
+def plot_removal_budget(result, output_dir: str, file_stem: str = "removal_budget", plot_cfg=None):
+    """Write `<file_stem>.pdf` for a data-removal result: the sensitivity for each budget of at most K removed
+    observations (groups) against removing the K individually most influential ones (largest A_ii). With
+    `keep_all=True` every evaluated subset is also shown, at its size. Each optimal point is labelled with the
+    units it removes, one name per line, at 0.6 times the configured font size.
+
+    With `plot_cfg` (a loaded plot config) the fonts, LaTeX rendering, dpi, figure size and the
+    `data_removal_colors` come from it. Returns the figure."""
+    style = _removal_style(plot_cfg)
+    c = style["colors"]
+    label_fs = max(6.0, 0.6 * style["fs"])  # the removed-set labels only; axes, ticks and legend use the config size
+    names = _removal_names(result.names, style)
+    ks, best_k, best, top_k = _budget_curves(result)
+
+    with plt.rc_context(style["rc"]):
+        fig, ax = plt.subplots(figsize=style["size"])
         if result.fd_values is not None:
             rng = np.random.default_rng(0)
             for k, vals in zip(ks, result.fd_values):
-                ax.scatter(k + rng.uniform(-0.15, 0.15, len(vals)), vals, s=8, color=c["background"], alpha=0.45,
+                vals = np.asarray(vals)
+                ax.scatter(k + rng.uniform(-0.15, 0.15, len(vals)), vals, s=6, color=c["background"], alpha=0.45,
                            linewidth=0, label="all subsets" if k == ks[0] else None, zorder=1)
-        ax.plot(ks, top_k, "--o", color=c["contrast"], markersize=4, linewidth=1.3,
-                label=r"top-$K$ by single-removal FD", zorder=3)
-        ax.plot(ks, best, "-o", color=c["main"], markersize=5, linewidth=1.8, label="optimal removal", zorder=4)
+        ax.plot(ks, top_k, "--o", color=c["contrast"], markersize=3, linewidth=1.2, label=r"top-$K$", zorder=3)
+        ax.plot(ks, best, "-o", color=c["main"], markersize=4, linewidth=1.6, label="optimal", zorder=4)
+        labels = []
         for K, k, val in zip(ks, best_k, best):
-            removed = result.per_size[k]["removed_names"]
-            label = "\n".join(_tex_safe(x) if usetex else x for x in removed)  # one name per line
-            ax.annotate(label, (K, val), textcoords="offset points", xytext=(0, 7), ha="center", va="bottom",
-                        fontsize="xx-small", color=c["text"], linespacing=1.0)
+            # One name per line; combined names such as "LRG3+ELG1" break after the "+" to stay narrow.
+            label = "\n".join(names[i].replace("+", "+\n") for i in result.per_size[k]["removed"])
+            labels.append(ax.annotate(label, (K, val), textcoords="offset points", xytext=(0, 3), ha="center",
+                                      va="bottom", fontsize=label_fs, color=c["text"], linespacing=0.95))
         ax.set_xticks(ks)
-        ax.set_xlim(ks[0] - 0.6, ks[-1] + 0.6)
+        ax.set_xlim(ks[0] - 0.5, ks[-1] + 0.5)
+        ax.set_ylim(0, 1.05 * best.max())
+        _fit_labels_in_axes(fig, ax, labels, style["tight"])  # also does the final layout
         ax.set_xlabel("max $K$", color=c["text"])
         ax.set_ylabel(r"$\hat{\rho}_{\mathrm{FD}}$", color=c["text"])
-        ax.set_ylim(0, 1.45 * best.max())  # headroom for the labels above the optimal line
         _style_removal_axes(ax, c)
-        ax.legend(frameon=False, fontsize="x-small", labelcolor=c["text"], loc="upper left")
-        fig.tight_layout()
-        _save_formats(fig, output_dir, file_stem, style["formats"])
+        ax.legend(frameon=False, labelcolor=c["text"], loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3,
+                  handlelength=1.2, handletextpad=0.4, columnspacing=0.8, borderaxespad=0.1)
+        _save_formats(fig, output_dir, file_stem, style, layout=False)
     plt.close(fig)
     return fig
 
