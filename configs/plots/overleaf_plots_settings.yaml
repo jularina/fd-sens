@@ -13,6 +13,7 @@ plot:
 
   color_palette:
     colors:
+    # Cherry/purple for parametric paper
 #      - "#450314" # dark cherry
 #      - "#5A051A"  # cherry
 #      - "#7c397d" # purple
@@ -32,7 +33,7 @@ plot:
 #      - "#E69F00"   # orange
 #      - "#F0E442"   # golden yellow
 #      - "#3F3FFF"   # indigo
-  # Green
+  # Green for nonparametric paper
 #      - "#005500" # dark green
 #      - "#007200" # forest green
 #      - "#008000"
@@ -47,6 +48,15 @@ plot:
 #      - "#77a6b6" # grey-blue
       - "#4d7298" # dark-grey-blue
 #      - "#22577a" # dark-blue
+
+    # Data removal paper, by role (interpretation/plots.py: plot_removal_interactions, plot_removal_budget)
+    data_removal_colors:
+      - "#1f3a5f" # dark blue: optimal removal, single-removal FD bars, reinforcing cross terms
+      - "#4b4453" # dark grey-purple: top-k baseline, cancelling cross terms
+      - "#8a8d91" # grey: all evaluated subsets
+      - "#2f3136" # graphite: text, ticks and annotations
+      - "#5c6b7a" # slate blue-grey: secondary series
+      - "#c5c7cc" # light grey: grid and axes
 
   seaborn:
     style: "whitegrid"

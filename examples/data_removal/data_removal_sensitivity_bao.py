@@ -4,14 +4,19 @@ The 13 measurements form 7 independent Gaussian blocks, so the per-block scores
 gamma_g(theta) = J_g(theta)^T Sigma_g^{-1} (D_g - M_g(theta)) are passed as `data_grad` and every subset of at most
 `max_removed` blocks is evaluated from a single run of the sampler.
 """
+import os
 import time
 
 from interpretation.plots import plot_removal_budget, plot_removal_interactions, save_sensitivity_result
 from paper.bao.bao import BLOCK_NAMES, G, MODELS, block_scores, run_posterior
 from src.common.bayesian_model.samples import PosteriorSamplesModel
+from src.common.utils.files_operations import load_plot_config
 from src.data_removal.sensitivity import data_removal_sensitivity
 
 OUTPUT_DIR = "outputs/examples/data_removal/bao_LCDM"
+REPO_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+# Fonts, LaTeX rendering, figure size and the data-removal colours of the paper figures.
+PLOT_CFG = load_plot_config(os.path.join(REPO_ROOT, "configs", "plots", "overleaf_plots_settings.yaml"))
 
 # 1. Reference posterior: all blocks kept.
 t0 = time.time()
@@ -30,6 +35,6 @@ print(result)
 
 # 4. Interpret: single-block FDs and block interactions, and the optimal removal per budget.
 save_sensitivity_result(result, OUTPUT_DIR)
-plot_removal_interactions(result, OUTPUT_DIR)
-plot_removal_budget(result, OUTPUT_DIR)
+plot_removal_interactions(result, OUTPUT_DIR, plot_cfg=PLOT_CFG)
+plot_removal_budget(result, OUTPUT_DIR, plot_cfg=PLOT_CFG)
 print(f"Saved the result and plots to {OUTPUT_DIR}/")

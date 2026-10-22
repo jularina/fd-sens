@@ -51,6 +51,10 @@ The minimum FD is 0, attained at the reference (nothing removed), so the sensiti
   individually most influential units (and all subsets when `keep_all=True`);
 - `save_sensitivity_result(result, output_dir)`: the result as JSON.
 
+Both plot functions take `plot_cfg=load_plot_config("configs/plots/overleaf_plots_settings.yaml")`
+(from `src.common.utils.files_operations`). They then use its fonts, LaTeX rendering, dpi, figure size and the
+`data_removal_colors` palette (dark blue, dark grey-purple, grey, graphite, ...). Both write `.pdf` files.
+
 ## Files
 
 | File | Contents |
