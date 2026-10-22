@@ -7,6 +7,9 @@ Fisher-divergence (FD) global sensitivity analysis for sampling-based Bayesian i
   Bayesian inference*](https://arxiv.org/abs/2605.28099).
 - **FDsens+** (nonparametric): sensitivity over an FD ball of priors around the reference prior, approximated by a kernel
   exponential family sieve and solved exactly through a generalised eigenvalue problem.
+- **Data-removal sensitivity**: sensitivity to removing at most a fraction $\alpha$ of the observations (or of groups
+  of them), a binary quadratic program in the removal indicator solved by corner-point enumeration. See
+  [`src/data_removal/README.md`](src/data_removal/README.md).
 
 See [`GETTING_STARTED.md`](GETTING_STARTED.md) for the method. An R/Stan implementation of FDsens is available at [fd-sens-r](https://github.com/jularina/fd-sens-r).
 
@@ -61,6 +64,7 @@ The full script is [`examples/parametric_prior_sensitivity.py`](examples/paramet
 | [`src/common/`](src/common) | Shared building blocks: `PosteriorSamplesModel` for your own draws, distributions, the posterior FD base class, utilities. |
 | [`src/parametric/`](src/parametric) | FDsens: `prior_sensitivity()`, `prior_sensitivity_black_box()`, `lr_sensitivity()`, the quadratic-form FD estimator and the optimisers. |
 | [`src/nonparametric/`](src/nonparametric) | FDsens+: `nonparametric_prior_sensitivity()`, basis functions, FD quadratic forms and the generalised-eigenvalue solver. |
+| [`src/data_removal/`](src/data_removal) | Data-removal sensitivity: `data_removal_sensitivity()`, the FD quadratic form in the removal indicator and the corner-point optimiser; own [README](src/data_removal/README.md). |
 | [`examples/`](examples) | Runnable scripts for each analysis. |
 | [`configs/`](configs) | Hydra configs for the paper experiments, see [`configs/README.md`](configs/README.md). |
 | [`interpretation/`](interpretation) | `plots.py`: helpers to turn a result into tables and plots (posterior quantiles, KDE, ECDF, component shares, a JSON summary). |
@@ -72,7 +76,8 @@ The full script is [`examples/parametric_prior_sensitivity.py`](examples/paramet
 ### Posterior samples
 
 ```python
-PosteriorSamplesModel(posterior_samples, base_prior, candidate_prior=None, loss_grad=None, loss_lr=1.0, prior_samples=None)
+PosteriorSamplesModel(posterior_samples, base_prior=None, candidate_prior=None, loss_grad=None, loss_lr=1.0,
+                      prior_samples=None, data_grad=None)
 ```
 
 - `posterior_samples`: `(m, d)` draws from the reference posterior, one column per parameter. The draws can come from any sampler (Stan, PyMC, NumPyro, your own MCMC).
@@ -83,6 +88,8 @@ PosteriorSamplesModel(posterior_samples, base_prior, candidate_prior=None, loss_
   sensitivity only).
 - `loss_lr`: the reference learning rate.
 - `prior_samples`: reference-prior draws for FDsens+; drawn from `base_prior` if omitted.
+- `data_grad`: per-observation (or per-group) log-likelihood gradients at the draws, an `(m, n, d)` array or a function
+  of the draws (data-removal sensitivity only; `base_prior` is then not needed, since the prior score cancels).
 
 ### Parametric prior sensitivity (FDsens)
 
@@ -150,6 +157,22 @@ nonparametric_prior_sensitivity(model, radius, basis="MaternBasisFunction", basi
 
 See [`examples/nonparametric_prior_sensitivity.py`](examples/nonparametric_prior_sensitivity.py).
 
+### Data-removal sensitivity
+
+```python
+data_removal_sensitivity(model, alpha=None, max_removed=None, groups=None, names=None, whiten=False,
+                         method="corner", keep_all=False)
+```
+
+- `alpha` / `max_removed`: remove at most $\lfloor \alpha n \rfloor$ (or `max_removed`) observations or groups.
+- `groups`: disjoint index lists; per-observation scores are summed within each group, and whole groups are removed.
+- `method="corner"`: exact evaluation of all $\sum_{k \le K} \binom{n}{k}$ corner points (the only optimiser for now).
+- `whiten=True`: FD in posterior-standardised coordinates.
+
+The model needs `data_grad`. See [`src/data_removal/README.md`](src/data_removal/README.md) for the method and the
+BAO example, [`examples/data_removal_sensitivity.py`](examples/data_removal_sensitivity.py) and
+[`examples/data_removal_sensitivity_bao.py`](examples/data_removal_sensitivity_bao.py).
+
 ### Algorithm
 
 1. **Fit the reference model** with any sampler and collect `(m, d)` reference-posterior draws.
@@ -159,7 +182,9 @@ See [`examples/nonparametric_prior_sensitivity.py`](examples/nonparametric_prior
    - prior hyperparameters (FDsens): a natural-parameter box per parameter, then `prior_sensitivity(...)`; or, for a
      non-exponential-family candidate, its score function and a hyperparameter box, then `prior_sensitivity_black_box(...)`;
    - learning rate (FDsens): an interval, then `lr_sensitivity(...)`;
-   - nonparametric prior perturbations (FDsens+): a radius and a kernel, then `nonparametric_prior_sensitivity(...)`.
+   - nonparametric prior perturbations (FDsens+): a radius and a kernel, then `nonparametric_prior_sensitivity(...)`;
+   - data removal: per-observation (or per-group) scores as `data_grad` and a budget $\alpha$, then
+     `data_removal_sensitivity(...)`.
 4. **Read the result** (and plot it, see [Interpreting a result](#interpreting-a-result)): `sensitivity` is global sensitivity; `lambda_max` / `lambda_min` (FDsens) or `lambda_sup`
    (FDsens+) describe the worst-case and least-sensitive choices; `components` gives per-parameter shares when
    `independent=True`.
@@ -173,6 +198,8 @@ See [`examples/nonparametric_prior_sensitivity.py`](examples/nonparametric_prior
   plot (`.png`) comparing the fits;
 - `plot_kde(draws, output_dir, variables=None)`: a kernel density comparison, one panel per parameter;
 - `plot_ecdf(draws, output_dir, variables=None)`: an empirical CDF comparison, one panel per parameter;
+- `plot_removal_interactions(result, output_dir)` / `plot_removal_budget(result, output_dir)`: for a data-removal
+  result, single-removal FDs with their cross terms, and the optimal FD per removal size;
 - `plot_component_shares(result, output_dir)`: for a result computed with `independent=True` (FDsens or FDsens+), a
   100%-stacked bar of each parameter's share of the total sensitivity.
 
@@ -188,6 +215,8 @@ See [`examples/nonparametric_prior_sensitivity.py`](examples/nonparametric_prior
 | [`examples/parametric_black_box_prior_sensitivity.py`](examples/parametric_black_box_prior_sensitivity.py) | FDsens for a non-exponential-family candidate |
 | [`examples/parametric_lr_sensitivity.py`](examples/parametric_lr_sensitivity.py) | FDsens learning-rate sensitivity |
 | [`examples/nonparametric_prior_sensitivity.py`](examples/nonparametric_prior_sensitivity.py) | FDsens+ sensitivity over an FD ball |
+| [`examples/data_removal_sensitivity.py`](examples/data_removal_sensitivity.py) | Sensitivity to removing at most 10% of the observations |
+| [`examples/data_removal_sensitivity_bao.py`](examples/data_removal_sensitivity_bao.py) | Sensitivity to removing DESI DR2 BAO blocks, with interaction and budget plots |
 
 ## Contributing
 

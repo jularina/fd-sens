@@ -1,6 +1,7 @@
 """Helpers for interpreting a sensitivity result: compare reference and candidate posterior draws (typically the
 candidate at `lambda_max`) through quantiles, kernel density estimates and empirical CDFs, plot each component's
-share of the sensitivity, and save the result as JSON.
+share of the sensitivity, plot the FD of data removals (`plot_removal_interactions()`, `plot_removal_budget()`), and
+save the result as JSON.
 
 The draw-comparison functions take `draws`, a dict mapping a fit name to an `(m, d)` array of posterior draws,
 e.g. {"reference": reference_draws, "candidate": candidate_draws}, with columns named by `variables`. Each function
@@ -11,13 +12,12 @@ import json
 import os
 from typing import Any, Dict, Optional, Sequence
 
-import matplotlib
-
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.stats import gaussian_kde
+
+plt.switch_backend("Agg")
 
 # Categorical slots in fixed order: blue for the first fit (typically the reference), orange for the second
 # (typically the candidate); further fits take the next slots.
@@ -218,6 +218,83 @@ def plot_component_shares(result, output_dir: str, file_stem: str = "component_s
     ax.tick_params(colors=TEXT_SECONDARY, labelsize=9)
     ax.legend(frameon=False, fontsize=9, labelcolor=TEXT_PRIMARY, ncol=min(len(names), 6),
               loc="lower left", bbox_to_anchor=(0.0, 1.0))
+    _save(fig, output_dir, file_stem)
+    plt.close(fig)
+    return fig
+
+
+def plot_removal_interactions(result, output_dir: str, file_stem: str = "removal_interactions"):
+    """Write `<file_stem>.png` for a data-removal result: the FD of removing each observation (group) alone, A_ii,
+    and the normalised cross terms A_ik / sqrt(A_ii A_kk) (positive: removals reinforce, negative: they cancel).
+    Returns the figure."""
+    A, names = np.asarray(result.A), list(result.names)
+    n = len(names)
+    diag = np.diag(A)
+    order = np.argsort(-diag)
+    fig, axes = plt.subplots(1, 2, figsize=(11, 0.9 + 0.5 * n), gridspec_kw={"width_ratios": [1, 1.15]})
+    axes[0].barh(range(n), diag[order][::-1], color=FIT_PALETTE[0], height=0.6)
+    axes[0].set_yticks(range(n), [names[i] for i in order][::-1])
+    for i, v in enumerate(diag[order][::-1]):
+        axes[0].text(v, i, f" {v:.3g}", va="center", fontsize=8, color=TEXT_SECONDARY)
+    axes[0].set_xlabel(r"$A_{ii}$: FD of removing $i$ alone", color=TEXT_SECONDARY)
+    _style_axes(axes[0])
+    axes[0].grid(False, axis="y")
+
+    scale = np.sqrt(np.outer(diag, diag))
+    corr = np.divide(A, scale, out=np.zeros_like(A), where=scale > 0)
+    np.fill_diagonal(corr, np.nan)
+    vmax = max(float(np.nanmax(np.abs(corr))) if n > 1 else 1.0, 1e-12)
+    im = axes[1].imshow(corr, cmap="RdBu_r", vmin=-vmax, vmax=vmax)
+    axes[1].set_xticks(range(n), names, rotation=45, ha="right")
+    axes[1].set_yticks(range(n), names)
+    if n <= 15:
+        for i in range(n):
+            for k in range(n):
+                if i != k:
+                    axes[1].text(k, i, f"{corr[i, k]:+.2f}", ha="center", va="center", fontsize=7,
+                                 color="white" if abs(corr[i, k]) > 0.6 * vmax else TEXT_PRIMARY)
+    axes[1].tick_params(colors=TEXT_SECONDARY, labelsize=9)
+    cb = fig.colorbar(im, ax=axes[1], fraction=0.046)
+    cb.set_label(r"$A_{ik}/\sqrt{A_{ii}A_{kk}}$", color=TEXT_SECONDARY)
+    axes[1].set_title("cross terms: red = removals reinforce, blue = removals cancel", fontsize=9,
+                      color=TEXT_SECONDARY, loc="left")
+    fig.tight_layout()
+    _save(fig, output_dir, file_stem)
+    plt.close(fig)
+    return fig
+
+
+def plot_removal_budget(result, output_dir: str, file_stem: str = "removal_budget"):
+    """Write `<file_stem>.png` for a data-removal result: the maximal FD for each number k of removed observations
+    (groups), against removing the k individually most influential ones (largest A_ii). With `keep_all=True` every
+    evaluated subset is also shown. Returns the figure."""
+    A = np.asarray(result.A)
+    diag = np.diag(A)
+    ks = np.array(sorted(result.per_size))
+    if ks.size == 0:
+        raise ValueError("The result has no removals (max_removed = 0), so there is nothing to plot.")
+    best = np.array([result.per_size[k]["fd"] for k in ks])
+    top_k = np.array([A[np.ix_(idx, idx)].sum() for idx in (np.argsort(-diag)[:k] for k in ks)])
+
+    fig, ax = plt.subplots(figsize=(6.5, 4))
+    if result.fd_values is not None:
+        rng = np.random.default_rng(0)
+        for k, vals in zip(ks, result.fd_values):
+            ax.scatter(k + rng.uniform(-0.15, 0.15, len(vals)), vals, s=10, color=TEXT_SECONDARY, alpha=0.3, linewidth=0,
+                       label="all subsets" if k == ks[0] else None, zorder=1)
+    ax.plot(ks, top_k, "--o", color=FIT_PALETTE[1], markersize=5, linewidth=1.5,
+            label=r"top-$k$ by single-removal FD", zorder=3)
+    ax.plot(ks, best, "-o", color=FIT_PALETTE[0], markersize=6, linewidth=2, label="optimal removal", zorder=4)
+    for k, val in zip(ks[:3], best[:3]):
+        ax.annotate(", ".join(result.per_size[k]["removed_names"]), (k, val), textcoords="offset points",
+                    xytext=(6, -2), fontsize=7, color=TEXT_SECONDARY)
+    ax.set_xticks(ks)
+    ax.set_xlabel("number of removed observations $k$", color=TEXT_SECONDARY)
+    ax.set_ylabel(r"$\hat\rho_{FD}$" + (" (whitened)" if result.whiten else ""), color=TEXT_SECONDARY)
+    ax.set_ylim(bottom=0)
+    _style_axes(ax)
+    ax.legend(frameon=False, fontsize=9, labelcolor=TEXT_PRIMARY, loc="upper left")
+    fig.tight_layout()
     _save(fig, output_dir, file_stem)
     plt.close(fig)
     return fig

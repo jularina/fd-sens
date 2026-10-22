@@ -12,25 +12,28 @@ def _as_product(dist: Any) -> Any:
 
 
 class PosteriorSamplesModel:
-    """Reference model given directly by reference-posterior samples, a reference prior and an optional loss gradient."""
+    """Reference model given directly by reference-posterior samples, a reference prior, an optional loss gradient and
+    optional per-observation log-likelihood gradients."""
 
     def __init__(
         self,
         posterior_samples: ArrayLike,
-        base_prior: Any,
+        base_prior: Optional[Any] = None,
         candidate_prior: Optional[Any] = None,
         loss_grad: Optional[Union[ArrayLike, Callable[[np.ndarray], np.ndarray]]] = None,
         loss_lr: float = 1.0,
         prior_samples: Optional[ArrayLike] = None,
+        data_grad: Optional[Union[ArrayLike, Callable[[np.ndarray], np.ndarray]]] = None,
     ):
-        """Store the reference-posterior draws, priors, loss gradient and (optional) reference-prior draws."""
+        """Store the reference-posterior draws, priors, loss gradient, (optional) reference-prior draws and
+        (optional) per-observation log-likelihood gradients."""
         samples = np.asarray(posterior_samples, dtype=float)
         if samples.ndim == 1:
             samples = samples.reshape(-1, 1)
         self.posterior_samples_init = samples
         if samples.shape[1] == 1:
             # A single parameter is wrapped as a one-component product so every family has the same array shapes.
-            base_prior = _as_product(base_prior)
+            base_prior = None if base_prior is None else _as_product(base_prior)
             candidate_prior = None if candidate_prior is None else _as_product(candidate_prior)
         self.prior_init = base_prior
         self.prior_candidate = candidate_prior
@@ -38,6 +41,7 @@ class PosteriorSamplesModel:
         self.loss_lr_init = float(loss_lr)
         self.loss_lr = float(loss_lr)
         self._loss_grad = loss_grad
+        self._data_grad = data_grad
 
         if prior_samples is None and hasattr(base_prior, "sample"):
             prior_samples = base_prior.sample(len(samples))
@@ -65,3 +69,20 @@ class PosteriorSamplesModel:
         else:
             grad = np.asarray(self._loss_grad, dtype=float).reshape(x.shape)
         return self.loss_lr * grad if multiply_by_lr else grad
+
+    def data_score(self, x: ArrayLike) -> np.ndarray:
+        """Return the per-observation log-likelihood gradients at x, shape (m, n, d): entry [j, i] is
+        grad_theta log l(x_j; obs_i). Used by data-removal sensitivity; the observations may be groups of points."""
+        if self._data_grad is None:
+            raise ValueError("Data-removal sensitivity needs data_grad (per-observation log-likelihood gradients).")
+        x = np.asarray(x, dtype=float)
+        if x.ndim == 1:
+            x = x.reshape(-1, 1)
+        grad = self._data_grad(x) if callable(self._data_grad) else self._data_grad
+        grad = np.asarray(grad, dtype=float)
+        if grad.ndim == 2 and x.shape[1] == 1:
+            grad = grad[:, :, None]  # (m, n) for a single parameter
+        if grad.ndim != 3 or grad.shape[0] != x.shape[0] or grad.shape[2] != x.shape[1]:
+            raise ValueError(
+                f"data_grad must have shape (m, n, d) = ({x.shape[0]}, n, {x.shape[1]}); got {grad.shape}.")
+        return grad
