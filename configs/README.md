@@ -88,7 +88,7 @@ model = instantiate(cfg.model, data_config=cfg.data)
          gamma: 1
    ```
 
-5. **FDsens neighbourhood:** one natural-parameter box per parameter, keyed by name, in column order (see the README for
+5. **FDsens neighbourhood:** one natural-parameter box per parameter, keyed by name, in column order (see [`src/prior/README.md`](../src/prior/README.md) for
    each family's natural parameters and valid ranges):
 
    ```yaml
@@ -101,7 +101,7 @@ model = instantiate(cfg.model, data_config=cfg.data)
    ```
 
 6. **FDsens+ neighbourhood:** the radius and the kernel; `basis` must be a key of `BASIS_FUNCTIONS_REGISTRY` in
-   [`src/nonparametric/basis_functions.py`](../src/nonparametric/basis_functions.py), and `basis_kwargs` are passed to
+   [`src/prior/nonparametric/basis_functions.py`](../src/prior/nonparametric/basis_functions.py), and `basis_kwargs` are passed to
    that class:
 
    ```yaml

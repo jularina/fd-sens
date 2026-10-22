@@ -3,7 +3,7 @@ import numpy as np
 
 from src.common.bayesian_model.samples import PosteriorSamplesModel
 from src.common.distributions.gaussian import Gaussian
-from src.parametric.sensitivity import lr_sensitivity
+from src.learning_rate.sensitivity import lr_sensitivity
 
 rng = np.random.default_rng(123)
 y = rng.normal(loc=1.0, scale=1.0, size=30)

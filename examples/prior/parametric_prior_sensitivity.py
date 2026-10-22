@@ -4,7 +4,7 @@ import numpy as np
 from interpretation.plots import plot_ecdf, plot_kde, plot_quantiles, save_sensitivity_result
 from src.common.bayesian_model.samples import PosteriorSamplesModel
 from src.common.distributions.gaussian import Gaussian
-from src.parametric.sensitivity import prior_sensitivity
+from src.prior.parametric.sensitivity import prior_sensitivity
 
 rng = np.random.default_rng(123)
 y = rng.normal(loc=1.0, scale=1.0, size=30)
@@ -32,7 +32,7 @@ var_c = 1.0 / (len(y) + 1.0 / var_max)
 candidate_posterior = rng.normal(var_c * (y.sum() + mu_max / var_max), np.sqrt(var_c), size=2000)
 
 draws = {"reference": posterior, "candidate": candidate_posterior}
-output_dir = "interpretation/output/gaussian_location_prior"
+output_dir = "outputs/examples/prior/gaussian_location"
 save_sensitivity_result(result, output_dir)
 print(plot_quantiles(draws, output_dir, variables=["theta"]))
 plot_kde(draws, output_dir, variables=["theta"])

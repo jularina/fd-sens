@@ -2,8 +2,8 @@ from typing import Dict, Optional
 import numpy as np
 from omegaconf import OmegaConf
 
-from src.nonparametric.basis_functions import BaseBasisFunction
-from src.nonparametric.basis_functions import BASIS_FUNCTIONS_REGISTRY
+from src.prior.nonparametric.basis_functions import BaseBasisFunction
+from src.prior.nonparametric.basis_functions import BASIS_FUNCTIONS_REGISTRY
 
 
 class OptimisationNonparametricBase:
@@ -64,7 +64,6 @@ class OptimisationNonparametricBase:
         self.r = self._compute_min_radius() + radius
         print(f"Radius {self.r}.")
 
-
     def _check_pd_psd_and_rank(
             self,
             A: np.ndarray,
@@ -111,7 +110,6 @@ class OptimisationNonparametricBase:
     # Helpers for dual methods
     # -------------------------
 
-
     @staticmethod
     def _sym(A: np.ndarray) -> np.ndarray:
         return 0.5 * (A + A.T)
@@ -121,11 +119,9 @@ class OptimisationNonparametricBase:
         """Make the largest-magnitude component positive to break sign ambiguity."""
         return lam if lam[np.argmax(np.abs(lam))] >= 0 else -lam
 
-
     # -------------------------
     # Optimisation methods
     # -------------------------
-
 
     def optimize_through_generalized_eigenvalue(self, nugget: float = 1e-10, rel_tol: float | None = None):
         """Solve the QCQP via the generalised eigenvalue problem."""
@@ -143,7 +139,7 @@ class OptimisationNonparametricBase:
         A_c = self._sym(self.A_c)
 
         if rel_tol is not None:
-            from src.nonparametric.node_sensitivity import _ac_whitening_transform
+            from src.prior.nonparametric.node_sensitivity import _ac_whitening_transform
 
             W, ac_diag = _ac_whitening_transform(A_c, rel_tol=rel_tol, nugget=nugget)  # W^T A_c W = I
             print(f"A_c whitened onto its well-conditioned subspace: rank {ac_diag['ac_rank_kept']}/{self.d}.")

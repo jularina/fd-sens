@@ -12,9 +12,9 @@ import hydra
 from hydra.utils import instantiate, get_original_cwd
 from omegaconf import OmegaConf
 
-from src.nonparametric.basis_functions import BASIS_FUNCTIONS_REGISTRY
+from src.prior.nonparametric.basis_functions import BASIS_FUNCTIONS_REGISTRY
 from src.common.utils.files_operations import save_to_serializable_json, load_results_json, load_plot_config
-from src.nonparametric.node_sensitivity import compute_group_omega_max
+from src.prior.nonparametric.node_sensitivity import compute_group_omega_max
 from paper.bnn.plots_nonparametric import plot_bnn_weight_heatmaps
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -297,7 +297,7 @@ def _render_layer_sensitivity_latex(results: Dict[str, Dict[str, Dict[str, float
 
     def _cell(dataset: str, prior: str, layer: str) -> str:
         value = results[dataset][prior][layer]
-        top_layer = max(layer_labels, key=lambda l: results[dataset][prior][l])
+        top_layer = max(layer_labels, key=lambda lay: results[dataset][prior][lay])
         text = f"{value:.2f}"
         return rf"\textbf{{{text}}}" if layer == top_layer else text
 

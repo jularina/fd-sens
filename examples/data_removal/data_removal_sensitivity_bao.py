@@ -11,7 +11,7 @@ from paper.bao.bao import BLOCK_NAMES, G, MODELS, block_scores, run_posterior
 from src.common.bayesian_model.samples import PosteriorSamplesModel
 from src.data_removal.sensitivity import data_removal_sensitivity
 
-OUTPUT_DIR = "outputs/data_removal/bao_LCDM"
+OUTPUT_DIR = "outputs/examples/data_removal/bao_LCDM"
 
 # 1. Reference posterior: all blocks kept.
 t0 = time.time()

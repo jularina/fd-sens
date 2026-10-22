@@ -3,62 +3,19 @@
 Global sensitivity of a posterior to removing a small fraction of the data, measured by the Fisher divergence (FD)
 to the full-data reference posterior. One run of the sampler on the full data is enough to score every removal.
 
-## Method
-
-For weights $w \in \{0,1\}^n$ ($w_i = 0$ removes $x_i$) the weighted posterior is
-$\tilde\pi_w(\theta) \propto \pi(\theta) \exp\big(\sum_i w_i \log \ell(\theta; x_i)\big)$, and
-$\tilde\pi_{\text{ref}} = \tilde\pi_{\mathbf 1_n}$. Removing at most $K = \lfloor \alpha n \rfloor$ points gives the
-sensitivity
-
-$$
-S_{\mathrm{FD}}(W_\alpha) = \max_{w \in W_\alpha} \mathrm{FD}(\tilde\Pi_{\text{ref}} \,\|\, \tilde\Pi_w).
-$$
-
-With $J(\theta) = [\nabla_\theta \log \ell(\theta; x_1), \ldots, \nabla_\theta \log \ell(\theta; x_n)] \in
-\mathbb{R}^{d \times n}$ the score difference is $J(\theta)\, v$, where $v = \mathbf 1_n - w$ marks the removed points.
-The prior score cancels, so the prior is not needed. Given reference-posterior draws
-$\tilde\theta_1, \ldots, \tilde\theta_m$,
-
-$$
-\hat\rho_{\mathrm{FD}}(\tilde\Pi_w) = v^\top A\, v, \qquad
-A = \frac{1}{m} \sum_{j=1}^m J(\tilde\theta_j)^\top J(\tilde\theta_j) \succeq 0,
-$$
-
-and the estimated sensitivity is the cardinality-constrained binary quadratic program
-$\max_{v \in \{0,1\}^n,\ \mathbf 1^\top v \le K} v^\top A v$. $A_{ii}$ is the FD of removing $x_i$ alone, and
-$A_{ik}$ shows whether removing $x_i$ and $x_k$ together reinforces ($> 0$) or masks ($< 0$) their effects.
-
-**Optimisation (corner points).** $v \mapsto v^\top A v$ is convex, so its maximum over the relaxation
-$\{v \in [0,1]^n : \mathbf 1^\top v \le K\}$ is attained at a vertex, i.e. a binary $v$ with at most $K$ ones. All
-$N(n, K) = \sum_{k=0}^{K} \binom{n}{k}$ vertices are evaluated, which is exact. This is the only optimiser for now:
-it handles grouped data (e.g. $G = 7$ BAO blocks, 127 subsets) and small $K$
-(e.g. $n = 30$, $K = 3$: 4,526 subsets). Larger problems are refused above `max_evaluations`.
-
-**Grouped data.** When the likelihood factorises over groups $\mathcal G_1, \ldots, \mathcal G_G$ (studies, sites,
-survey blocks), whole groups are removed. The group scores are
-$\gamma_{\mathcal G_g}(\theta) = \nabla_\theta \log \ell(\theta; x_{\mathcal G_g})$, and the same quadratic form
-applies with $A_{\mathcal G}$ ($G \times G$). Either pass the group scores directly as `data_grad`, which you must do
-when points within a group are correlated (as in BAO), or pass per-observation scores together with `groups`,
-which sums the scores within each group.
-
-**Whitening (optional).** With `whiten=True` the FD is measured in $z = L^{-1}(\theta - \bar\theta)$, where
-$L L^\top$ is the posterior covariance. Scores become $L^\top \nabla_\theta \log \ell$, so parameters on very
-different scales (e.g. $\omega_b \sim 10^{-2}$ and $H_0 \sim 10^2$) contribute comparably.
-
 ## Usage
 
 ```python
 from src.common.bayesian_model.samples import PosteriorSamplesModel
 from src.data_removal.sensitivity import data_removal_sensitivity
 
-model = PosteriorSamplesModel(posterior_samples=draws, data_grad=data_grad)   # base_prior is optional here
+model = PosteriorSamplesModel(posterior_samples=draws, data_grad=data_grad)
 result = data_removal_sensitivity(model, alpha=0.1)
 print(result)
 ```
 
 ```python
-data_removal_sensitivity(model, alpha=None, max_removed=None, groups=None, names=None, whiten=False,
-                         method="corner", max_evaluations=10_000_000, keep_all=False)
+data_removal_sensitivity(model, alpha=None, max_removed=None, groups=None, names=None, whiten=False, method="corner", max_evaluations=10_000_000, keep_all=False)
 ```
 
 - `model.data_grad`: per-observation (or per-group) log-likelihood gradients at the draws, given as an `(m, n, d)`
@@ -106,28 +63,19 @@ The minimum FD is 0, attained at the reference (nothing removed), so the sensiti
 
 | Script | Analysis |
 | --- | --- |
-| [`examples/data_removal_sensitivity.py`](../../examples/data_removal_sensitivity.py) | Gaussian location model with two outliers, $\alpha = 0.1$ |
-| [`examples/data_removal_sensitivity_bao.py`](../../examples/data_removal_sensitivity_bao.py) | DESI DR2 BAO ($\Lambda$CDM): removing up to 6 of the 7 independent BAO blocks |
+| [`examples/data_removal/data_removal_sensitivity.py`](../../examples/data_removal/data_removal_sensitivity.py) | Gaussian location model with two outliers, $\alpha = 0.1$ |
+| [`examples/data_removal/data_removal_sensitivity_bao.py`](../../examples/data_removal/data_removal_sensitivity_bao.py) | Baryon acoustic oscillation (BAO) cosmology dataset: removing up to 6 of the 7 independent BAO blocks |
 
 ### BAO
 
 [`paper/bao/bao.py`](../../paper/bao/bao.py) holds the DESI DR2 BAO likelihood (data in [`data/bao/`](../../data/bao)).
-The 13 measurements form $G = 7$ independent Gaussian blocks, one with a single point and six with two correlated
-points, and inform $\theta = (\omega_b, \omega_c, H_0)$. The block scores are
-
-$$
-\gamma_{\mathcal G_g}(\theta) = J_{M_g}(\theta)^\top \Sigma_g^{-1}\big(D_g - M_g(\theta)\big),
-$$
-
-with the Jacobian $J_{M_g}$ of the theory prediction computed by complex-step differentiation (`block_scores`). The
-reference posterior is sampled with an affine-invariant ensemble sampler (`run_posterior`).
 
 ```sh
-pdm run python examples/data_removal_sensitivity_bao.py
+pdm run python examples/data_removal/data_removal_sensitivity_bao.py
 ```
 
-This takes a few seconds and writes `sensitivity_result.json`, `removal_interactions.png` and `removal_budget.png` to
-`outputs/data_removal/bao_LCDM/`. Example output (whitened FD):
+This takes a few seconds and writes results to
+`outputs/examples/data_removal/bao_LCDM/`. Example output:
 
 ```
 FD data-removal sensitivity
@@ -143,5 +91,3 @@ FD data-removal sensitivity
     k=5: FD=1.91819 removing BGS, LRG1, LRG3+ELG1, ELG2, Lya
     k=6: FD=2.15877 removing BGS, LRG1, LRG3+ELG1, ELG2, QSO, Lya
 ```
-
-Because of the cross terms, the optimal pair (BGS + LRG1) does not include the single most influential block (LRG2).

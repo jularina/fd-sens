@@ -7,8 +7,12 @@ from hydra.utils import instantiate, get_original_cwd
 from omegaconf import DictConfig
 
 from src.common.utils.files_operations import load_plot_config
-from paper.ising.plots_parametric import *
-from src.parametric.fisher_divergence import PosteriorFDParametric
+from paper.ising.plots_parametric import (
+    plot_loss_gradient_times_density,
+    plot_loss_gradient_vs_theta,
+    plot_lr_vs_method_multi,
+)
+from src.prior.parametric.fisher_divergence import PosteriorFDParametric
 from paper.ising.ising_gradients import IsingGradients
 
 warnings.filterwarnings("ignore", category=UserWarning, module="hydra._internal.hydra")

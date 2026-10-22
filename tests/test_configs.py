@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from src.nonparametric.basis_functions import BASIS_FUNCTIONS_REGISTRY
+from src.prior.nonparametric.basis_functions import BASIS_FUNCTIONS_REGISTRY
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CONFIGS = sorted((ROOT / "configs").rglob("*.yaml"))

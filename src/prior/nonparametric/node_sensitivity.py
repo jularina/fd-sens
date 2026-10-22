@@ -3,7 +3,7 @@ from typing import Any, Dict, Optional, Tuple, Type
 
 import numpy as np
 
-from src.nonparametric.basis_functions import BaseBasisFunction
+from src.prior.nonparametric.basis_functions import BaseBasisFunction
 
 
 def _build_basis(

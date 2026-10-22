@@ -1,40 +1,11 @@
-from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Sequence
+from typing import Callable, Dict, Optional, Sequence
 
 import numpy as np
 from scipy.optimize import differential_evolution, dual_annealing
 
-from src.common.fisher_divergence import PosteriorFDBase
-from src.parametric.fisher_divergence import PosteriorFDParametric
-from src.parametric.optimization import OptimizationCornerPointsCompositePrior
-
-
-@dataclass
-class FDSensitivityResult:
-    """Global FD sensitivity together with the hyperparameters attaining its maximum and minimum."""
-
-    sensitivity: float
-    fd_min: float
-    fd_max: float
-    lambda_min: np.ndarray
-    lambda_max: np.ndarray
-    analysis: str
-    method: str
-    components: Optional[Dict[str, Dict[str, Any]]] = None
-
-    def __str__(self) -> str:
-        lines = [
-            f"FD {self.analysis} sensitivity",
-            f"  optimisation: {self.method}",
-            f"  sensitivity: {self.sensitivity:.6g}",
-            f"  minimum FD:  {self.fd_min:.6g} at lambda_min = {np.round(self.lambda_min, 6)}",
-            f"  maximum FD:  {self.fd_max:.6g} at lambda_max = {np.round(self.lambda_max, 6)}",
-        ]
-        if self.components:
-            lines.append("  components:")
-            for name, comp in self.components.items():
-                lines.append(f"    {name}: sensitivity={comp['sensitivity']:.6g} ({comp['sensitivity_share']:.1%})")
-        return "\n".join(lines)
+from src.common.result import FDSensitivityResult
+from src.prior.parametric.fisher_divergence import PosteriorFDParametric
+from src.prior.parametric.optimization import OptimizationCornerPointsCompositePrior
 
 
 def _eta_components(natural_box: Dict[str, Dict[str, Sequence[float]]], dim: int) -> list:
@@ -148,26 +119,6 @@ def prior_sensitivity(
         lambda_min=np.concatenate([components[n]["lambda_min"] for n in names]),
         lambda_max=np.concatenate([components[n]["lambda_max"] for n in names]),
         analysis="prior", method="quadratic_corner", components=components,
-    )
-
-
-def lr_sensitivity(model, lower: float, upper: float, lr_ref: Optional[float] = None) -> FDSensitivityResult:
-    """Learning-rate sensitivity over [lower, upper], using FD(lr) = (lr - lr_ref)^2 E||grad loss||^2."""
-    if lower > upper:
-        raise ValueError("lower must not exceed upper.")
-    estimator = PosteriorFDBase(model=model)
-    lr_ref = estimator.beta_ref if lr_ref is None else float(lr_ref)
-    mean_sq_grad = float(np.mean(np.sum(estimator.g * estimator.g, axis=1)))
-
-    def fd(lr):
-        return (lr - lr_ref) ** 2 * mean_sq_grad
-
-    lr_max = lower if fd(lower) >= fd(upper) else upper
-    lr_min = min(max(lr_ref, lower), upper)
-    return FDSensitivityResult(
-        sensitivity=fd(lr_max) - fd(lr_min), fd_min=fd(lr_min), fd_max=fd(lr_max),
-        lambda_min=np.array([lr_min]), lambda_max=np.array([lr_max]),
-        analysis="learning_rate", method="closed_form",
     )
 
 

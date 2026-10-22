@@ -6,7 +6,7 @@ from src.common.bayesian_model.samples import PosteriorSamplesModel
 from src.common.distributions.composite import CompositeProduct
 from src.common.distributions.gamma import Gamma
 from src.common.distributions.gaussian import Gaussian
-from src.parametric.sensitivity import prior_sensitivity
+from src.prior.parametric.sensitivity import prior_sensitivity
 
 rng = np.random.default_rng(1)
 y = rng.normal(loc=1.0, scale=1.5, size=50)
@@ -47,7 +47,7 @@ natural_box = {
 result = prior_sensitivity(model, natural_box, independent=True)
 print(result)
 
-output_dir = "interpretation/output/independent_components"
+output_dir = "outputs/examples/prior/independent_components"
 save_sensitivity_result(result, output_dir)
 plot_component_shares(result, output_dir)
 print("Wrote the result and component-share plot to", output_dir)

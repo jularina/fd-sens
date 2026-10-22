@@ -64,7 +64,7 @@ If the candidate priors form an exponential family $\pi(\theta\mid\eta)\propto h
 
 For learning-rate sensitivity of a generalised posterior $\widetilde\pi^\lambda \propto \exp(-\lambda\,\ell)\,\pi$, the FD reduces to $(\lambda-\lambda_{\mathrm{ref}})^2\,\mathbb E\|\nabla_\theta\ell\|^2$, so no optimisation is needed.
 
-Natural parametrisations matter: the FD is convex in $\eta$ but generally not in, say, the mean and standard deviation, so specify the box in natural parameters (the README lists them per family).
+Natural parametrisations matter: the FD is convex in $\eta$ but generally not in, say, the mean and standard deviation, so specify the box in natural parameters (see [`src/prior/README.md`](src/prior/README.md)).
 
 ## FDsens+: nonparametric neighbourhoods
 

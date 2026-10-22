@@ -26,8 +26,8 @@ from src.common.utils.files_operations import (
     load_results_json,
     save_to_serializable_json,
 )
-from src.parametric.fisher_divergence import PosteriorFDParametric
-from src.parametric.optimization import (
+from src.prior.parametric.fisher_divergence import PosteriorFDParametric
+from src.prior.parametric.optimization import (
     OptimizationCornerPointsMultivariateGaussian,
     OptimizationCornerPointsUnivariateGaussian,
 )

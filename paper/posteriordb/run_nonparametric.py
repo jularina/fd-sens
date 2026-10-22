@@ -10,9 +10,9 @@ import hydra
 from hydra.utils import instantiate, get_original_cwd
 from omegaconf import DictConfig, OmegaConf
 
-from src.nonparametric.basis_functions import BASIS_FUNCTIONS_REGISTRY
+from src.prior.nonparametric.basis_functions import BASIS_FUNCTIONS_REGISTRY
 from src.common.utils.files_operations import load_plot_config, save_to_serializable_json
-from src.nonparametric.node_sensitivity import compute_group_omega_max, compute_node_lambda_star
+from src.prior.nonparametric.node_sensitivity import compute_group_omega_max, compute_node_lambda_star
 from paper.plot_utils import apply_plot_rc, save_fig
 from paper.posteriordb.plots_parametric import plot_posterior_predictive_with_data
 from paper.posteriordb.run_parametric import (

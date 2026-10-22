@@ -6,9 +6,9 @@ import pytest
 from interpretation.plots import (
     plot_component_shares, plot_ecdf, plot_kde, plot_quantiles, save_sensitivity_result, summarise_quantiles,
 )
-from src.parametric.sensitivity import prior_sensitivity
+from src.prior.parametric.sensitivity import prior_sensitivity
 
-from tests.test_parametric import BOX
+from tests.test_prior_parametric import BOX
 
 
 @pytest.fixture

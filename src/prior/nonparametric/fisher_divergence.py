@@ -1,6 +1,6 @@
 from src.common.bayesian_model.samples import PosteriorSamplesModel
 from src.common.fisher_divergence import PosteriorFDBase
-from src.nonparametric.basis_functions import BaseBasisFunction
+from src.prior.nonparametric.basis_functions import BaseBasisFunction
 
 from typing import Tuple
 import numpy as np

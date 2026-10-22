@@ -1,11 +1,11 @@
 import numpy as np
 import pytest
 
-from src.nonparametric.basis_functions import MaternBasisFunction
-from src.nonparametric.node_sensitivity import _ac_whitening_transform
-from src.nonparametric.fisher_divergence import PosteriorFDNonParametric, PriorFDNonParametric
-from src.nonparametric.optimization import OptimisationNonparametricBase
-from src.nonparametric.sensitivity import nonparametric_prior_sensitivity
+from src.prior.nonparametric.basis_functions import MaternBasisFunction
+from src.prior.nonparametric.node_sensitivity import _ac_whitening_transform
+from src.prior.nonparametric.fisher_divergence import PosteriorFDNonParametric, PriorFDNonParametric
+from src.prior.nonparametric.optimization import OptimisationNonparametricBase
+from src.prior.nonparametric.sensitivity import nonparametric_prior_sensitivity
 
 from tests.conftest import NOISE_SD, PRIOR_MU, PRIOR_SD
 

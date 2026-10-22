@@ -8,8 +8,8 @@ from omegaconf import DictConfig
 import json
 
 from src.common.utils.files_operations import load_plot_config, save_to_serializable_json
-from src.parametric.fisher_divergence import PosteriorFDParametric
-from src.parametric.optimization import OptimizationCornerPointsCompositePrior
+from src.prior.parametric.fisher_divergence import PosteriorFDParametric
+from src.prior.parametric.optimization import OptimizationCornerPointsCompositePrior
 from paper.posteriordb.plots_parametric import (
     plot_acf_comparison,
     plot_complexity_bar,
@@ -475,7 +475,6 @@ def print_predictive_variance_decomposition(
 def plot_posterior_predictive(cfg: DictConfig) -> None:
     if not _run_stage(cfg, "plot_predictive"):
         return
-    prefix = cfg.playground.get("output_prefix", "kilpisjarvi_param")
     plot_config_path = os.path.join(get_original_cwd(), "configs/plots/overleaf_plots_settings.yaml")
     output_dir = os.path.join(get_original_cwd(), cfg.flags.plots.output_dir)
     plot_cfg = load_plot_config(plot_config_path)
@@ -483,8 +482,7 @@ def plot_posterior_predictive(cfg: DictConfig) -> None:
     model = instantiate(cfg.model, data_config=cfg.data)
     K = sum(1 for name in model.prior_init.names if name.startswith("beta"))
 
-    y_obs = model.observations.reshape(-1)   # y_centered[K:]
-    # y_centered is the full series (length T); y_obs is the target part (length T-K).
+    # y_centered is the full series (length T); its target part y_centered[K:] has length T-K.
     y_full = y_centered
 
     # Stan posterior under the z-scale worst-case prior; the R sampler saves post-warmup draws only.

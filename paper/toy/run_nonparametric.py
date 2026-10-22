@@ -1,14 +1,28 @@
-from src.nonparametric.optimization import OptimisationNonparametricBase
+from src.prior.nonparametric.optimization import OptimisationNonparametricBase
 from src.common.distributions.gaussian import Gaussian, MultivariateGaussian
 import numpy as np
-from src.parametric.optimization import *
-from src.common.utils.files_operations import *
-from paper.toy.plots_nonparametric import *
-from src.nonparametric.fisher_divergence import PriorFDNonParametric
-from src.parametric.fisher_divergence import PosteriorFDParametric
-from src.nonparametric.fisher_divergence import PosteriorFDNonParametric
-from src.nonparametric.basis_functions import BASIS_FUNCTIONS_REGISTRY
-from src.nonparametric.basis_functions import rbf_gaussian_gram_closed_form
+import os
+from collections import defaultdict
+
+from src.prior.parametric.optimization import OptimizationCornerPointsUnivariateGaussian
+from src.common.utils.files_operations import load_plot_config, load_results_json, save_to_serializable_json
+from paper.toy.plots_nonparametric import (
+    plot_closed_form_sensitivity_error,
+    plot_param_nonparam_prior_and_stats,
+    plot_runtime_nonparametric_diff_basis_funcs_num_diff_samples_with_ci,
+    plot_sdp_2d_densities,
+    plot_sdp_densities,
+    plot_sdp_density_with_centers,
+    plot_sdp_density_with_centers_combined,
+    plot_sdp_matern_nu_comparison,
+    plot_sensitivity_vs_basis_funcs_num,
+    plot_sensitivity_vs_basis_funcs_num_dual,
+)
+from src.prior.nonparametric.fisher_divergence import PriorFDNonParametric
+from src.prior.parametric.fisher_divergence import PosteriorFDParametric
+from src.prior.nonparametric.fisher_divergence import PosteriorFDNonParametric
+from src.prior.nonparametric.basis_functions import BASIS_FUNCTIONS_REGISTRY
+from src.prior.nonparametric.basis_functions import rbf_gaussian_gram_closed_form
 from scipy.linalg import eigh as scipy_eigh
 
 import warnings
@@ -527,7 +541,7 @@ def _diff_center_methods(
     # RBF only: exact sensitivity from closed-form A, A_c; the gap to plug-in is pure MC error.
     sensitivity_label_key = "estimatedSensitivityMeasure"
     if basis_funcs_type == "RBFBasisFunction":
-        from src.nonparametric.node_sensitivity import _ac_whitening_transform
+        from src.prior.nonparametric.node_sensitivity import _ac_whitening_transform
 
         mu_post, sigma_post2 = model.compute_posterior_params()
 
@@ -1209,16 +1223,16 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
     errors_path = os.path.join(errors_dir, f"closed_form_convergence_errors_K{centers.shape[0]}.json")
 
     def _compute_errors(pairs: list[tuple[int, int]]) -> dict:
-        """Per-repeat errors for each (m, l) = (#posterior, #prior samples), keyed by str(m)."""
+        """Per-repeat errors for each (m, m_prior) = (#posterior, #prior samples), keyed by str(m)."""
         errors = {}
-        for m, l in pairs:
+        for m, m_prior in pairs:
             errors_full, errors_obj, errors_constr = [], [], []
             errors_A, errors_Ac = [], []
             for _ in range(n_repeats):
-                model.prior_samples_init = model.sample_from_base_prior(n_samples=l)
+                model.prior_samples_init = model.sample_from_base_prior(n_samples=m_prior)
                 model.posterior_samples_init = model.sample_posterior(n_samples=m)
                 model.m = m
-                model.m_prior = l
+                model.m_prior = m_prior
 
                 estimator_prior = PriorFDNonParametric(model=model)
                 estimator_posterior = PosteriorFDNonParametric(model=model)
@@ -1243,7 +1257,7 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
 
             errors[str(m)] = {
                 "m": int(m),
-                "l": int(l),
+                "l": int(m_prior),
                 "full": errors_full,
                 "objective": errors_obj,
                 "constraint": errors_constr,
@@ -1251,7 +1265,7 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
                 "Ac_matrix": errors_Ac,
             }
             print(
-                f"m={m}, l={l}: full={np.mean(errors_full):.4e}, "
+                f"m={m}, l={m_prior}: full={np.mean(errors_full):.4e}, "
                 f"objective={np.mean(errors_obj):.4e}, constraint={np.mean(errors_constr):.4e}, "
                 f"||A-Ahat||_F/||A||_F={np.mean(errors_A):.4e}, "
                 f"||Ac-Achat||_F/||Ac||_F={np.mean(errors_Ac):.4e}"
@@ -1266,7 +1280,7 @@ def run_gaussian_priors_nonparametric_closed_form_convergence(
         save_to_serializable_json(errors, path)
         return errors
 
-    errors_by_l = _load_or_compute(errors_path, [(int(l), int(l)) for l in sample_sizes])
+    errors_by_l = _load_or_compute(errors_path, [(int(n), int(n)) for n in sample_sizes])
 
     # Other m-vs-l allocations (m = l^(3/2), m = 3l), each cached to its own file.
     m_grid = [int(m) for m in sample_sizes if m >= 3000]

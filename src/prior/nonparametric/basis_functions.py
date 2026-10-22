@@ -146,7 +146,6 @@ class MaternBasisFunction(BaseBasisFunction):
 
         return X_unique[chosen]
 
-
     def _estimate_lengthscale(
         self,
         centers: np.ndarray,
@@ -374,8 +373,8 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
             np.asarray(posterior_samples, dtype=float),
         ], axis=0)
 
-
     # ---------------- center selection ----------------
+
     def _select_centers(
         self,
         posterior_samples: np.ndarray,
@@ -405,7 +404,6 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
 
         raise ValueError(f"Unknown center selection method: {method}")
 
-
     def _halton_centers(self, X: np.ndarray, num_centers: int) -> np.ndarray:
         """Quasi-uniform centers from a scrambled Halton sequence mapped through X's per-dimension quantiles."""
         d = X.shape[1]
@@ -415,7 +413,6 @@ class MaternBasisFunctionMultidim(BaseBasisFunction):
         for j in range(d):
             centers[:, j] = np.quantile(X[:, j], u[:, j])
         return centers
-
 
     def _random_centers(self, X: np.ndarray, num_centers: int) -> np.ndarray:
         """Select centers by subsampling distinct rows of X, rejecting candidates too close to chosen ones."""
@@ -704,7 +701,6 @@ class RBFBasisFunction(BaseBasisFunction):
             chosen.extend(leftover[: num_centers - len(chosen)])
 
         return X_unique[chosen]
-
 
     def _estimate_lengthscale(self, centers: np.ndarray, samples: np.ndarray,
                               source: str = "samples", multiplier: float = 1.0,

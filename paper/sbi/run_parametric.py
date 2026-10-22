@@ -6,8 +6,8 @@ from omegaconf import DictConfig
 import time
 
 from src.common.utils.files_operations import load_plot_config
-from src.parametric.fisher_divergence import PosteriorFDParametric
-from src.parametric.optimization import (
+from src.prior.parametric.fisher_divergence import PosteriorFDParametric
+from src.prior.parametric.optimization import (
     OptimizationCornerPointsCompositePrior
 )
 from paper.sbi.plots_parametric import plot_gaussian_copula_grid_pair

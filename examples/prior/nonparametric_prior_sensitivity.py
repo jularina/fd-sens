@@ -3,7 +3,7 @@ import numpy as np
 
 from src.common.bayesian_model.samples import PosteriorSamplesModel
 from src.common.distributions.gaussian import Gaussian
-from src.nonparametric.sensitivity import nonparametric_prior_sensitivity
+from src.prior.nonparametric.sensitivity import nonparametric_prior_sensitivity
 
 np.random.seed(0)  # the basis centres and reference-prior draws use NumPy's global generator
 rng = np.random.default_rng(123)

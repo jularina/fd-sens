@@ -3,10 +3,10 @@ from typing import Any, Dict, Optional, Sequence, Union
 
 import numpy as np
 
-from src.nonparametric.basis_functions import BASIS_FUNCTIONS_REGISTRY
-from src.nonparametric.fisher_divergence import PosteriorFDNonParametric, PriorFDNonParametric
-from src.nonparametric.node_sensitivity import compute_node_lambda_star
-from src.nonparametric.optimization import OptimisationNonparametricBase
+from src.prior.nonparametric.basis_functions import BASIS_FUNCTIONS_REGISTRY
+from src.prior.nonparametric.fisher_divergence import PosteriorFDNonParametric, PriorFDNonParametric
+from src.prior.nonparametric.node_sensitivity import compute_node_lambda_star
+from src.prior.nonparametric.optimization import OptimisationNonparametricBase
 
 DEFAULT_BASIS_KWARGS = {"num_basis_functions": 100, "method": "kmeans", "nu": 3.5}
 
