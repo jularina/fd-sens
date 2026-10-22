@@ -372,7 +372,7 @@ def plot_posterior_predictive(cfg: DictConfig) -> None:
         pred_hi=ref_hi + y_mean_offset,
         pred_label=r"$\tilde{x}_{\mathrm{ref}} \pm 95\%$ CI",
         filename=f"{prefix}_posterior_predictive_ref.pdf",
-        pred_color="#7c397d",
+        pred_color="#6C936C",
         ylim=global_ylim,
     )
     plot_posterior_predictive_with_data(
@@ -386,7 +386,7 @@ def plot_posterior_predictive(cfg: DictConfig) -> None:
         pred_hi=worst_hi + y_mean_offset,
         pred_label=r"$\tilde{x} \pm 95\%$ CI",
         filename="kilpisjarvi_posterior_predictive_worst_case.pdf",
-        pred_color="#5b9bd5",
+        pred_color="#ADEBC8",
         ylim=global_ylim,
         show_ylabel=False,
     )
