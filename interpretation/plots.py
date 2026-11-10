@@ -267,12 +267,16 @@ def _removal_names(names: Sequence[str], style: Dict[str, Any]) -> list:
     return [_tex_safe(x) for x in names] if style["rc"].get("text.usetex", False) else list(names)
 
 
-def _save_formats(fig, output_dir: str, file_stem: str, style: Dict[str, Any], layout: bool = True) -> None:
+def _save_formats(fig, output_dir: str, file_stem: str, style: Dict[str, Any], layout: bool = True,
+                  extra_artists=None) -> None:
+    """Save in every configured format. `extra_artists` are added to the tight crop, for text whose extent the crop
+    underestimates (e.g. a rotated LaTeX colorbar label)."""
     if layout and style["tight"]:
         fig.tight_layout()
     os.makedirs(output_dir, exist_ok=True)
     for fmt in style["formats"]:
-        fig.savefig(os.path.join(output_dir, f"{file_stem}.{fmt}"), bbox_inches="tight", facecolor="white")
+        fig.savefig(os.path.join(output_dir, f"{file_stem}.{fmt}"), bbox_inches="tight", facecolor="white",
+                    bbox_extra_artists=extra_artists)
 
 
 def _style_removal_axes(ax, colors: Dict[str, str]) -> None:
@@ -329,7 +333,7 @@ def plot_removal_single(result, output_dir: str, file_stem: str = "removal_singl
 
 
 def plot_removal_interactions(result, output_dir: str, file_stem: str = "removal_interactions", plot_cfg=None):
-    """Write `<file_stem>.pdf` for a data-removal result: the normalised cross terms A_ik / sqrt(A_ii A_kk), i > k,
+    """Write `<file_stem>.pdf` for a data-removal result: the normalised cross terms A_gh / sqrt(A_gg A_hh), g > h,
     as a lower-triangular heatmap (dark blue: removals reinforce, dark grey-purple: they cancel). The values are in
     `result.A`.
 
@@ -361,10 +365,10 @@ def plot_removal_interactions(result, output_dir: str, file_stem: str = "removal
         for spine in ax.spines.values():
             spine.set_color(c["light"])
         cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        cb.set_label(r"$A_{ik}/\sqrt{A_{ii}A_{kk}}$", color=c["text"])
+        cb.set_label(r"$A_{gh}/\sqrt{A_{gg}A_{hh}}$", color=c["text"])
         cb.outline.set_edgecolor(c["light"])
         cb.ax.tick_params(colors=c["text"])
-        _save_formats(fig, output_dir, file_stem, style)
+        _save_formats(fig, output_dir, file_stem, style, extra_artists=[cb.ax.yaxis.label])
     plt.close(fig)
     return fig
 
@@ -388,7 +392,7 @@ def _fit_labels_in_axes(fig, ax, labels, tight: bool, max_iter: int = 20) -> Non
 def plot_removal_budget(result, output_dir: str, file_stem: str = "removal_budget", plot_cfg=None):
     """Write `<file_stem>.pdf` for a data-removal result: the sensitivity for each budget of at most K removed
     observations (groups) against removing the K individually most influential ones (largest A_ii). With
-    `keep_all=True` every evaluated subset is also shown, at its size. Each optimal point is labelled with the
+    `keep_all=True` every evaluated subset of at most K units is also shown at each K. Each optimal point is labelled with the
     units it removes, one name per line, at 0.6 times the configured font size.
 
     With `plot_cfg` (a loaded plot config) the fonts, LaTeX rendering, dpi, figure size and the
@@ -403,10 +407,11 @@ def plot_removal_budget(result, output_dir: str, file_stem: str = "removal_budge
         fig, ax = plt.subplots(figsize=style["size"])
         if result.fd_values is not None:
             rng = np.random.default_rng(0)
-            for k, vals in zip(ks, result.fd_values):
-                vals = np.asarray(vals)
-                ax.scatter(k + rng.uniform(-0.15, 0.15, len(vals)), vals, s=6, color=c["background"], alpha=0.45,
-                           linewidth=0, label="all subsets" if k == ks[0] else None, zorder=1)
+            # Column K shows every subset the budget-K optimum searches over: all removals of at most K units.
+            for K in ks:
+                vals = np.concatenate([np.asarray(v) for k, v in zip(ks, result.fd_values) if k <= K])
+                ax.scatter(K + rng.uniform(-0.2, 0.2, len(vals)), vals, s=5, color=c["background"], alpha=0.35,
+                           linewidth=0, label="all subsets" if K == ks[0] else None, zorder=1)
         ax.plot(ks, top_k, "--o", color=c["contrast"], markersize=3, linewidth=1.2, label=r"top-$K$", zorder=3)
         ax.plot(ks, best, "-o", color=c["main"], markersize=4, linewidth=1.6, label="optimal", zorder=4)
         labels = []

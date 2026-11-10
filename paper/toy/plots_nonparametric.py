@@ -798,8 +798,8 @@ def plot_param_nonparam_prior_and_stats(
     kurt_b = _excess_kurtosis(pi_b)
     modes_b = 2  # hardcoded: peak-detection undercounted the visible modes here.
     print(
-        f"Param.: skewness={skew_a:.4f}, modes={modes_a}, excess kurtosis={kurt_a:.4f}. "
-        f"Ours: skewness={skew_b:.4f}, modes={modes_b}, excess kurtosis={kurt_b:.4f}."
+        f"FDsens: skewness={skew_a:.4f}, modes={modes_a}, excess kurtosis={kurt_a:.4f}. "
+        f"FDsens+: skewness={skew_b:.4f}, modes={modes_b}, excess kurtosis={kurt_b:.4f}."
     )
 
     # Colors & labels
@@ -821,8 +821,8 @@ def plot_param_nonparam_prior_and_stats(
     # Left: prior densities
     ax_prior = fig.add_subplot(gs[0, 0])
     ax_prior.plot(theta, g, color=col_ref, linestyle="--", linewidth=1.5, label=r"$\mathrm{Ref.}$")
-    ax_prior.plot(theta, pi_a, color=col_a, linewidth=1.5, label=r"$\mathrm{Param.}$")
-    ax_prior.plot(theta, pi_b, color=col_b, linewidth=1.5, label=r"$\mathrm{Ours}$")
+    ax_prior.plot(theta, pi_a, color=col_a, linewidth=1.5, label=r"\texttt{FDsens}")
+    ax_prior.plot(theta, pi_b, color=col_b, linewidth=1.5, label=r"\texttt{FDsens+}")
     ax_prior.set_xlabel(xlabel)
     ax_prior.set_ylabel(r"$\mathrm{Prior}$")
     ax_prior.set_ylim(bottom=0)
@@ -831,7 +831,7 @@ def plot_param_nonparam_prior_and_stats(
     ax_prior.spines["right"].set_visible(False)
     ax_prior.legend(frameon=False, fontsize=fs * 1.0, labelspacing=0.4, handlelength=1.8, handletextpad=0.5)
 
-    # Right: 2 (Param. / Ours) x 3 (skewness, modes, excess kurtosis) stats as a ruled text table.
+    # Right: 2 (FDsens / FDsens+) x 3 (skewness, modes, excess kurtosis) stats as a ruled text table.
     ax_stats = fig.add_subplot(gs[0, 1])
     ax_stats.axis("off")
     ax_stats.set_xlim(0, 1)
@@ -855,10 +855,10 @@ def plot_param_nonparam_prior_and_stats(
     ax_stats.plot([label_col_x, label_col_x], [header_rule_y, rule_bottom], **rule_kwargs)
     ax_stats.plot([param_col_x, param_col_x], [header_rule_y, rule_bottom], **rule_kwargs)
 
-    ax_stats.text(param_x, header_y, r"$\mathbf{Param.}$", ha="center", va="center",
-                  fontsize=fs_table, weight="bold", color=col_a)
-    ax_stats.text(nonparam_x, header_y, r"$\mathbf{Ours}$", ha="center", va="center",
-                  fontsize=fs_table, weight="bold", color=col_b)
+    ax_stats.text(param_x, header_y, r"\texttt{FDsens}", ha="center", va="center",
+                  fontsize=fs, weight="bold", color=col_a)
+    ax_stats.text(nonparam_x, header_y, r"\texttt{FDsens+}", ha="center", va="center",
+                  fontsize=fs, weight="bold", color=col_b)
 
     for row_label, val_a, val_b, fmt, y in zip(row_labels, param_vals, nonparam_vals, row_fmts, row_ys):
         ax_stats.text(label_x, y, row_label, ha="left", va="center", fontsize=fs_table)
